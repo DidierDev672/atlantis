@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faBed,
-  faUser,
   faCalendarDays,
   faUsers,
   faDollarSign,
@@ -16,6 +15,109 @@ import type { StatusCodeValidationResult } from '../../../../shared/lib/status-c
 import type { ReservaViewItem } from '../../domain/reserva-list-types'
 import { fetchReservaDetailFromApi } from '../../infrastructure/api-reserva-detail-repository'
 import { ReservaStateBadge } from '../atoms/reserva-state-badge'
+import { ReservaHuespedCard } from './reserva-huesped-card'
+import {
+  ReservaHuespedesStackedCards,
+  type StackedGuestCardItem,
+} from './reserva-huespedes-stacked-cards'
+import { useHuespedesRegistradosStore } from '../../application/use-huespedes-registrados-store'
+import { api } from '../../../../lib/api'
+import { cn } from '../../../../shared/lib/cn'
+
+interface PersonDetailData {
+  id?: string
+  name?: string
+  document_type?: string
+  document_number?: string
+  email?: string
+  phone_number?: string
+}
+
+/** Mapa de acompañantes realistas para reservas demostrativas */
+const DEMO_COMPANIONS_MAP: Record<
+  string,
+  Array<{
+    name: string
+    document_number?: string
+    document_type?: string
+    email?: string
+    phone_number?: string
+  }>
+> = {
+  per_carlos_mendoza: [
+    {
+      name: 'Elena Silva',
+      document_number: '72345678',
+      document_type: 'CC',
+      email: 'elena.silva@empresa.com',
+      phone_number: '+57 312 987 6543',
+    },
+    {
+      name: 'Mateo Mendoza Silva',
+      document_number: '83456789',
+      document_type: 'TI',
+      email: 'contacto.familia@empresa.com',
+    },
+  ],
+  per_valentina_rios: [
+    {
+      name: 'Santiago Ríos Gómez',
+      document_number: '10293847',
+      document_type: 'CC',
+      email: 'santiago.rios@correo.com',
+      phone_number: '+57 310 987 6543',
+    },
+    {
+      name: 'Camila Ríos Gómez',
+      document_number: '10293848',
+      document_type: 'TI',
+      email: 'camila.rios@correo.com',
+    },
+  ],
+  per_mariana_gomez: [
+    {
+      name: 'Andrés Gómez Restrepo',
+      document_number: '98711223',
+      document_type: 'CC',
+      email: 'andres.gomez@correo.com',
+      phone_number: '+57 315 223 3445',
+    },
+  ],
+  per_felipe_torres: [
+    {
+      name: 'Diana Cárdenas',
+      document_number: '55443322',
+      document_type: 'CC',
+      email: 'diana.cardenas@empresa.com',
+    },
+    {
+      name: 'Lucas Torres Cárdenas',
+      document_number: '11223344',
+      document_type: 'TI',
+    },
+    {
+      name: 'Sofía Torres Cárdenas',
+      document_number: '11223355',
+      document_type: 'TI',
+    },
+  ],
+  per_camila_duque: [
+    {
+      name: 'Nicolás Morales',
+      document_number: '77665544',
+      document_type: 'CC',
+      email: 'nicolas.morales@correo.com',
+    },
+  ],
+  per_lucia_castro: [
+    {
+      name: 'Daniel Montoya',
+      document_number: '88990011',
+      document_type: 'CC',
+      email: 'daniel.montoya@correo.com',
+    },
+  ],
+}
 
 interface ReservaDetalleModalProps {
   isOpen: boolean
@@ -31,6 +133,9 @@ export function ReservaDetalleModal({
   const [detail, setDetail] = useState<ReservaViewItem | null>(null)
   const [loading, setLoading] = useState(false)
   const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(null)
+  const [titularPersonData, setTitularPersonData] = useState<PersonDetailData | null>(null)
+  const [guestViewMode, setGuestViewMode] = useState<'stacked' | 'grid'>('stacked')
+  const storeHuespedes = useHuespedesRegistradosStore((s) => s.huespedes)
 
   // 1. Efecto ModalPresentationStyle iOS: Contrae #root con scale(0.93) y rounded-[24px]
   useEffect(() => {
@@ -76,11 +181,12 @@ export function ReservaDetalleModal({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, onClose])
 
-  // 3. Cargar detalle de la reserva al abrir
+  // 3. Cargar detalle de la reserva al abrir y consultar datos del huésped titular
   useEffect(() => {
     if (!isOpen || !reservaId) {
       setDetail(null)
       setFeedback(null)
+      setTitularPersonData(null)
       return
     }
 
@@ -88,10 +194,25 @@ export function ReservaDetalleModal({
     setLoading(true)
 
     fetchReservaDetailFromApi(reservaId)
-      .then((res) => {
+      .then(async (res) => {
         if (!isMounted) return
         setDetail(res.item)
         setFeedback(res.validation.message ? res.validation : null)
+
+        if (res.item?.personId) {
+          try {
+            const pRes = await api.get<PersonDetailData | PersonDetailData[]>(
+              `/person/${res.item.personId}`,
+              { validateStatus: () => true }
+            )
+            if (isMounted && pRes.status === 200 && pRes.data) {
+              const p = Array.isArray(pRes.data) ? pRes.data[0] : pRes.data
+              if (p) setTitularPersonData(p)
+            }
+          } catch {
+            // Silencioso: se utiliza fallback con los datos de res.item
+          }
+        }
       })
       .finally(() => {
         if (isMounted) setLoading(false)
@@ -101,6 +222,67 @@ export function ReservaDetalleModal({
       isMounted = false
     }
   }, [isOpen, reservaId])
+
+  // 4. Construcción de tarjetas individuales para cada uno de los huéspedes según numberOfGuests
+  const guestCards: StackedGuestCardItem[] = useMemo(() => {
+    if (!detail) return []
+    const total = Math.max(1, detail.numberOfGuests || 1)
+    const cards: StackedGuestCardItem[] = []
+
+    // Huésped 1: Titular
+    cards.push({
+      id: detail.personId || 'titular',
+      title: titularPersonData?.name || detail.personDisplayName,
+      description: `Habitación: ${detail.roomDisplayName} • Titular principal`,
+      bgClass: 'border-line/80 bg-panel/95 dark:bg-surface/70 text-ink',
+      index: 1,
+      isTitular: true,
+      name: titularPersonData?.name || detail.personDisplayName,
+      roomName: detail.roomDisplayName,
+      documentType: titularPersonData?.document_type || 'CC',
+      documentNumber:
+        titularPersonData?.document_number ||
+        (detail.personId?.startsWith('per_') ? undefined : detail.personId),
+      email: titularPersonData?.email,
+      phoneNumber: titularPersonData?.phone_number,
+      statusLabel: 'Titular confirmado',
+    })
+
+    // Huéspedes 2..N: Acompañantes
+    for (let i = 1; i < total; i++) {
+      const storeCompanion =
+        storeHuespedes.filter((h) => !h.isTitular)[i - 1] || storeHuespedes[i]
+      const demoCompanion = DEMO_COMPANIONS_MAP[detail.personId]?.[i - 1]
+
+      const companionName =
+        storeCompanion?.name || demoCompanion?.name || `Acompañante #${i}`
+      const companionDoc =
+        storeCompanion?.document_number || demoCompanion?.document_number
+      const companionDocType =
+        storeCompanion?.document_type || demoCompanion?.document_type || 'Doc'
+      const companionEmail = storeCompanion?.email || demoCompanion?.email
+      const companionPhone =
+        storeCompanion?.phone_number || demoCompanion?.phone_number
+
+      cards.push({
+        id: storeCompanion?.id || `comp-${detail.id}-${i}`,
+        title: companionName,
+        description: `Habitación: ${detail.roomDisplayName} • Acompañante #${i} asignado`,
+        bgClass: 'border-line/80 bg-panel/95 dark:bg-surface/70 text-ink',
+        index: i + 1,
+        isTitular: false,
+        name: companionName,
+        roomName: detail.roomDisplayName,
+        documentType: companionDocType,
+        documentNumber: companionDoc,
+        email: companionEmail,
+        phoneNumber: companionPhone,
+        statusLabel: 'Acompañante registrado',
+      })
+    }
+
+    return cards
+  }, [detail, titularPersonData, storeHuespedes])
 
   return (
     <AnimatePresence>
@@ -186,32 +368,20 @@ export function ReservaDetalleModal({
                 transition={{ duration: 0.5, ease: 'easeOut' }}
                 className="mt-5 space-y-4"
               >
-                {/* Habitación y Huésped (sin IDs crudos) */}
+                {/* Habitación asignada */}
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ duration: 0.5, ease: 'easeOut' }}
-                  className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+                  className="rounded-2xl border border-line/70 bg-canvas/60 p-3.5"
                 >
-                  <div className="rounded-2xl border border-line/70 bg-canvas/60 p-3.5">
-                    <span className="flex items-center gap-1.5 text-xs font-medium text-ink-muted">
-                      <FontAwesomeIcon icon={faBed} className="size-3 text-primary" />
-                      <span>Habitación</span>
-                    </span>
-                    <p className="mt-1 font-semibold text-ink text-sm truncate">
-                      {detail.roomDisplayName}
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl border border-line/70 bg-canvas/60 p-3.5">
-                    <span className="flex items-center gap-1.5 text-xs font-medium text-ink-muted">
-                      <FontAwesomeIcon icon={faUser} className="size-3 text-primary" />
-                      <span>Huésped titular</span>
-                    </span>
-                    <p className="mt-1 font-semibold text-ink text-sm truncate">
-                      {detail.personDisplayName}
-                    </p>
-                  </div>
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-ink-muted">
+                    <FontAwesomeIcon icon={faBed} className="size-3 text-primary" />
+                    <span>Habitación asignada</span>
+                  </span>
+                  <p className="mt-1 font-semibold text-ink text-sm truncate">
+                    {detail.roomDisplayName}
+                  </p>
                 </motion.div>
 
                 {/* Fechas de entrada y salida con total de noches */}
@@ -247,7 +417,77 @@ export function ReservaDetalleModal({
                   </div>
                 </motion.div>
 
-                {/* Huéspedes, Estado y Valor a pagar */}
+                {/* Sección de Huéspedes: Cards por cada uno de los huéspedes según el número de huéspedes */}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.5, ease: 'easeOut' }}
+                  className="space-y-3"
+                >
+                  <div className="flex items-center justify-between border-b border-line/60 pb-2">
+                    <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-ink">
+                      <FontAwesomeIcon icon={faUsers} className="size-3.5 text-primary" />
+                      <span>Huéspedes de la estadía</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {detail.numberOfGuests > 1 && (
+                        <div className="flex items-center rounded-lg border border-line bg-surface/60 p-0.5 text-[10px]">
+                          <button
+                            type="button"
+                            onClick={() => setGuestViewMode('stacked')}
+                            className={cn(
+                              'rounded-md px-2 py-0.5 font-medium transition-colors',
+                              guestViewMode === 'stacked'
+                                ? 'bg-primary text-white shadow-2xs'
+                                : 'text-ink-muted hover:text-ink'
+                            )}
+                          >
+                            Pila deslizable
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setGuestViewMode('grid')}
+                            className={cn(
+                              'rounded-md px-2 py-0.5 font-medium transition-colors',
+                              guestViewMode === 'grid'
+                                ? 'bg-primary text-white shadow-2xs'
+                                : 'text-ink-muted hover:text-ink'
+                            )}
+                          >
+                            Cuadrícula
+                          </button>
+                        </div>
+                      )}
+                      <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-[11px] font-bold text-primary">
+                        <span>{detail.numberOfGuests} {detail.numberOfGuests === 1 ? 'huésped' : 'huéspedes'}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  {guestViewMode === 'stacked' ? (
+                    <ReservaHuespedesStackedCards cards={guestCards} />
+                  ) : (
+                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                      {guestCards.map((guest) => (
+                        <ReservaHuespedCard
+                          key={guest.id}
+                          index={guest.index ?? 1}
+                          totalGuests={detail.numberOfGuests}
+                          isTitular={guest.isTitular ?? false}
+                          name={guest.name ?? guest.title}
+                          roomName={detail.roomDisplayName}
+                          documentType={guest.documentType}
+                          documentNumber={guest.documentNumber}
+                          email={guest.email}
+                          phoneNumber={guest.phoneNumber}
+                          statusLabel={guest.statusLabel}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </motion.div>
+
+                {/* Estado y Valor a pagar */}
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -255,16 +495,6 @@ export function ReservaDetalleModal({
                   className="flex flex-col gap-3 rounded-2xl border border-line/70 bg-surface/30 p-4 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div>
-                    <span className="flex items-center gap-1.5 text-xs text-ink-muted">
-                      <FontAwesomeIcon icon={faUsers} className="size-3 text-neutral" />
-                      <span>Capacidad</span>
-                    </span>
-                    <p className="mt-0.5 text-sm font-semibold text-ink">
-                      {detail.numberOfGuests} {detail.numberOfGuests === 1 ? 'huésped' : 'huéspedes'}
-                    </p>
-                  </div>
-
-                  <div className="border-t border-line/60 pt-2 sm:border-0 sm:pt-0">
                     <span className="block text-xs text-ink-muted mb-1">Estado de la reserva</span>
                     <ReservaStateBadge label={detail.stateLabel} tone={detail.stateTone} size="md" />
                   </div>

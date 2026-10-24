@@ -1,12 +1,19 @@
-import { useCallback, useEffect, useRef, useState, useId } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useId } from 'react'
 import axios from 'axios'
-import { AnimatePresence, motion } from 'motion/react'
-import { SelectField } from '../atoms/select-field'
+import { AnimatePresence, motion, type Variants } from 'motion/react'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import {
+  faChevronDown,
+  faCheck,
+  faXmark,
+  faMagnifyingGlass,
+} from '@fortawesome/free-solid-svg-icons'
 import { Button } from '../atoms/button'
 import { ApiModuleRepository } from '../../infrastructure/api-module-repository'
 import { cn } from '../lib/cn'
 import { api } from '../../../../lib/api'
 import { validateStatusCode } from '../../../../shared/lib/status-code-validator'
+import { InfiniteScroll } from '../../../../shared/ui/InfiniteScroll'
 
 const apiModuleRepository = new ApiModuleRepository()
 
@@ -21,6 +28,37 @@ const rolesErrorMessage400 =
 
 const rolesUnexpectedErrorMessage =
   '¡Respira con calma! 🌿 Tuvimos un breve contratiempo de red al intentar traer los roles. Tus datos siguen intactos aquí. Presiona "Volver a intentar" en un momento.'
+
+/** Variantes de Framer Motion para efecto Stagger de los ítems del dropdown */
+const dropdownStaggerContainer: Variants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.035,
+      delayChildren: 0.02,
+    },
+  },
+}
+
+const dropdownStaggerItem: Variants = {
+  hidden: {
+    opacity: 0,
+    y: 8,
+    scale: 0.97,
+  },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: {
+      type: 'spring',
+      stiffness: 400,
+      damping: 26,
+      mass: 0.7,
+    },
+  },
+}
 
 export interface DropdownOption {
   value: string
@@ -52,6 +90,10 @@ export interface RecursosDropdownProps {
   selectedValues?: string[]
   /** Callback para actualización en modo múltiple */
   onMultiChange?: (values: string[]) => void
+  /** Habilita la barra de búsqueda en tiempo real dentro del popover (por defecto true) */
+  searchable?: boolean
+  /** Placeholder para el campo de búsqueda */
+  searchPlaceholder?: string
   /** Deshabilita la interacción */
   disabled?: boolean
   /** Deshabilita la interacción (alias: isDisabled) */
@@ -64,6 +106,12 @@ export interface RecursosDropdownProps {
   emptyLabel?: string
   /** Identificador opcional para el elemento de formulario */
   id?: string
+  /** Tamaño del lote para el scroll infinito y renderizado progresivo (por defecto 20) */
+  pageSize?: number
+  /** Callback opcional para cargar más opciones desde un servidor */
+  onLoadMoreOptions?: () => Promise<void> | void
+  /** Indica si hay más opciones en el servidor */
+  hasMoreOptions?: boolean
 }
 
 export function RecursosDropdown({
@@ -78,12 +126,17 @@ export function RecursosDropdown({
   multiple = false,
   selectedValues = [],
   onMultiChange,
+  searchable = true,
+  searchPlaceholder,
   disabled = false,
   isDisabled,
   required = false,
   className,
   emptyLabel: customEmptyLabel,
   id,
+  pageSize = 20,
+  onLoadMoreOptions,
+  hasMoreOptions: externalHasMore,
 }: RecursosDropdownProps) {
   const isComponentDisabled = isDisabled ?? disabled
   const autoId = useId()
@@ -93,10 +146,15 @@ export function RecursosDropdown({
   useEffect(() => {
     onSelectOptionRef.current = onSelectOption
   }, [onSelectOption])
+
   const [internalOptions, setInternalOptions] = useState<ReadonlyArray<DropdownOption>>([])
   const [loading, setLoading] = useState(externalOptions == null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isOpen, setIsOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+
+  // Habilitado por defecto para búsqueda en tiempo real
+  const isSearchEnabled = searchable ?? true
 
   // Carga automática de opciones solo si NO se proveyeron opciones externas
   const loadOptions = useCallback(async () => {
@@ -198,7 +256,7 @@ export function RecursosDropdown({
     } finally {
       setLoading(false)
     }
-  }, [externalOptions, endpoint, onChange, value])
+  }, [externalOptions, endpoint, onChange])
 
   useEffect(() => {
     if (externalOptions == null) {
@@ -207,17 +265,19 @@ export function RecursosDropdown({
     }
   }, [externalOptions, loadOptions])
 
-  // Cierre al hacer click fuera del dropdown cuando está abierto en modo múltiple
+  // Cierre al hacer click fuera del dropdown o al presionar Escape
   useEffect(() => {
     if (!isOpen) return
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false)
+        setSearchTerm('')
       }
     }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setIsOpen(false)
+        setSearchTerm('')
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -228,7 +288,7 @@ export function RecursosDropdown({
     }
   }, [isOpen])
 
-  // Conserva íntegras todas las opciones obtenidas del endpoint
+  // Conserva íntegras todas las opciones obtenidas del endpoint o externas
   const rawOptions = externalOptions ?? internalOptions
   const isRolesEndpoint = endpoint === '/roles' || endpoint?.includes('roles')
   const defaultHuespedId = 'role-huesped'
@@ -239,7 +299,7 @@ export function RecursosDropdown({
         ? [{ value: defaultHuespedId, label: 'Huesped', id: defaultHuespedId, rawName: 'guest' }]
         : []
 
-  // Resolver el valor seleccionado tolerando coincidencias por id, por alias (Huesped <-> guest) o por defecto
+  // Resolver el valor seleccionado tolerando coincidencias por id, alias o por defecto
   const resolvedValue = (() => {
     if (!value) {
       if (isRolesEndpoint) {
@@ -268,6 +328,61 @@ export function RecursosDropdown({
 
     return value
   })()
+
+  // Opción seleccionada resuelta para selección simple
+  const selectedOption = useMemo(() => {
+    if (!resolvedValue) return null
+    return (
+      options.find(
+        (o) =>
+          o.value === resolvedValue ||
+          (o as DropdownOption).id === resolvedValue
+      ) || null
+    )
+  }, [options, resolvedValue])
+
+  // Filtrado en tiempo real de opciones basado en searchTerm
+  const filteredOptions = useMemo(() => {
+    if (!isSearchEnabled || !searchTerm.trim()) {
+      return options
+    }
+    const q = searchTerm.toLowerCase().trim()
+    return options.filter((opt) => {
+      const labelMatch = opt.label.toLowerCase().includes(q)
+      const valueMatch = opt.value.toLowerCase().includes(q)
+      const rawMatch = opt.rawName?.toLowerCase().includes(q)
+      return labelMatch || valueMatch || rawMatch
+    })
+  }, [options, searchTerm, isSearchEnabled])
+
+  // Paginación reactiva con InfiniteScroll para optimización de opciones extensas
+  const [visibleCount, setVisibleCount] = useState<number>(pageSize)
+  const [isLoadingMore, setIsLoadingMore] = useState(false)
+
+  // Reiniciar la paginación al cambiar el término de búsqueda, las opciones o el pageSize
+  useEffect(() => {
+    setVisibleCount(pageSize)
+  }, [searchTerm, options, pageSize])
+
+  const hasMore = visibleCount < filteredOptions.length || Boolean(externalHasMore)
+
+  const visibleOptions = useMemo(() => {
+    return filteredOptions.slice(0, visibleCount)
+  }, [filteredOptions, visibleCount])
+
+  const handleLoadMore = useCallback(async () => {
+    if (!hasMore || isLoadingMore) return
+    setIsLoadingMore(true)
+    try {
+      if (onLoadMoreOptions) {
+        await onLoadMoreOptions()
+      }
+      // Incrementar el lote de opciones visibles
+      setVisibleCount((prev) => Math.min(prev + pageSize, filteredOptions.length))
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }, [hasMore, isLoadingMore, onLoadMoreOptions, pageSize, filteredOptions.length])
 
   const fieldLabel = label ?? 'Recurso'
 
@@ -305,58 +420,89 @@ export function RecursosDropdown({
     )
   }
 
-  // MODO SELECCIÓN MÚLTIPLE (Multi-select)
-  if (multiple) {
-    const defaultPlaceholder = placeholder ?? 'Elige una o varias opciones…'
+  // Métodos para modo múltiple
+  const toggleMultiOption = (optValue: string) => {
+    if (isComponentDisabled) return
+    const isSelected = selectedValues.includes(optValue)
+    const nextValues = isSelected
+      ? selectedValues.filter((v) => v !== optValue)
+      : [...selectedValues, optValue]
+    onMultiChange?.(nextValues)
+  }
 
-    const toggleOption = (optValue: string) => {
-      if (isComponentDisabled) return
-      const isSelected = selectedValues.includes(optValue)
-      const nextValues = isSelected
-        ? selectedValues.filter((v) => v !== optValue)
-        : [...selectedValues, optValue]
-      onMultiChange?.(nextValues)
+  const removeMultiValue = (optValue: string, event: React.MouseEvent) => {
+    event.stopPropagation()
+    if (isComponentDisabled) return
+    onMultiChange?.(selectedValues.filter((v) => v !== optValue))
+  }
+
+  // Texto a mostrar en el trigger en modo simple
+  const singleSelectDisplayText = (() => {
+    if (loading) return 'Cargando opciones…'
+    if (selectedOption) return selectedOption.label
+    if (resolvedValue) {
+      const matchByLabel = options.find(
+        (o) => o.label.toLowerCase() === resolvedValue.toLowerCase()
+      )
+      if (matchByLabel) return matchByLabel.label
+      return resolvedValue
     }
-
-    const removeValue = (optValue: string, event: React.MouseEvent) => {
-      event.stopPropagation()
-      if (isComponentDisabled) return
-      onMultiChange?.(selectedValues.filter((v) => v !== optValue))
-    }
-
     return (
-      <div ref={dropdownRef} className={cn('relative space-y-1.5', className)}>
-        <label id={`${autoId}-label`} className="block text-sm font-medium text-ink">
-          {fieldLabel}
-          {required && (
-            <span aria-hidden="true" className="ml-0.5 text-danger">
-              *
-            </span>
-          )}
-        </label>
+      placeholder ??
+      (customEmptyLabel && options.length === 0
+        ? customEmptyLabel
+        : `Elegir ${fieldLabel.toLowerCase()}…`)
+    )
+  })()
 
-        {/* Trigger / Botón que abre el dropdown */}
-        <button
-          type="button"
-          aria-haspopup="listbox"
-          aria-expanded={isOpen}
-          aria-labelledby={`${autoId}-label`}
-          disabled={isComponentDisabled || loading}
-          onClick={() => setIsOpen((prev) => !prev)}
-          className={cn(
-            'flex min-h-[42px] w-full items-center justify-between gap-2 rounded-xl border bg-panel px-3.5 py-2 text-left text-sm text-ink shadow-xs outline-none transition',
-            error
-              ? 'border-danger/60 ring-2 ring-danger/20'
-              : isOpen
-                ? 'border-primary ring-2 ring-primary/20'
-                : 'border-line hover:border-ink-soft',
-            isComponentDisabled && 'cursor-not-allowed opacity-50',
-          )}
-        >
-          <div className="flex flex-wrap items-center gap-1.5">
+  const hasSingleValue = Boolean(selectedOption || resolvedValue)
+
+  return (
+    <div ref={dropdownRef} className={cn('relative space-y-1.5', className)}>
+      <label id={`${fieldId}-label`} htmlFor={fieldId} className="block text-sm font-medium text-ink">
+        {fieldLabel}
+        {required && (
+          <span aria-hidden="true" className="ml-0.5 text-danger">
+            *
+          </span>
+        )}
+      </label>
+
+      {/* Trigger / Botón que despliega el dropdown */}
+      <button
+        type="button"
+        id={fieldId}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-labelledby={`${fieldId}-label`}
+        disabled={isComponentDisabled || loading}
+        onClick={() => {
+          if (isComponentDisabled || loading) return
+          setIsOpen((prev) => {
+            if (prev) {
+              setSearchTerm('')
+            } else {
+              setVisibleCount(pageSize)
+            }
+            return !prev
+          })
+        }}
+        className={cn(
+          'flex min-h-[42px] w-full items-center justify-between gap-2 rounded-xl border bg-panel px-3.5 py-2 text-left text-sm text-ink shadow-xs outline-none transition cursor-pointer',
+          error
+            ? 'border-danger/60 ring-2 ring-danger/20'
+            : isOpen
+              ? 'border-primary ring-2 ring-primary/20'
+              : 'border-line hover:border-ink-soft',
+          isComponentDisabled && 'cursor-not-allowed opacity-50',
+        )}
+      >
+        {multiple ? (
+          // Modo Múltiple: Chips de valores seleccionados
+          <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
             {selectedValues.length === 0 ? (
-              <span className="text-ink-soft">
-                {loading ? 'Cargando opciones…' : defaultPlaceholder}
+              <span className="text-ink-soft text-xs sm:text-sm">
+                {loading ? 'Cargando opciones…' : (placeholder ?? 'Elige una o varias opciones…')}
               </span>
             ) : (
               selectedValues.map((val) => {
@@ -365,26 +511,17 @@ export function RecursosDropdown({
                 return (
                   <span
                     key={val}
-                    className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                    className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary border border-primary/20"
                   >
-                    {textLabel}
+                    <span className="max-w-[200px] truncate">{textLabel}</span>
                     {!isComponentDisabled && (
                       <button
                         type="button"
-                        onClick={(e) => removeValue(val, e)}
-                        className="rounded hover:bg-primary/20 p-0.5 transition-colors"
+                        onClick={(e) => removeMultiValue(val, e)}
+                        className="rounded hover:bg-primary/20 p-0.5 transition-colors cursor-pointer text-primary/80 hover:text-primary"
                         aria-label={`Remover ${textLabel}`}
                       >
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          className="size-3"
-                          aria-hidden="true"
-                        >
-                          <path d="M18 6 6 18M6 6l12 12" />
-                        </svg>
+                        <FontAwesomeIcon icon={faXmark} className="size-2.5" />
                       </button>
                     )}
                   </span>
@@ -392,108 +529,232 @@ export function RecursosDropdown({
               })
             )}
           </div>
-
-          <span className="shrink-0 text-ink-muted">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              className={cn('size-4 transition-transform duration-200', isOpen && 'rotate-180')}
-              aria-hidden="true"
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
+        ) : (
+          // Modo Simple: Texto de la opción seleccionada
+          <span
+            className={cn(
+              'truncate text-xs sm:text-sm flex-1',
+              hasSingleValue ? 'text-ink font-medium' : 'text-ink-soft',
+            )}
+          >
+            {singleSelectDisplayText}
           </span>
-        </button>
-
-        {/* Popover flotante con las opciones */}
-        <AnimatePresence>
-          {isOpen && (
-            <motion.div
-              initial={{ opacity: 0, y: 6, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 4, scale: 0.98 }}
-              transition={{ duration: 0.15 }}
-              className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-line bg-panel p-1.5 shadow-lg"
-              role="listbox"
-              aria-multiselectable="true"
-            >
-              {options.length === 0 ? (
-                <div className="p-3 text-center text-xs text-ink-soft">
-                  {loading ? 'Cargando opciones…' : 'No hay opciones disponibles.'}
-                </div>
-              ) : (
-                options.map((opt) => {
-                  const isSelected = selectedValues.includes(opt.value)
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      role="option"
-                      aria-selected={isSelected}
-                      onClick={() => toggleOption(opt.value)}
-                      className={cn(
-                        'flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors text-left',
-                        isSelected
-                          ? 'bg-primary/10 font-semibold text-primary'
-                          : 'text-ink hover:bg-black/5 dark:hover:bg-white/5',
-                      )}
-                    >
-                      <span>{opt.label}</span>
-                      {isSelected && (
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.5"
-                          className="size-4 text-primary"
-                          aria-hidden="true"
-                        >
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      )}
-                    </button>
-                  )
-                })
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {error && (
-          <p role="alert" className="mt-1 text-xs font-medium text-danger">
-            {error}
-          </p>
         )}
-      </div>
-    )
-  }
 
-  // MODO SELECCIÓN SIMPLE (Dropdown estándar)
-  return (
-    <SelectField
-      id={fieldId}
-      label={fieldLabel}
-      placeholder={
-        placeholder ?? (loading ? 'Cargando opciones…' : `Elegir ${fieldLabel.toLowerCase()}…`)
-      }
-      options={options}
-      value={resolvedValue}
-      onChange={(event) => {
-        const val = event.target.value
-        onChange?.(val)
-        const matched = options.find((o) => o.value === val)
-        if (matched) {
-          onSelectOption?.(matched)
-        }
-      }}
-      error={error}
-      disabled={isComponentDisabled || loading}
-      required={required}
-      className={className}
-      emptyLabel={loading ? undefined : (customEmptyLabel ?? 'Todavía no hay opciones disponibles.')}
-    />
+        <span className="shrink-0 text-ink-muted pl-2">
+          <FontAwesomeIcon
+            icon={faChevronDown}
+            className={cn('size-3.5 transition-transform duration-200', isOpen && 'rotate-180')}
+            aria-hidden="true"
+          />
+        </span>
+      </button>
+
+      {/* Popover flotante con el buscador en tiempo real y las opciones */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.98 }}
+            transition={{ duration: 0.15 }}
+            className="absolute z-50 mt-1 flex max-h-72 w-full flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-xl"
+            role="listbox"
+            aria-multiselectable={multiple ? 'true' : undefined}
+          >
+            {/* Input type search integrado por defecto para consultar opciones en tiempo real */}
+            {isSearchEnabled && (
+              <div className="border-b border-line bg-panel-soft/60 p-2">
+                <div className="relative flex items-center">
+                  <FontAwesomeIcon
+                    icon={faMagnifyingGlass}
+                    className="pointer-events-none absolute left-3 size-3 text-ink-muted"
+                    aria-hidden="true"
+                  />
+                  <input
+                    type="search"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder={searchPlaceholder ?? 'Buscar en las opciones…'}
+                    className="w-full rounded-lg border border-line bg-panel py-1.5 pl-8 pr-7 text-xs text-ink placeholder:text-ink-soft outline-none transition focus:border-primary focus:ring-1 focus:ring-primary/20 [&::-webkit-search-cancel-button]:hidden"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        setIsOpen(false)
+                        setSearchTerm('')
+                      }
+                    }}
+                    autoFocus
+                  />
+                  {searchTerm && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSearchTerm('')
+                      }}
+                      className="absolute right-2 flex size-4 items-center justify-center rounded text-ink-muted hover:text-ink transition-colors cursor-pointer"
+                      title="Limpiar búsqueda"
+                      aria-label="Limpiar búsqueda"
+                    >
+                      <FontAwesomeIcon icon={faXmark} className="size-2.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Contenedor scrollable optimizado con InfiniteScroll para listas de opciones extensas */}
+            <div
+              className="max-h-56 overflow-y-auto p-1.5 space-y-0.5"
+              onScroll={(e) => {
+                const el = e.currentTarget
+                if (hasMore && !isLoadingMore && el.scrollHeight - el.scrollTop - el.clientHeight < 60) {
+                  void handleLoadMore()
+                }
+              }}
+            >
+              {filteredOptions.length === 0 ? (
+                <motion.div
+                  variants={dropdownStaggerItem}
+                  className="p-4 text-center text-xs text-ink-soft"
+                >
+                  {loading
+                    ? 'Cargando opciones…'
+                    : searchTerm.trim()
+                      ? `No se encontraron resultados para "${searchTerm}".`
+                      : (customEmptyLabel ?? 'No hay opciones disponibles.')}
+                </motion.div>
+              ) : (
+                <InfiniteScroll
+                  onLoadMore={handleLoadMore}
+                  hasMore={hasMore}
+                  isLoading={isLoadingMore}
+                  rootMargin="0px 0px 80px 0px"
+                  loader={
+                    <div className="flex items-center justify-center py-2 text-xs text-ink-muted">
+                      <span className="inline-block size-3 animate-spin rounded-full border-2 border-primary/20 border-t-primary mr-1.5" />
+                      <span className="text-[11px]">Cargando más opciones…</span>
+                    </div>
+                  }
+                  endMessage={
+                    filteredOptions.length > pageSize ? (
+                      <div className="py-2 text-center text-[10px] text-ink-muted">
+                        Has visualizado todas las opciones ({filteredOptions.length})
+                      </div>
+                    ) : undefined
+                  }
+                >
+                  <motion.div
+                    key={searchTerm || 'options-list'}
+                    variants={dropdownStaggerContainer}
+                    initial="hidden"
+                    animate="visible"
+                    className="space-y-0.5"
+                  >
+                    {visibleOptions.map((opt) => {
+                      if (multiple) {
+                        // Modo Selección Múltiple
+                        const isSelected = selectedValues.includes(opt.value)
+                        return (
+                          <motion.button
+                            key={opt.value}
+                            variants={dropdownStaggerItem}
+                            whileHover={{ x: 2 }}
+                            whileTap={{ scale: 0.99 }}
+                            type="button"
+                            role="option"
+                            aria-selected={isSelected}
+                            onClick={() => toggleMultiOption(opt.value)}
+                            className={cn(
+                              'flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs transition-colors text-left cursor-pointer group',
+                              isSelected
+                                ? 'bg-primary/10 font-semibold text-primary'
+                                : 'text-ink hover:bg-black/5 dark:hover:bg-white/5',
+                            )}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                              <div
+                                className={cn(
+                                  'flex size-4 shrink-0 items-center justify-center rounded border transition-colors',
+                                  isSelected
+                                    ? 'border-primary bg-primary text-white'
+                                    : 'border-line group-hover:border-ink-soft bg-panel',
+                                )}
+                              >
+                                {isSelected && (
+                                  <FontAwesomeIcon
+                                    icon={faCheck}
+                                    className="size-2.5 text-white"
+                                    aria-hidden="true"
+                                  />
+                                )}
+                              </div>
+                              <span className="truncate">{opt.label}</span>
+                            </div>
+
+                            {isSelected && (
+                              <span className="shrink-0 text-[10px] font-medium text-primary">
+                                Seleccionado
+                              </span>
+                            )}
+                          </motion.button>
+                        )
+                      }
+
+                      // Modo Selección Simple
+                      const isSelected = Boolean(
+                        opt.value === resolvedValue ||
+                        (opt as DropdownOption).id === resolvedValue ||
+                        (selectedOption && selectedOption.value === opt.value)
+                      )
+
+                      return (
+                        <motion.button
+                          key={opt.value}
+                          variants={dropdownStaggerItem}
+                          whileHover={{ x: 2 }}
+                          whileTap={{ scale: 0.99 }}
+                          type="button"
+                          role="option"
+                          aria-selected={isSelected}
+                          onClick={() => {
+                            onChange?.(opt.value)
+                            onSelectOption?.(opt)
+                            setIsOpen(false)
+                            setSearchTerm('')
+                          }}
+                          className={cn(
+                            'flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs transition-colors text-left cursor-pointer group',
+                            isSelected
+                              ? 'bg-primary/10 font-semibold text-primary'
+                              : 'text-ink hover:bg-black/5 dark:hover:bg-white/5',
+                          )}
+                        >
+                          <span className="truncate flex-1 pr-2">{opt.label}</span>
+                          {isSelected && (
+                            <FontAwesomeIcon
+                              icon={faCheck}
+                              className="size-3 text-primary shrink-0"
+                              aria-hidden="true"
+                            />
+                          )}
+                        </motion.button>
+                      )
+                    })}
+                  </motion.div>
+                </InfiniteScroll>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {error && (
+        <p role="alert" className="mt-1 text-xs font-medium text-danger">
+          {error}
+        </p>
+      )}
+    </div>
   )
 }
-

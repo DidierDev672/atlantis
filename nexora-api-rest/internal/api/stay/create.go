@@ -26,7 +26,7 @@ type createStayRequest struct {
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	var req createStayRequest
 	if err := httpjson.DecodeJSON(r, &req); err != nil {
-		httpjson.WriteError(w, http.StatusBadRequest, "invalid request body")
+		httpjson.WriteError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 
