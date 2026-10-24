@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, type FormEvent } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, type Variants } from 'motion/react';
 import { fadeIn, fadeUp } from '../../../../design-tokens/motion';
 import { api } from '../../../../lib/api';
 import {
@@ -12,12 +12,86 @@ import {
   calculateNights,
   type PersonApiResponse,
 } from '../../domain/reserva';
+import type { StayPayload } from '../../domain/guest-attendant';
 import { NuevoHuespedModal } from '../molecules/nuevo-huesped-modal';
+import { ReservaAcompanantesModal } from '../molecules/reserva-acompanantes-modal';
+import { useHuespedesRegistradosStore } from '../../application/use-huespedes-registrados-store';
+import { coordinateBalancedStaySubmission } from '../../infrastructure/api-guest-attendant-service';
 import {
   RecursosDropdown,
   type DropdownOption,
 } from '../../../recursos/ui/molecules/recursos-dropdown';
+import { Input } from '../../../../shared/ui/Input';
 import { Loader } from '../../../tema/ui/atoms/loader';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+  faCircleCheck,
+  faPlus,
+  faCheck,
+  faUsers,
+  faXmark,
+} from '@fortawesome/free-solid-svg-icons';
+
+/** Variantes de Framer Motion para el cruce vertical (hoja arrancada del calendario) */
+const tearSheetVariants: Variants = {
+  initial: (direction: number) => ({
+    y: direction > 0 ? 18 : -18,
+    opacity: 0,
+    rotate: direction > 0 ? 8 : -8,
+    scale: 0.9,
+  }),
+  animate: {
+    y: 0,
+    opacity: 1,
+    rotate: 0,
+    scale: 1,
+    transition: {
+      type: 'spring',
+      stiffness: 420,
+      damping: 24,
+      mass: 0.55,
+    },
+  },
+  exit: (direction: number) => ({
+    y: direction > 0 ? -18 : 18,
+    opacity: 0,
+    rotate: direction > 0 ? -12 : 12,
+    scale: 0.85,
+    transition: {
+      duration: 0.2,
+      ease: [0.32, 0, 0.67, 0],
+    },
+  }),
+};
+
+/** Variantes de Framer Motion para el número que se desliza según la dirección (efecto estrella) */
+const slidingGuestNumberVariants: Variants = {
+  initial: (direction: number) => ({
+    y: direction > 0 ? 20 : -20,
+    opacity: 0,
+    scale: 0.85,
+  }),
+  animate: {
+    y: 0,
+    opacity: 1,
+    scale: 1,
+    transition: {
+      type: 'spring',
+      stiffness: 450,
+      damping: 25,
+      mass: 0.5,
+    },
+  },
+  exit: (direction: number) => ({
+    y: direction > 0 ? -20 : 20,
+    opacity: 0,
+    scale: 0.85,
+    transition: {
+      duration: 0.18,
+      ease: [0.32, 0, 0.67, 0],
+    },
+  }),
+};
 
 export interface RoomApiResponseItem {
   id: string;
@@ -147,7 +221,7 @@ function getCreatedByEmail(): string {
   } catch {
     // Si localStorage no está disponible o el JSON es inválido
   }
-  return readTokenEmail() || readAuthTokenEmail() || 'admin@nexora.com';
+  return readTokenEmail() || readAuthTokenEmail() || 'ariasdev672@gmail.com';
 }
 
 export function ReservaInteractiveForm() {
@@ -163,14 +237,37 @@ export function ReservaInteractiveForm() {
   // 2. Estado de los campos del formulario
   const [selectedRoomId, setSelectedRoomId] = useState('');
   const [selectedPersonId, setSelectedPersonId] = useState('');
+  const [selectedPersonIds, setSelectedPersonIds] = useState<string[]>([]);
   const [checkInDate, setCheckInDate] = useState(getTodayString());
   const [checkOutDate, setCheckOutDate] = useState(getTomorrowString());
+
+  // Estado para la animación interactiva de cruce vertical (hoja arrancada) en el icono calendario
+  const [isCalendarHovered, setIsCalendarHovered] = useState(false);
+  const calendarTodayDate = useMemo(() => new Date(), []);
+  const calendarTodayDay = calendarTodayDate.getDate();
+  const calendarNextDay = calendarTodayDay < 31 ? calendarTodayDay + 1 : 1;
+  const calendarMonthAbbr = useMemo(
+    () =>
+      calendarTodayDate
+        .toLocaleDateString('es-ES', { month: 'short' })
+        .replace('.', '')
+        .toUpperCase(),
+    [calendarTodayDate]
+  );
   const [numberOfGuests, setNumberOfGuests] = useState<number>(1);
+  const [guestDirection, setGuestDirection] = useState<number>(1);
   const [stateValue, setStateValue] = useState<string>('pendiente');
   const [customTotalPrice, setCustomTotalPrice] = useState<number | null>(null);
 
+  // Store Zustand para centralizar y sincronizar huéspedes registrados
+  const syncSelectedHuespedes = useHuespedesRegistradosStore((s) => s.syncSelectedHuespedes);
+  const addHuespedId = useHuespedesRegistradosStore((s) => s.addHuespedId);
+  const clearHuespedes = useHuespedesRegistradosStore((s) => s.clearHuespedes);
+
   // 3. UI states y modal
   const [isGuestModalOpen, setIsGuestModalOpen] = useState(false);
+  const [isAcompanantesModalOpen, setIsAcompanantesModalOpen] = useState(false);
+  const [companions, setCompanions] = useState<PersonApiResponse[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitStatusCode, setSubmitStatusCode] = useState<number | null>(null);
@@ -467,6 +564,39 @@ export function ReservaInteractiveForm() {
     [persons, selectedPersonId]
   );
 
+  // Acompañantes seleccionados derivados de selectedPersonIds (a partir del segundo huésped)
+  const selectedCompanions = useMemo<PersonApiResponse[]>(() => {
+    if (selectedPersonIds.length <= 1) return [];
+    const companionIds = selectedPersonIds.slice(1);
+    return companionIds
+      .map((id) => {
+        const fromPersons = persons.find((p) => p.id === id);
+        if (fromPersons) return fromPersons;
+        const fromCompanions = companions.find((c) => c.id === id);
+        if (fromCompanions) return fromCompanions;
+        const fromStore = useHuespedesRegistradosStore
+          .getState()
+          .huespedes.find((h) => h.id === id);
+        if (fromStore) {
+          return {
+            id: fromStore.id,
+            name: fromStore.name,
+            document_number: fromStore.document_number || '',
+            document_type: fromStore.document_type || 'national_id',
+            email: fromStore.email,
+            phone_number: fromStore.phone_number,
+          };
+        }
+        return {
+          id,
+          name: 'Acompañante registrado',
+          document_number: '',
+          document_type: 'national_id',
+        };
+      })
+      .filter((c): c is PersonApiResponse => Boolean(c));
+  }, [selectedPersonIds, persons, companions]);
+
   const personDropdownOptions = useMemo<DropdownOption[]>(() => {
     return persons.map((person) => {
       const docType = person.document_type?.trim();
@@ -498,6 +628,22 @@ export function ReservaInteractiveForm() {
     });
   }, [persons]);
 
+  const roomDropdownOptions = useMemo<DropdownOption[]>(() => {
+    return rooms.map((room) => ({
+      value: room.id,
+      label: `${room.number} - ${room.floor}`,
+      id: room.id,
+      rawName: room.number,
+    }));
+  }, [rooms]);
+
+  const estadoDropdownOptions = useMemo<DropdownOption[]>(() => {
+    return ESTADOS_RESERVA.map((est) => ({
+      value: est.value,
+      label: est.label,
+    }));
+  }, []);
+
   // Cálculo dinámico de noches
   const nights = useMemo(
     () => calculateNights(checkInDate, checkOutDate),
@@ -521,7 +667,133 @@ export function ReservaInteractiveForm() {
     const found = rooms.find((r) => r.id === roomId);
     if (found && numberOfGuests > found.capacity) {
       setNumberOfGuests(found.capacity);
+      if (selectedPersonIds.length > found.capacity) {
+        const trimmed = selectedPersonIds.slice(0, found.capacity);
+        setSelectedPersonIds(trimmed);
+        setSelectedPersonId(trimmed[0] || '');
+        syncSelectedHuespedes(trimmed, persons);
+      }
+      if (companions.length > found.capacity - 1) {
+        setCompanions((prev) => prev.slice(0, Math.max(0, found.capacity - 1)));
+      }
     }
+  };
+
+  // Manejador del número de huéspedes con sincronización hacia los huéspedes seleccionados
+  const handleNumberOfGuestsChange = (newVal: number) => {
+    const max = selectedRoom ? selectedRoom.capacity : 10;
+    const sanitized = Math.max(1, Math.min(max, newVal));
+    if (sanitized !== numberOfGuests) {
+      setGuestDirection(sanitized > numberOfGuests ? 1 : -1);
+    }
+    setNumberOfGuests(sanitized);
+    if (errors.numberOfGuests) setErrors((p) => ({ ...p, numberOfGuests: '' }));
+
+    // Si se reduce el número de huéspedes por debajo de los seleccionados, recortamos la selección
+    if (selectedPersonIds.length > sanitized) {
+      const trimmedIds = selectedPersonIds.slice(0, sanitized);
+      setSelectedPersonIds(trimmedIds);
+      setSelectedPersonId(trimmedIds[0] || '');
+      syncSelectedHuespedes(trimmedIds, persons);
+    }
+
+    // Sincronizar companions si la lista excede el nuevo cupo de acompañantes
+    if (companions.length > sanitized - 1) {
+      setCompanions((prev) => prev.slice(0, Math.max(0, sanitized - 1)));
+    }
+
+    // Si superamos 1 y faltan acompañantes por registrar, abrimos automáticamente el modal
+    if (sanitized > 1 && companions.length < sanitized - 1) {
+      setIsAcompanantesModalOpen(true);
+    }
+  };
+
+  // Manejador de selección múltiple de huéspedes en el dropdown y sincronización con "Número de huéspedes" y Zustand
+  const handleHuespedesMultiChange = (newIds: string[]) => {
+    const maxCapacity = selectedRoom ? selectedRoom.capacity : 10;
+
+    // Validación y ajuste si supera la capacidad de la habitación
+    if (selectedRoom && newIds.length > selectedRoom.capacity) {
+      setErrors((p) => ({
+        ...p,
+        numberOfGuests: `La habitación ${selectedRoom.number} admite un máximo de ${selectedRoom.capacity} personas.`,
+      }));
+      newIds = newIds.slice(0, selectedRoom.capacity);
+    } else if (errors.numberOfGuests) {
+      setErrors((p) => ({ ...p, numberOfGuests: '' }));
+    }
+
+    setSelectedPersonIds(newIds);
+
+    // El primer huésped de la selección actúa como titular principal para el payload /reserve (person_id)
+    const primaryId = newIds[0] || '';
+    setSelectedPersonId(primaryId);
+    if (errors.personId) setErrors((p) => ({ ...p, personId: '' }));
+
+    // Sincronización automática con "Número de huéspedes":
+    // Si se seleccionan varios huéspedes, el contador de huéspedes se ajusta inmediatamente a la cantidad de personas
+    const nextGuestCount = Math.max(1, Math.min(maxCapacity, newIds.length || 1));
+    if (nextGuestCount !== numberOfGuests) {
+      setGuestDirection(nextGuestCount > numberOfGuests ? 1 : -1);
+    }
+    setNumberOfGuests(nextGuestCount);
+
+    // Sincronizar acompañantes: mapeamos los huéspedes seleccionados a partir del segundo (índice >= 1)
+    const companionIds = newIds.slice(1);
+    const mappedCompanions: PersonApiResponse[] = companionIds
+      .map((id) => {
+        const found = persons.find((p) => p.id === id);
+        if (found) return found;
+        const inStore = useHuespedesRegistradosStore.getState().huespedes.find((h) => h.id === id);
+        if (inStore) {
+          return {
+            id: inStore.id,
+            name: inStore.name,
+            document_number: inStore.document_number || '',
+            document_type: inStore.document_type || 'national_id',
+            email: inStore.email || '',
+            phone_number: inStore.phone_number || '',
+          };
+        }
+        return null;
+      })
+      .filter((c): c is PersonApiResponse => c !== null);
+
+    setCompanions(mappedCompanions);
+
+    // Sincronizar en la store de Zustand
+    syncSelectedHuespedes(newIds, persons);
+  };
+
+  // Guardado de acompañante desde el modal
+  const handleSaveCompanion = (
+    newCompanion: PersonApiResponse,
+    slotIndex: number
+  ) => {
+    setCompanions((prev) => {
+      const copy = [...prev];
+      copy[slotIndex] = newCompanion;
+      return copy;
+    });
+    // Integrar al catálogo general de huéspedes de la vista
+    setPersons((prev) => [
+      newCompanion,
+      ...prev.filter((p) => p.id !== newCompanion.id),
+    ]);
+    // Registrar acompañante en el store de Zustand
+    addHuespedId(newCompanion.id, {
+      name: newCompanion.name,
+      document_number: newCompanion.document_number,
+      document_type: newCompanion.document_type,
+      email: newCompanion.email,
+      phone_number: newCompanion.phone_number,
+      isTitular: false,
+    });
+    // Sincronizar acompañante con el dropdown de huéspedes seleccionados
+    setSelectedPersonIds((prev) => {
+      if (prev.includes(newCompanion.id)) return prev;
+      return [...prev, newCompanion.id];
+    });
   };
 
   // Manejador de fechas
@@ -552,6 +824,15 @@ export function ReservaInteractiveForm() {
       ...prev.filter((p) => p.id !== newPerson.id),
     ]);
     setSelectedPersonId(newPerson.id);
+    setSelectedPersonIds((prev) => Array.from(new Set([newPerson.id, ...prev])));
+    addHuespedId(newPerson.id, {
+      name: newPerson.name,
+      document_number: newPerson.document_number,
+      document_type: newPerson.document_type,
+      email: newPerson.email,
+      phone_number: newPerson.phone_number,
+      isTitular: true,
+    });
     if (errors.personId) setErrors((p) => ({ ...p, personId: '' }));
   };
 
@@ -598,6 +879,7 @@ export function ReservaInteractiveForm() {
     e.preventDefault();
     if (!validateForm()) return;
 
+    // Visualizar inmediatamente el componente reutilizable Loader al hacer clic en el botón
     setSubmitting(true);
     setSubmitStatusCode(null);
     setSubmitFeedback(null);
@@ -611,45 +893,53 @@ export function ReservaInteractiveForm() {
       ? checkOutDate
       : `${checkOutDate}T12:00:00Z`;
 
-    // Estado: en inglés para el backend ('pending', 'confirmed', etc.), en español para el usuario
+    // Estado de la reserva para el resumen de confirmación
     const estadoObj = ESTADOS_RESERVA.find((item) => item.value === stateValue);
-    const backendState = estadoObj ? estadoObj.backendValue : 'pending';
 
     // created_by obtenido del localStorage 'auth_user' y del item email
     const createdByEmail = getCreatedByEmail();
 
-    // Payload de reserva construido en segundo plano
-    const payload = {
+    // Determinar person_ids para el payload de /stay (titular y acompañantes registrados)
+    const activePersonIds = [
+      selectedPersonId,
+      ...selectedPersonIds.filter((id) => id !== selectedPersonId),
+      ...companions.map((c) => c.id).filter((id) => id !== selectedPersonId),
+    ].filter((id): id is string => Boolean(id && id.trim()));
+
+    const finalPersonIds =
+      activePersonIds.length > 0 ? activePersonIds : [selectedPersonId];
+
+    // Payload de estadía corregido exactamente para /stay con el método POST
+    const stayPayload: StayPayload = {
       room_id: selectedRoomId,
-      person_id: selectedPersonId,
+      person_ids: finalPersonIds,
       check_in_date: checkInIso,
       check_out_date: checkOutIso,
-      number_of_guests: Number(numberOfGuests),
-      state: backendState,
-      total_price: Number(Number(effectiveTotalPrice).toFixed(2)),
-      created_by: createdByEmail,
+      payment_method: 'card',
+      security_deposit: 0,
+      remarks: 'Check-in regular',
+      status: 'progress',
+      created_by: createdByEmail || 'ariasdev672@gmail.com',
     };
 
     try {
-      // Envío mediante petición POST con Axios al endpoint /reserve
-      const response = await api.post('/reserve', payload, {
-        validateStatus: () => true, // Permite que validateStatusCode procese cualquier status sin excepciones no controladas
-      });
+      // Envío casi simultáneo de los endpoints /stay y /guest-attendant balanceando cargas (Reglas de Oro 1, 2, 3 y 4)
+      const result = await coordinateBalancedStaySubmission(
+        stayPayload,
+        finalPersonIds
+      );
 
-      const validation = validateStatusCode(response.status);
-      setSubmitStatusCode(response.status);
+      setSubmitStatusCode(result.stayStatusCode);
 
-      if (validation.isValid) {
+      if (result.success) {
         // Respuesta POSITIVA: mensaje empático y tranquilizador usando psicología para el recepcionista
-        const successMessage =
-          validation.message ||
-          '¡Excelente trabajo! La reserva se registró y aseguró con éxito en el sistema.';
-
         setSubmitFeedback({
           type: 'success',
-          title: validation.title || '¡Reserva confirmada con éxito!',
-          message: successMessage,
-          statusCode: response.status,
+          title: result.title || '¡Reserva confirmada con éxito!',
+          message:
+            result.message ||
+            '¡Excelente trabajo! La reserva se registró y aseguró con éxito en el sistema.',
+          statusCode: result.stayStatusCode,
         });
 
         setSuccessReservation({
@@ -665,29 +955,31 @@ export function ReservaInteractiveForm() {
         });
       } else {
         // Respuesta NEGATIVA: psicología empática orientada al recepcionista para preservar la calma
-        let friendlyTitle = validation.title || 'No pudimos registrar la reserva';
-        let friendlyMessage = validation.message;
+        let friendlyTitle = result.title || 'No pudimos registrar la reserva';
+        let friendlyMessage = result.message;
 
-        if (response.status === 409) {
+        if (result.stayStatusCode === 409) {
           friendlyTitle = 'Habitación no disponible en esas fechas';
           friendlyMessage =
             '¡Tranquilo(a)! Tus datos siguen intactos en el formulario. La habitación seleccionada ya tiene una reserva activa para esas fechas. Puedes ajustar el periodo o elegir otra habitación con un solo clic.';
-        } else if (response.status === 400) {
+        } else if (result.stayStatusCode === 400) {
           friendlyTitle = 'Revisemos algunos datos de la reserva';
           friendlyMessage =
             friendlyMessage ||
             'Tus datos están completamente a salvo. Por favor verifica que las fechas y el huésped titular estén correctamente seleccionados e inténtalo nuevamente.';
-        } else if (response.status >= 500) {
+        } else if (result.stayStatusCode >= 500) {
           friendlyTitle = 'El servidor tuvo una pausa momentánea';
           friendlyMessage =
             '¡Respira con calma! No es tu culpa: tus datos siguen aquí intactos en pantalla. Espera un momento y vuelve a presionar "Confirmar y asegurar reserva".';
         }
 
         setSubmitFeedback({
-          type: response.status === 409 ? 'warning' : 'error',
+          type: result.stayStatusCode === 409 ? 'warning' : 'error',
           title: friendlyTitle,
-          message: friendlyMessage || 'Tus datos están intactos en pantalla. Intenta nuevamente en un momento.',
-          statusCode: response.status,
+          message:
+            friendlyMessage ||
+            'Tus datos están intactos en pantalla. Intenta nuevamente en un momento.',
+          statusCode: result.stayStatusCode,
         });
       }
     } catch {
@@ -695,14 +987,12 @@ export function ReservaInteractiveForm() {
       const netVal = validateStatusCode(0);
       setSubmitStatusCode(0);
 
-      const friendlyNetworkMessage =
-        netVal.message ||
-        'Tuvimos una pequeña dificultad de conexión con el servidor. No te preocupes: tus datos no se perdieron y siguen aquí en el formulario. Prueba de nuevo en un instante.';
-
       setSubmitFeedback({
         type: 'error',
         title: netVal.title || 'Pequeña pausa de conexión',
-        message: friendlyNetworkMessage,
+        message:
+          netVal.message ||
+          'Tuvimos una pequeña dificultad de conexión con el servidor. No te preocupes: tus datos no se perdieron y siguen aquí en el formulario. Prueba de nuevo en un instante.',
         statusCode: 0,
       });
     } finally {
@@ -714,9 +1004,14 @@ export function ReservaInteractiveForm() {
   const handleResetForm = () => {
     setSelectedRoomId('');
     setSelectedPersonId('');
+    setSelectedPersonIds([]);
+    clearHuespedes();
     setCheckInDate(getTodayString());
     setCheckOutDate(getTomorrowString());
     setNumberOfGuests(1);
+    setGuestDirection(1);
+    setCompanions([]);
+    setIsAcompanantesModalOpen(false);
     setStateValue('pendiente');
     setCustomTotalPrice(null);
     setErrors({});
@@ -744,17 +1039,7 @@ export function ReservaInteractiveForm() {
             className="bg-panel mx-auto max-w-2xl rounded-3xl border border-emerald-500/30 p-8 text-center shadow-xl sm:p-12"
           >
             <div className="mx-auto flex size-16 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-600 shadow-sm dark:text-emerald-400">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                className="size-8"
-                aria-hidden="true"
-              >
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                <path d="m9 11 3 3L22 4" />
-              </svg>
+              <FontAwesomeIcon icon={faCircleCheck} className="size-8" />
             </div>
 
             <div className="mt-5 space-y-2">
@@ -835,22 +1120,59 @@ export function ReservaInteractiveForm() {
             {/* Columna Izquierda (8 columnas): Campos del formulario */}
             <div className="border-line bg-panel space-y-6 rounded-3xl border p-6 shadow-sm sm:p-8 lg:col-span-8">
               <div className="border-line/60 border-b pb-4">
-                <h2 className="text-ink flex items-center gap-2.5 text-xl font-bold">
-                  <span className="bg-primary/10 text-primary grid size-9 place-items-center rounded-xl">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      className="size-4.5"
+                <h2 className="text-ink flex items-center gap-3 text-xl font-bold">
+                  {/* Icono interactivo estilo calendario con animación de hoja que se arranca al hacer hover */}
+                  <motion.div
+                    onHoverStart={() => setIsCalendarHovered(true)}
+                    onHoverEnd={() => setIsCalendarHovered(false)}
+                    whileHover={{ scale: 1.06, y: -1 }}
+                    whileTap={{ scale: 0.96 }}
+                    className="relative flex size-10 shrink-0 cursor-pointer flex-col overflow-hidden rounded-xl border border-primary/25 bg-panel shadow-xs transition-shadow hover:shadow-md select-none group"
+                    title={`Fecha actual: ${calendarTodayDay} de ${calendarMonthAbbr}. Pasa el cursor para arrancar la hoja del día.`}
+                    aria-label={`Calendario: día ${isCalendarHovered ? calendarNextDay : calendarTodayDay} de ${calendarMonthAbbr}`}
+                  >
+                    {/* Anillos superiores del calendario */}
+                    <span
                       aria-hidden="true"
-                    >
-                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                      <line x1="16" y1="2" x2="16" y2="6" />
-                      <line x1="8" y1="2" x2="8" y2="6" />
-                      <line x1="3" y1="10" x2="21" y2="10" />
-                    </svg>
-                  </span>
+                      className="absolute -top-0.5 left-2 h-1.5 w-1 rounded-full bg-primary/40 border border-panel z-10"
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="absolute -top-0.5 right-2 h-1.5 w-1 rounded-full bg-primary/40 border border-panel z-10"
+                    />
+
+                    {/* Cabecera del mes */}
+                    <div className="bg-primary flex h-3.5 w-full items-center justify-center px-1 text-[8px] font-black uppercase tracking-wider text-white">
+                      <span>{calendarMonthAbbr}</span>
+                    </div>
+
+                    {/* Línea de corte / picado de papel */}
+                    <div className="w-full border-t border-dashed border-primary/20" />
+
+                    {/* Hoja del día con efecto de cruce vertical (hoja arrancada) */}
+                    <div className="relative flex flex-1 items-center justify-center overflow-hidden bg-panel">
+                      <AnimatePresence mode="popLayout" initial={false} custom={isCalendarHovered ? 1 : -1}>
+                        <motion.span
+                          key={isCalendarHovered ? 'calendar-next' : 'calendar-today'}
+                          custom={isCalendarHovered ? 1 : -1}
+                          variants={tearSheetVariants}
+                          initial="initial"
+                          animate="animate"
+                          exit="exit"
+                          className="font-black text-xs text-primary leading-none"
+                        >
+                          {isCalendarHovered ? calendarNextDay : calendarTodayDay}
+                        </motion.span>
+                      </AnimatePresence>
+
+                      {/* Pliegue de esquina de papel inferior derecha */}
+                      <span
+                        aria-hidden="true"
+                        className="pointer-events-none absolute bottom-0 right-0 size-1.5 rounded-tl-[2px] bg-primary/10 border-l border-t border-primary/20 transition-transform group-hover:scale-125"
+                      />
+                    </div>
+                  </motion.div>
+
                   Datos de la Reserva
                 </h2>
                 <p className="text-ink-muted mt-1 text-xs">
@@ -908,55 +1230,29 @@ export function ReservaInteractiveForm() {
                     aria-label="Cerrar notificación"
                     className="text-current/60 hover:text-current ml-1 shrink-0 cursor-pointer p-1 transition-colors"
                   >
-                    <svg viewBox="0 0 20 20" fill="currentColor" className="size-4">
-                      <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
-                    </svg>
+                    <FontAwesomeIcon icon={faXmark} className="size-3.5" />
                   </button>
                 </div>
               )}
 
               <form onSubmit={handleSubmit} noValidate className="space-y-6">
-                {/* 1. DROPDOWN: HABITACIONES (Axios GET /room con formato 'number - floor') */}
+                {/* 1. DROPDOWN: HABITACIONES (RecursosDropdown reutilizable) */}
                 <div>
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <label
-                      htmlFor="select-habitacion"
-                      className="text-ink block text-xs font-semibold"
-                    >
-                      Habitación (Numero - Piso){' '}
-                      <span className="text-danger">*</span>
-                    </label>
-                  </div>
-
-                  <div className="relative">
-                    <select
-                      id="select-habitacion"
-                      value={selectedRoomId}
-                      onChange={(e) => handleRoomChange(e.target.value)}
-                      disabled={loadingRooms || submitting}
-                      className={`bg-canvas text-ink focus:border-primary focus:ring-primary/20 w-full cursor-pointer rounded-xl border px-3.5 py-2.5 text-xs transition outline-none focus:ring-2 ${
-                        errors.roomId || roomError
-                          ? 'border-danger/60 focus:border-danger'
-                          : 'border-line'
-                      }`}
-                    >
-                      <option value="">-- Selecciona una habitación --</option>
-                      {rooms.map((room) => (
-                        <option key={room.id} value={room.id}>
-                          {room.number} - {room.floor}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {errors.roomId && (
-                    <p
-                      role="alert"
-                      className="text-danger mt-1 text-xs font-medium"
-                    >
-                      {errors.roomId}
-                    </p>
-                  )}
+                  <RecursosDropdown
+                    id="select-habitacion"
+                    label="Habitación (Numero - Piso)"
+                    placeholder={
+                      loadingRooms
+                        ? 'Consultando habitaciones (/room)…'
+                        : '-- Selecciona una habitación --'
+                    }
+                    options={roomDropdownOptions}
+                    value={selectedRoomId}
+                    onChange={(val) => handleRoomChange(val)}
+                    disabled={loadingRooms || submitting}
+                    required
+                    error={errors.roomId || roomError || undefined}
+                  />
 
                   {/* Ficha descriptiva de la habitación seleccionada */}
                   {selectedRoom && (
@@ -998,22 +1294,14 @@ export function ReservaInteractiveForm() {
                         placeholder={
                           loadingPersons
                             ? 'Consultando huéspedes (/persons)…'
-                            : '-- Selecciona un huésped registrado --'
+                            : '-- Selecciona uno o varios huéspedes registrados --'
                         }
                         options={personDropdownOptions}
-                        value={selectedPersonId}
-                        onChange={(val) => {
-                          setSelectedPersonId(val);
-                          if (errors.personId)
-                            setErrors((p) => ({ ...p, personId: '' }));
-                        }}
-                        onSelectOption={(opt) => {
-                          if (opt.value || opt.id) {
-                            setSelectedPersonId(opt.value || opt.id || '');
-                            if (errors.personId)
-                              setErrors((p) => ({ ...p, personId: '' }));
-                          }
-                        }}
+                        multiple={true}
+                        searchable={true}
+                        searchPlaceholder="Buscar huésped por nombre o documento..."
+                        selectedValues={selectedPersonIds}
+                        onMultiChange={handleHuespedesMultiChange}
                         disabled={loadingPersons || submitting}
                         required
                         error={errors.personId}
@@ -1028,14 +1316,7 @@ export function ReservaInteractiveForm() {
                         className="border-primary/30 bg-primary/10 text-primary hover:bg-primary inline-flex h-[42px] shrink-0 cursor-pointer items-center gap-1.5 rounded-xl border px-3.5 text-xs font-semibold shadow-xs transition-all hover:text-white active:scale-95"
                         title="Registrar un nuevo huésped"
                       >
-                        <svg
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                          className="size-4"
-                          aria-hidden="true"
-                        >
-                          <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
-                        </svg>
+                        <FontAwesomeIcon icon={faPlus} className="size-3.5" aria-hidden="true" />
                         <span className="hidden sm:inline">Nuevo huésped</span>
                         <span className="sm:hidden">Nuevo</span>
                       </button>
@@ -1059,35 +1340,93 @@ export function ReservaInteractiveForm() {
                     </div>
                   )}
 
-                  {/* Ficha del huésped seleccionado */}
+                  {/* Ficha del huésped titular y lista detallada de acompañantes debajo */}
                   {selectedPerson && (
-                    <div className="border-line bg-canvas/70 text-ink mt-2.5 flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-[11px]">
-                      <span className="text-ink font-semibold">
-                        {selectedPerson.name}
-                      </span>
-                      {selectedPerson.document_number && (
-                        <>
-                          <span className="text-ink-muted">·</span>
-                          <span className="text-ink-muted">
-                            Doc: {selectedPerson.document_number}
-                          </span>
-                        </>
-                      )}
-                      {selectedPerson.phone_number && (
-                        <>
-                          <span className="text-ink-muted">·</span>
-                          <span className="text-ink-muted">
-                            Tel: {selectedPerson.phone_number}
-                          </span>
-                        </>
-                      )}
-                      {selectedPerson.email && (
-                        <>
-                          <span className="text-ink-muted">·</span>
-                          <span className="text-ink-muted">
-                            {selectedPerson.email}
-                          </span>
-                        </>
+                    <div className="mt-2.5 space-y-2">
+                      {/* Ficha del Huésped Titular */}
+                      <div className="border-line bg-canvas/70 text-ink flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-[11px] shadow-xs">
+                        <span className="inline-flex items-center rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary border border-primary/20">
+                          Titular
+                        </span>
+                        <span className="text-ink font-semibold">
+                          {selectedPerson.name}
+                        </span>
+                        {selectedPerson.document_number && (
+                          <>
+                            <span className="text-ink-muted">·</span>
+                            <span className="text-ink-muted">
+                              Doc: {selectedPerson.document_number}
+                            </span>
+                          </>
+                        )}
+                        {selectedPerson.phone_number && (
+                          <>
+                            <span className="text-ink-muted">·</span>
+                            <span className="text-ink-muted">
+                              Tel: {selectedPerson.phone_number}
+                            </span>
+                          </>
+                        )}
+                        {selectedPerson.email && (
+                          <>
+                            <span className="text-ink-muted">·</span>
+                            <span className="text-ink-muted truncate max-w-[200px]">
+                              {selectedPerson.email}
+                            </span>
+                          </>
+                        )}
+                      </div>
+
+                      {/* Lista de acompañantes seleccionados debajo de la sección Titular */}
+                      {selectedCompanions.length > 0 && (
+                        <div className="space-y-1.5 pt-0.5">
+                          <div className="flex items-center justify-between px-1">
+                            <span className="text-[11px] font-semibold text-ink-muted flex items-center gap-1.5">
+                              <FontAwesomeIcon icon={faUsers} className="size-3 text-primary" />
+                              Acompañante{selectedCompanions.length > 1 ? 's' : ''} ({selectedCompanions.length})
+                            </span>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            {selectedCompanions.map((comp, idx) => (
+                              <div
+                                key={comp.id || idx}
+                                className="border-line/70 bg-panel-soft/60 text-ink flex flex-wrap items-center gap-2 rounded-xl border px-3 py-1.5 text-[11px] transition hover:border-primary/30"
+                              >
+                                <span className="inline-flex items-center rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                                  Acompañante #{idx + 1}
+                                </span>
+                                <span className="text-ink font-medium">
+                                  {comp.name}
+                                </span>
+                                {comp.document_number && (
+                                  <>
+                                    <span className="text-ink-muted">·</span>
+                                    <span className="text-ink-muted">
+                                      Doc: {comp.document_number}
+                                    </span>
+                                  </>
+                                )}
+                                {comp.phone_number && (
+                                  <>
+                                    <span className="text-ink-muted">·</span>
+                                    <span className="text-ink-muted">
+                                      Tel: {comp.phone_number}
+                                    </span>
+                                  </>
+                                )}
+                                {comp.email && (
+                                  <>
+                                    <span className="text-ink-muted">·</span>
+                                    <span className="text-ink-muted truncate max-w-[200px]">
+                                      {comp.email}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
                   )}
@@ -1170,78 +1509,102 @@ export function ReservaInteractiveForm() {
                   </div>
                 </div>
 
-                {/* 4. INPUT: NÚMERO DE HUÉSPEDES */}
+                {/* 4. INPUT: NÚMERO DE HUÉSPEDES (Input reutilizable con número deslizante direccional) */}
                 <div className="grid grid-cols-1 items-start gap-6 sm:grid-cols-2">
                   <div>
-                    <label
-                      htmlFor="number-of-guests"
-                      className="text-ink mb-1.5 block text-xs font-semibold"
-                    >
-                      Número de huéspedes <span className="text-danger">*</span>
-                    </label>
-
-                    <div className="flex items-center gap-2">
-                      <button
+                    <div className="flex items-end gap-2">
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
                         type="button"
-                        onClick={() =>
-                          setNumberOfGuests((prev) => Math.max(1, prev - 1))
-                        }
+                        onClick={() => {
+                          setGuestDirection(-1);
+                          const val = Math.max(1, numberOfGuests - 1);
+                          handleNumberOfGuestsChange(val);
+                        }}
                         disabled={numberOfGuests <= 1 || submitting}
                         aria-label="Disminuir huéspedes"
-                        className="border-line bg-canvas text-ink hover:bg-panel grid size-9 shrink-0 cursor-pointer place-items-center rounded-xl border transition disabled:opacity-40"
+                        className="border-line bg-canvas text-ink hover:bg-panel grid size-[42px] shrink-0 cursor-pointer place-items-center rounded-xl border transition disabled:opacity-40 mb-[1px]"
                       >
                         <span className="text-base font-bold">−</span>
-                      </button>
+                      </motion.button>
 
-                      <input
-                        type="number"
-                        id="number-of-guests"
-                        min={1}
-                        max={selectedRoom ? selectedRoom.capacity : 10}
-                        value={numberOfGuests}
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          if (!isNaN(val)) setNumberOfGuests(val);
-                          if (errors.numberOfGuests)
-                            setErrors((p) => ({ ...p, numberOfGuests: '' }));
-                        }}
-                        disabled={submitting}
-                        className={`bg-canvas text-ink focus:border-primary focus:ring-primary/20 w-full rounded-xl border px-3 py-2 text-center text-xs font-bold transition outline-none focus:ring-2 ${
-                          errors.numberOfGuests
-                            ? 'border-danger/60 focus:border-danger'
-                            : 'border-line'
-                        }`}
-                      />
+                      <div className="relative flex-1">
+                        <Input
+                          id="number-of-guests"
+                          label="Número de huéspedes"
+                          type="number"
+                          min={1}
+                          max={selectedRoom ? selectedRoom.capacity : 10}
+                          value={numberOfGuests}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            if (!isNaN(val)) {
+                              setGuestDirection(val >= numberOfGuests ? 1 : -1);
+                              handleNumberOfGuestsChange(val);
+                            }
+                          }}
+                          disabled={submitting}
+                          required
+                          error={errors.numberOfGuests}
+                          className="[&_input]:text-center [&_input]:font-bold [&_input]:text-xs [&_input]:text-transparent select-none"
+                        />
 
-                      <button
+                        {/* Número animado con Framer Motion que se desliza según la dirección (efecto estrella) */}
+                        <div className="pointer-events-none absolute inset-x-0 top-[26px] flex h-[42px] items-center justify-center overflow-hidden">
+                          <AnimatePresence mode="popLayout" initial={false} custom={guestDirection}>
+                            <motion.span
+                              key={numberOfGuests}
+                              custom={guestDirection}
+                              variants={slidingGuestNumberVariants}
+                              initial="initial"
+                              animate="animate"
+                              exit="exit"
+                              className="font-bold text-xs text-ink select-none"
+                            >
+                              {numberOfGuests}
+                            </motion.span>
+                          </AnimatePresence>
+                        </div>
+                      </div>
+
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
                         type="button"
-                        onClick={() =>
-                          setNumberOfGuests((prev) => {
-                            const max = selectedRoom
-                              ? selectedRoom.capacity
-                              : 10;
-                            return Math.min(max, prev + 1);
-                          })
-                        }
+                        onClick={() => {
+                          setGuestDirection(1);
+                          handleNumberOfGuestsChange(numberOfGuests + 1);
+                        }}
                         disabled={
                           (selectedRoom &&
                             numberOfGuests >= selectedRoom.capacity) ||
                           submitting
                         }
                         aria-label="Aumentar huéspedes"
-                        className="border-line bg-canvas text-ink hover:bg-panel grid size-9 shrink-0 cursor-pointer place-items-center rounded-xl border transition disabled:opacity-40"
+                        className="border-line bg-canvas text-ink hover:bg-panel grid size-[42px] shrink-0 cursor-pointer place-items-center rounded-xl border transition disabled:opacity-40 mb-[1px]"
                       >
                         <span className="text-base font-bold">+</span>
-                      </button>
+                      </motion.button>
                     </div>
 
-                    {errors.numberOfGuests && (
-                      <p
-                        role="alert"
-                        className="text-danger mt-1 text-xs font-medium"
+                    {/* Botón interactivo para abrir/gestionar el modal de acompañantes si superamos 1 huésped */}
+                    {numberOfGuests > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setIsAcompanantesModalOpen(true)}
+                        className="mt-2.5 flex w-full items-center justify-between gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-semibold text-primary transition hover:bg-primary/20 active:scale-[0.99] cursor-pointer"
                       >
-                        {errors.numberOfGuests}
-                      </p>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <FontAwesomeIcon icon={faUsers} className="size-3.5 shrink-0" />
+                          <span className="truncate">
+                            Acompañantes: {companions.length} de {numberOfGuests - 1} registrados
+                          </span>
+                        </div>
+                        <span className="shrink-0 rounded-lg bg-primary px-2 py-0.5 text-[10px] font-bold text-white">
+                          {companions.length >= numberOfGuests - 1 ? 'Gestionar' : 'Registrar'}
+                        </span>
+                      </button>
                     )}
 
                     {selectedRoom && (
@@ -1253,31 +1616,17 @@ export function ReservaInteractiveForm() {
                     )}
                   </div>
 
-                  {/* 5. DROPDOWN: MANEJAR ESTADOS */}
+                  {/* 5. DROPDOWN: ESTADO DE LA RESERVA (RecursosDropdown reutilizable) */}
                   <div>
-                    <label
-                      htmlFor="select-estado"
-                      className="text-ink mb-1.5 block text-xs font-semibold"
-                    >
-                      Estado de la reserva{' '}
-                      <span className="text-danger">*</span>
-                    </label>
-
-                    <div className="relative">
-                      <select
-                        id="select-estado"
-                        value={stateValue}
-                        onChange={(e) => setStateValue(e.target.value)}
-                        disabled={submitting}
-                        className="border-line bg-canvas text-ink focus:border-primary focus:ring-primary/20 w-full cursor-pointer rounded-xl border px-3.5 py-2 text-xs font-semibold transition outline-none focus:ring-2"
-                      >
-                        {ESTADOS_RESERVA.map((est) => (
-                          <option key={est.value} value={est.value}>
-                            {est.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                    <RecursosDropdown
+                      id="select-estado"
+                      label="Estado de la reserva"
+                      options={estadoDropdownOptions}
+                      value={stateValue}
+                      onChange={(val) => setStateValue(val)}
+                      disabled={submitting}
+                      required
+                    />
 
                     {selectedStateObj && (
                       <div className="mt-2 flex items-center gap-1.5">
@@ -1294,15 +1643,9 @@ export function ReservaInteractiveForm() {
                   </div>
                 </div>
 
-                {/* 6. INPUT: PRECIO TOTAL */}
+                {/* 6. INPUT: PRECIO TOTAL (Input reutilizable) */}
                 <div>
-                  <div className="mb-1.5 flex items-center justify-between">
-                    <label
-                      htmlFor="total-price"
-                      className="text-ink block text-xs font-semibold"
-                    >
-                      Precio total (COP) <span className="text-danger">*</span>
-                    </label>
+                  <div className="mb-1 flex items-center justify-end">
                     {customTotalPrice !== null && (
                       <button
                         type="button"
@@ -1310,44 +1653,33 @@ export function ReservaInteractiveForm() {
                         className="text-primary cursor-pointer text-[11px] font-medium hover:underline"
                         title="Restaurar precio calculado por noches"
                       >
-                        Restaurar precio sugerido (
-                        {formatPrecioCOP(suggestedPrice)})
+                        Restaurar precio sugerido ({formatPrecioCOP(suggestedPrice)})
                       </button>
                     )}
                   </div>
 
-                  <div className="relative">
-                    <span className="text-ink-muted pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-xs font-bold">
-                      $ COP
-                    </span>
-                    <input
-                      type="number"
-                      id="total-price"
-                      min={0}
-                      value={effectiveTotalPrice}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        if (!isNaN(val)) setCustomTotalPrice(val);
-                        if (errors.totalPrice)
-                          setErrors((p) => ({ ...p, totalPrice: '' }));
-                      }}
-                      disabled={submitting}
-                      className={`bg-canvas text-ink focus:border-primary focus:ring-primary/20 w-full rounded-xl border py-2.5 pr-3.5 pl-16 text-xs font-bold transition outline-none focus:ring-2 ${
-                        errors.totalPrice
-                          ? 'border-danger/60 focus:border-danger'
-                          : 'border-line'
-                      }`}
-                    />
-                  </div>
-
-                  {errors.totalPrice && (
-                    <p
-                      role="alert"
-                      className="text-danger mt-1 text-xs font-medium"
-                    >
-                      {errors.totalPrice}
-                    </p>
-                  )}
+                  <Input
+                    id="total-price"
+                    label="Precio total (COP)"
+                    type="number"
+                    min={0}
+                    value={effectiveTotalPrice}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (!isNaN(val)) setCustomTotalPrice(val);
+                      if (errors.totalPrice)
+                        setErrors((p) => ({ ...p, totalPrice: '' }));
+                    }}
+                    disabled={submitting}
+                    required
+                    error={errors.totalPrice}
+                    icon={
+                      <span className="text-ink-muted text-xs font-bold">
+                        $ COP
+                      </span>
+                    }
+                    className="[&_input]:pl-16 [&_input]:font-bold [&_input]:text-xs"
+                  />
 
                   <div className="text-ink-muted mt-1.5 flex items-center justify-between text-[11px]">
                     <span>
@@ -1467,18 +1799,7 @@ export function ReservaInteractiveForm() {
                     </>
                   ) : (
                     <>
-                      <svg
-                        viewBox="0 0 20 20"
-                        fill="currentColor"
-                        className="size-4"
-                        aria-hidden="true"
-                      >
-                        <path
-                          fillRule="evenodd"
-                          d="M16.704 4.153a.75.75 0 0 1 .143 1.052l-8 10.5a.75.75 0 0 1-1.127.075l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 0 1 1.05-.143Z"
-                          clipRule="evenodd"
-                        />
-                      </svg>
+                      <FontAwesomeIcon icon={faCheck} className="size-4" />
                       <span>Confirmar y asegurar reserva</span>
                     </>
                   )}
@@ -1494,11 +1815,21 @@ export function ReservaInteractiveForm() {
         )}
       </AnimatePresence>
 
-      {/* MODAL PARA INGRESAR INFORMACIÓN PERSONAL DEL HUÉSPED */}
+      {/* MODAL PARA INGRESAR INFORMACIÓN PERSONAL DEL HUÉSPED TITULAR */}
       <NuevoHuespedModal
         isOpen={isGuestModalOpen}
         onClose={() => setIsGuestModalOpen(false)}
         onSuccess={handleGuestCreated}
+      />
+
+      {/* MODAL PARA REGISTRAR LOS ACOMPAÑANTES DE LA RESERVA (SI HUÉSPEDES > 1) */}
+      <ReservaAcompanantesModal
+        isOpen={isAcompanantesModalOpen}
+        onClose={() => setIsAcompanantesModalOpen(false)}
+        totalGuests={numberOfGuests}
+        titularPerson={selectedPerson}
+        companions={companions}
+        onSaveCompanion={handleSaveCompanion}
       />
 
       {/* Componente reutilizable Loader con overlay mientras se procesa la reserva en segundo plano */}

@@ -47,6 +47,7 @@ import (
 
 	externaldomain "nexora-api-rest/domain"
 	"nexora-api-rest/handler"
+	"nexora-api-rest/internal/guestattendant"
 	"nexora-api-rest/internal/itemmenu"
 	"nexora-api-rest/internal/menucategory"
 	"nexora-api-rest/internal/serviceassignment"
@@ -57,8 +58,8 @@ import (
 // NewRouter wires the whole onion and exposes the /roles, /palette,
 // /headquarters, /sub-headquarters, /users, /permission-assignment, /login,
 // /room-types, /rooms, /building, /reserve, /stays, /rates, /room_tariffs,
-// /menu-category, /item-menu, /service-request and /service-assignments vertical slices.
-func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.HeadquarterRepository, subHeadquarterRepo domain.SubHeadquarterRepository, paletteRepo domain.PaletteRepository, userRepo domain.UserRepository, permissionAssignmentRepo domain.PermissionAssignmentRepository, roomTypeRepo domain.RoomTypeRepository, roomRepo domain.RoomRepository, buildingRepo domain.BuildingRepository, bedTypeRepo domain.BedTypeRepository, bedRepo domain.BedRepository, personRepo domain.PersonRepository, reserveRepo domain.ReserveRepository, stayRepo domain.StayRepository, rateRepo domain.RateRepository, roomTariffRepo domain.RoomTariffRepository, auditRepo domain.AuditRepository, moduleRepo externaldomain.ModuleRepository, resourceRepo externaldomain.ResourceRepository, permissionResourceRepo externaldomain.PermissionResourceRepository, menuCategoryRepo menucategory.Repository, itemMenuRepo itemmenu.Repository, serviceRequestRepo servicerequest.Repository, serviceAssignmentRepo serviceassignment.Repository, jwtSecret string) http.Handler {
+// /menu-category, /item-menu, /service-request, /service-assignments and /guest-attendant vertical slices.
+func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.HeadquarterRepository, subHeadquarterRepo domain.SubHeadquarterRepository, paletteRepo domain.PaletteRepository, userRepo domain.UserRepository, permissionAssignmentRepo domain.PermissionAssignmentRepository, roomTypeRepo domain.RoomTypeRepository, roomRepo domain.RoomRepository, buildingRepo domain.BuildingRepository, bedTypeRepo domain.BedTypeRepository, bedRepo domain.BedRepository, personRepo domain.PersonRepository, reserveRepo domain.ReserveRepository, stayRepo domain.StayRepository, rateRepo domain.RateRepository, roomTariffRepo domain.RoomTariffRepository, auditRepo domain.AuditRepository, moduleRepo externaldomain.ModuleRepository, resourceRepo externaldomain.ResourceRepository, permissionResourceRepo externaldomain.PermissionResourceRepository, menuCategoryRepo menucategory.Repository, itemMenuRepo itemmenu.Repository, serviceRequestRepo servicerequest.Repository, serviceAssignmentRepo serviceassignment.Repository, guestAttendantRepo guestattendant.Repository, jwtSecret string) http.Handler {
 	roleHandler := &rolehttp.Handler{
 		Creator: roleapp.NewCreateRoleUseCase(roleRepo, ids.RandomID{}),
 		Lister:  roleapp.NewListRolesUseCase(roleRepo),
@@ -217,6 +218,7 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 	itemMenuHTTP := itemmenu.NewHandler(itemmenu.NewUseCase(itemMenuRepo, nil, nil))
 	serviceRequestHTTP := servicerequest.NewHandler(servicerequest.NewUseCase(serviceRequestRepo, nil, nil))
 	serviceAssignmentHTTP := serviceassignment.NewHandler(serviceassignment.NewUseCase(serviceAssignmentRepo, nil, nil))
+	guestAttendantHTTP := guestattendant.NewHandler(guestattendant.NewUseCase(guestAttendantRepo, nil, nil, nil, nil))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /login", authHandler.Login)
@@ -387,6 +389,8 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 	serviceRequestHTTP.Register(mux)
 	// Service Assignments: registra POST, GET, PUT, DELETE para /service-assignments y /service-assignment
 	serviceAssignmentHTTP.Register(mux)
+	// Guest Attendants: registra POST, GET, PUT, DELETE para /guest-attendant
+	guestAttendantHTTP.Register(mux)
 
 	return corsMiddleware(rateLimitMiddleware(mux))
 }

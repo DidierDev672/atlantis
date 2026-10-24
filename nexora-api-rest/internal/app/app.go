@@ -14,6 +14,7 @@ import (
 	"nexora-api-rest/internal/api"
 	"nexora-api-rest/internal/infrastructure/config"
 	"nexora-api-rest/internal/infrastructure/persistence/postgres"
+	"nexora-api-rest/internal/guestattendant"
 	"nexora-api-rest/internal/itemmenu"
 	"nexora-api-rest/internal/menucategory"
 	"nexora-api-rest/internal/serviceassignment"
@@ -121,6 +122,7 @@ func Run() error {
 	itemMenuRepo := itemmenu.NewPostgresRepository(conn)
 	serviceRequestRepo := servicerequest.NewPostgresRepository(conn)
 	serviceAssignmentRepo := serviceassignment.NewPostgresRepository(conn)
+	guestAttendantRepo := guestattendant.NewPostgresRepository(conn)
 
 	router := api.NewRouter(
 		roleRepo,
@@ -147,6 +149,7 @@ func Run() error {
 		itemMenuRepo,
 		serviceRequestRepo,
 		serviceAssignmentRepo,
+		guestAttendantRepo,
 		jwtSecret,
 	)
 
