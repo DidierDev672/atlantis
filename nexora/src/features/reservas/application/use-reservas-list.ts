@@ -64,8 +64,8 @@ export function useReservasList() {
 
   const loadMore = useCallback(async () => {
     if (!hasMore) return
-    // Pequeño retardo para suavizar la animación de carga infinita
-    await new Promise((resolve) => setTimeout(resolve, 350))
+    // Tiempo de gracia para apreciar la animación de carga balanceada progresiva
+    await new Promise((resolve) => setTimeout(resolve, 500))
     setVisibleCount((prev) => prev + PAGE_SIZE)
   }, [hasMore])
 

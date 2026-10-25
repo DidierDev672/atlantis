@@ -3,9 +3,18 @@ import { motion, AnimatePresence } from 'motion/react'
 import { RecepcionHeader } from './molecules/recepcion-header'
 import { RecepcionesListContainer } from './organisms/recepciones-list-container'
 import { RecepcionPanel } from './organisms/recepcion-panel'
+import { useStaysList } from '../application/use-stays-list'
+import { Loading, useDelayVisibility } from '../../../shared/loading'
 
 export function RecepcionesPage() {
   const [activeTab, setActiveTab] = useState<'lista' | 'nuevo'>('lista')
+  const staysList = useStaysList()
+
+  // Control de permanencia y visibilidad con useDelayVisibility mientras se carga la información
+  const isVisibleLoading = useDelayVisibility(staysList.loading, {
+    delay: 0,
+    minDuration: 500,
+  })
 
   return (
     <div className="min-h-screen bg-canvas px-4 py-8 sm:px-6 lg:px-8">
@@ -118,8 +127,39 @@ export function RecepcionesPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.2 }}
+              className="relative min-h-[360px]"
             >
-              <RecepcionesListContainer onNewCheckIn={() => setActiveTab('nuevo')} />
+              {isVisibleLoading && staysList.stays.length === 0 ? (
+                <div className="flex flex-col items-center justify-center rounded-2xl border border-line bg-panel p-16 text-center shadow-xs">
+                  <Loading
+                    variant="block"
+                    size="md"
+                    label="Cargando recepciones y estancias…"
+                    description="Consultando el estado de ocupación hotelera en tiempo real."
+                    delay={0}
+                    minDuration={500}
+                  />
+                </div>
+              ) : (
+                <>
+                  <RecepcionesListContainer
+                    onNewCheckIn={() => setActiveTab('nuevo')}
+                    staysListReturn={staysList}
+                  />
+
+                  {/* Overlay sutil mientras se actualizan los datos ya existentes */}
+                  {isVisibleLoading && staysList.stays.length > 0 && (
+                    <Loading
+                      variant="overlay"
+                      size="md"
+                      label="Actualizando recepciones…"
+                      description="Sincronizando el estado de las estancias."
+                      delay={0}
+                      minDuration={400}
+                    />
+                  )}
+                </>
+              )}
             </motion.div>
           ) : (
             <motion.div

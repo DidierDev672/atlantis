@@ -1,5 +1,7 @@
 import { useState, useEffect, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faUserPlus, faXmark } from '@fortawesome/free-solid-svg-icons';
 import { Input } from '../../../../shared/ui/Input';
 import { Button } from '../../../recursos/ui/atoms/button';
 import { RecursosDropdown, type DropdownOption } from '../../../recursos/ui/molecules/recursos-dropdown';
@@ -21,17 +23,17 @@ export interface RoleApiResponseItem {
   description?: string;
 }
 
-const TIPOS_DOC = [
+const TIPOS_DOC: ReadonlyArray<DropdownOption> = [
   { value: 'id_card', label: 'Tarjeta de identidad' },
   { value: 'national_id', label: 'Número de identificación' },
   { value: 'foreign_id', label: 'Tarjeta de extranjería' },
-] as const;
+];
 
-const OPCIONES_GENERO = [
+const OPCIONES_GENERO: ReadonlyArray<DropdownOption> = [
   { value: 'M', label: 'Masculino' },
   { value: 'F', label: 'Femenino' },
   { value: 'O', label: 'Otro' },
-] as const;
+];
 
 const DEFAULT_ROLE_ID = 'role-huesped';
 
@@ -427,21 +429,7 @@ export function NuevoHuespedModal({
             <div className="border-line/60 flex items-start justify-between gap-4 border-b pb-4">
               <div className="flex items-center gap-3">
                 <span className="bg-primary/10 text-primary grid size-10 place-items-center rounded-2xl shadow-2xs">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="size-5"
-                    aria-hidden="true"
-                  >
-                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                    <circle cx="9" cy="7" r="4" />
-                    <line x1="19" y1="8" x2="19" y2="14" />
-                    <line x1="22" y1="11" x2="16" y2="11" />
-                  </svg>
+                  <FontAwesomeIcon icon={faUserPlus} className="size-5" />
                 </span>
                 <div>
                   <h3
@@ -463,16 +451,7 @@ export function NuevoHuespedModal({
                 aria-label="Cerrar modal"
                 className="border-line text-ink-muted hover:bg-canvas hover:text-ink grid size-8 cursor-pointer place-items-center rounded-xl border transition-colors"
               >
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  className="size-4"
-                  aria-hidden="true"
-                >
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
+                <FontAwesomeIcon icon={faXmark} className="size-4" />
               </button>
             </div>
 
@@ -489,43 +468,21 @@ export function NuevoHuespedModal({
             {/* Formulario */}
             <form onSubmit={handleSubmit} noValidate className="mt-5 space-y-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {/* 1. DROPDOWN: TIPOS DE DOCUMENTOS */}
-                <div>
-                  <label
-                    htmlFor="modal-tipo-documento"
-                    className="text-ink mb-1.5 block text-xs font-semibold"
-                  >
-                    Tipo de documento <span className="text-danger">*</span>
-                  </label>
-                  <select
-                    id="modal-tipo-documento"
-                    value={documentType}
-                    onChange={(e) => {
-                      setDocumentType(e.target.value);
-                      if (errors.documentType)
-                        setErrors((p) => ({ ...p, documentType: '' }));
-                    }}
-                    className={`bg-canvas text-ink focus:border-primary focus:ring-primary/20 w-full cursor-pointer rounded-xl border px-3.5 py-2.5 text-xs transition outline-none focus:ring-2 ${
-                      errors.documentType
-                        ? 'border-danger/60 focus:border-danger'
-                        : 'border-line'
-                    }`}
-                  >
-                    {TIPOS_DOC.map((td) => (
-                      <option key={td.value} value={td.value}>
-                        {td.label}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.documentType && (
-                    <p
-                      role="alert"
-                      className="text-danger mt-1 text-xs font-medium"
-                    >
-                      {errors.documentType}
-                    </p>
-                  )}
-                </div>
+                {/* 1. DROPDOWN: TIPO DE DOCUMENTO (RecursosDropdown reutilizable) */}
+                <RecursosDropdown
+                  id="modal-tipo-documento"
+                  label="Tipo de documento"
+                  options={TIPOS_DOC}
+                  value={documentType}
+                  onChange={(val) => {
+                    setDocumentType(val);
+                    if (errors.documentType)
+                      setErrors((p) => ({ ...p, documentType: '' }));
+                  }}
+                  placeholder="Selecciona el tipo de documento"
+                  required
+                  error={errors.documentType}
+                />
 
                 {/* 2. INPUT: NÚMERO DE DOCUMENTO */}
                 <Input
@@ -607,43 +564,21 @@ export function NuevoHuespedModal({
                   required
                 />
 
-                {/* 7. DROPDOWN: GÉNERO [Masculino, Femenino, Otro] mapeado a [M, F, O] */}
-                <div>
-                  <label
-                    htmlFor="modal-genero"
-                    className="text-ink mb-1.5 block text-xs font-semibold"
-                  >
-                    Género <span className="text-danger">*</span>
-                  </label>
-                  <select
-                    id="modal-genero"
-                    value={genre}
-                    onChange={(e) => {
-                      setGenre(e.target.value as 'M' | 'F' | 'O');
-                      if (errors.genre)
-                        setErrors((p) => ({ ...p, genre: '' }));
-                    }}
-                    className={`bg-canvas text-ink focus:border-primary focus:ring-primary/20 w-full cursor-pointer rounded-xl border px-3.5 py-2.5 text-xs transition outline-none focus:ring-2 ${
-                      errors.genre
-                        ? 'border-danger/60 focus:border-danger'
-                        : 'border-line'
-                    }`}
-                  >
-                    {OPCIONES_GENERO.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.genre && (
-                    <p
-                      role="alert"
-                      className="text-danger mt-1 text-xs font-medium"
-                    >
-                      {errors.genre}
-                    </p>
-                  )}
-                </div>
+                {/* 7. DROPDOWN: GÉNERO (RecursosDropdown reutilizable) */}
+                <RecursosDropdown
+                  id="modal-genero"
+                  label="Género"
+                  options={OPCIONES_GENERO}
+                  value={genre}
+                  onChange={(val) => {
+                    setGenre(val as 'M' | 'F' | 'O');
+                    if (errors.genre)
+                      setErrors((p) => ({ ...p, genre: '' }));
+                  }}
+                  placeholder="Selecciona el género"
+                  required
+                  error={errors.genre}
+                />
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

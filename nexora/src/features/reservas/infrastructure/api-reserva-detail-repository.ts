@@ -32,9 +32,15 @@ export async function fetchReservaDetailFromApi(id: string): Promise<FetchReserv
       })
     }
 
-    const response = await api.get<ReservaApiDto | ReservaApiDto[]>(`/reserve/${id}`, {
+    let response = await api.get<ReservaApiDto | ReservaApiDto[]>(`/stay/${id}`, {
       validateStatus: () => true,
     })
+
+    if (response.status !== 200 || !response.data) {
+      response = await api.get<ReservaApiDto | ReservaApiDto[]>(`/reserve/${id}`, {
+        validateStatus: () => true,
+      })
+    }
 
     const validation = validateStatusCode(response.status)
 

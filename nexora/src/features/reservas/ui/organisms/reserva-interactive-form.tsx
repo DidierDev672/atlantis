@@ -13,6 +13,7 @@ import {
   type PersonApiResponse,
 } from '../../domain/reserva';
 import type { StayPayload } from '../../domain/guest-attendant';
+import { ReservaStateBadge } from '../atoms/reserva-state-badge';
 import { NuevoHuespedModal } from '../molecules/nuevo-huesped-modal';
 import { ReservaAcompanantesModal } from '../molecules/reserva-acompanantes-modal';
 import { useHuespedesRegistradosStore } from '../../application/use-huespedes-registrados-store';
@@ -21,6 +22,10 @@ import {
   RecursosDropdown,
   type DropdownOption,
 } from '../../../recursos/ui/molecules/recursos-dropdown';
+import { resolveRoomsLocationBatch } from '../../infrastructure/api-room-location-service';
+import type { RoomLocationHierarchy } from '../../domain/room-location-types';
+import { RoomDropdownItem } from '../molecules/room-dropdown-item';
+import { RoomSelectedHierarchyCard } from '../molecules/room-selected-hierarchy-card';
 import { Input } from '../../../../shared/ui/Input';
 import { Loader } from '../../../tema/ui/atoms/loader';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -111,6 +116,7 @@ export interface RoomOption {
   id: string;
   number: string;
   floor: number | string;
+  building_id?: string;
   price_override?: number | null;
   price: number;
   capacity: number;
@@ -135,51 +141,25 @@ export interface PersonApiResponseItem {
 
 const ESTADOS_RESERVA = [
   {
-    value: 'pendiente',
-    backendValue: 'pending',
-    label: 'Pendiente',
-    dotColor: 'bg-amber-500',
-    badgeClass:
-      'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
-  },
-  {
-    value: 'confirmada',
-    backendValue: 'confirmed',
-    label: 'Confirmada',
-    dotColor: 'bg-emerald-500',
-    badgeClass:
-      'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
-  },
-  {
-    value: 'en curso',
-    backendValue: 'in progress',
-    label: 'En curso',
+    value: 'progress',
+    label: 'Progreso',
     dotColor: 'bg-blue-500',
     badgeClass:
       'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/20',
   },
   {
-    value: 'finalizada',
-    backendValue: 'completed',
-    label: 'Finalizada',
-    dotColor: 'bg-neutral',
-    badgeClass: 'bg-neutral/15 text-ink-muted border-line',
+    value: 'completed',
+    label: 'Completada',
+    dotColor: 'bg-emerald-500',
+    badgeClass:
+      'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/20',
   },
   {
-    value: 'cancelada',
-    backendValue: 'canceled',
+    value: 'canceled',
     label: 'Cancelada',
     dotColor: 'bg-rose-500',
     badgeClass:
       'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/20',
-  },
-  {
-    value: 'no muestrar',
-    backendValue: 'no show',
-    label: 'No asistió (No show)',
-    dotColor: 'bg-purple-500',
-    badgeClass:
-      'bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/20',
   },
 ] as const;
 
@@ -227,6 +207,7 @@ function getCreatedByEmail(): string {
 export function ReservaInteractiveForm() {
   // 1. Datos del catálogo
   const [rooms, setRooms] = useState<RoomOption[]>([]);
+  const [roomHierarchyMap, setRoomHierarchyMap] = useState<Map<string, RoomLocationHierarchy>>(new Map());
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [roomError, setRoomError] = useState<string | null>(null);
 
@@ -256,7 +237,7 @@ export function ReservaInteractiveForm() {
   );
   const [numberOfGuests, setNumberOfGuests] = useState<number>(1);
   const [guestDirection, setGuestDirection] = useState<number>(1);
-  const [stateValue, setStateValue] = useState<string>('pendiente');
+  const [stateValue, setStateValue] = useState<string>('progress');
   const [customTotalPrice, setCustomTotalPrice] = useState<number | null>(null);
 
   // Store Zustand para centralizar y sincronizar huéspedes registrados
@@ -296,9 +277,13 @@ export function ReservaInteractiveForm() {
     const loadInitialData = async () => {
       // 1. Cargar habitaciones con Axios GET /room y validación de status code
       try {
-        const response = await api.get<RoomApiResponseItem[]>('/room', {
-          validateStatus: () => true, // Permite evaluar manualmente el status code
-        });
+        const minRoomsChance = new Promise((resolve) => setTimeout(resolve, 650));
+        const [response] = await Promise.all([
+          api.get<RoomApiResponseItem[]>('/room', {
+            validateStatus: () => true, // Permite evaluar manualmente el status code
+          }),
+          minRoomsChance,
+        ]);
 
         const validation = validateStatusCode(response.status);
 
@@ -317,6 +302,7 @@ export function ReservaInteractiveForm() {
               id: String(r.id),
               number: String(r.number ?? ''),
               floor: r.floor ?? 1,
+              building_id: r.building_id ? String(r.building_id) : undefined,
               price_override:
                 r.price_override != null ? Number(r.price_override) : null,
               price:
@@ -333,6 +319,16 @@ export function ReservaInteractiveForm() {
             );
 
             setRooms(mappedRooms);
+
+            // Cargar y resolver jerarquía de ubicaciones (/building/{id}, /headquarters/{id}, /sub-headquarters/{id})
+            try {
+              const hierarchyMap = await resolveRoomsLocationBatch(rawList);
+              if (isMounted) {
+                setRoomHierarchyMap(hierarchyMap);
+              }
+            } catch {
+              // Fallback silencioso y controlado
+            }
           } else {
             setRoomError(
               validation.message ||
@@ -356,9 +352,13 @@ export function ReservaInteractiveForm() {
 
       // 2. Cargar personas registradas con Axios GET /persons y validación de status code
       try {
-        let response = await api.get<PersonApiResponseItem[]>('/persons', {
-          validateStatus: () => true,
-        });
+        const minPersonsChance = new Promise((resolve) => setTimeout(resolve, 650));
+        let [response] = await Promise.all([
+          api.get<PersonApiResponseItem[]>('/persons', {
+            validateStatus: () => true,
+          }),
+          minPersonsChance,
+        ]);
 
         // Fallback preventivo si el backend expone /person en singular
         if (response.status === 404) {
@@ -460,6 +460,7 @@ export function ReservaInteractiveForm() {
           id: String(r.id),
           number: String(r.number ?? ''),
           floor: r.floor ?? 1,
+          building_id: r.building_id ? String(r.building_id) : undefined,
           price_override:
             r.price_override != null ? Number(r.price_override) : null,
           price:
@@ -474,6 +475,13 @@ export function ReservaInteractiveForm() {
           a.number.localeCompare(b.number, undefined, { numeric: true })
         );
         setRooms(mappedRooms);
+
+        try {
+          const hierarchyMap = await resolveRoomsLocationBatch(rawList);
+          setRoomHierarchyMap(hierarchyMap);
+        } catch {
+          // Fallback silencioso y controlado
+        }
       } else {
         setRoomError(
           validation.message || 'No se pudo obtener la lista de habitaciones.'
@@ -629,13 +637,32 @@ export function ReservaInteractiveForm() {
   }, [persons]);
 
   const roomDropdownOptions = useMemo<DropdownOption[]>(() => {
-    return rooms.map((room) => ({
-      value: room.id,
-      label: `${room.number} - ${room.floor}`,
-      id: room.id,
-      rawName: room.number,
-    }));
-  }, [rooms]);
+    return rooms.map((room) => {
+      const hierarchy = roomHierarchyMap.get(room.id) || {
+        roomId: room.id,
+        roomNumber: room.number,
+        floor: room.floor,
+        buildingId: room.building_id ?? null,
+        buildingName: null,
+        hasBuilding: false,
+        headquartersId: null,
+        headquartersName: null,
+        hasHeadquarters: false,
+        subHeadquartersId: null,
+        subHeadquartersName: null,
+        hasSubHeadquarters: false,
+        formattedOptionLabel: `(Habitación ${room.number} - Piso ${room.floor} - Sin edificio registrado - Sin sede registrada - Sin sub sede registrada)`,
+      };
+
+      return {
+        value: room.id,
+        label: hierarchy.formattedOptionLabel,
+        id: room.id,
+        rawName: room.number,
+        customContent: <RoomDropdownItem hierarchy={hierarchy} />,
+      };
+    });
+  }, [rooms, roomHierarchyMap]);
 
   const estadoDropdownOptions = useMemo<DropdownOption[]>(() => {
     return ESTADOS_RESERVA.map((est) => ({
@@ -916,9 +943,9 @@ export function ReservaInteractiveForm() {
       check_in_date: checkInIso,
       check_out_date: checkOutIso,
       payment_method: 'card',
-      security_deposit: 0,
+      security_deposit: effectiveTotalPrice,
       remarks: 'Check-in regular',
-      status: 'progress',
+      status: stateValue,
       created_by: createdByEmail || 'ariasdev672@gmail.com',
     };
 
@@ -1012,7 +1039,7 @@ export function ReservaInteractiveForm() {
     setGuestDirection(1);
     setCompanions([]);
     setIsAcompanantesModalOpen(false);
-    setStateValue('pendiente');
+    setStateValue('progress');
     setCustomTotalPrice(null);
     setErrors({});
     setPersonError(null);
@@ -1241,6 +1268,7 @@ export function ReservaInteractiveForm() {
                   <RecursosDropdown
                     id="select-habitacion"
                     label="Habitación (Numero - Piso)"
+                    isLoading={loadingRooms}
                     placeholder={
                       loadingRooms
                         ? 'Consultando habitaciones (/room)…'
@@ -1254,33 +1282,12 @@ export function ReservaInteractiveForm() {
                     error={errors.roomId || roomError || undefined}
                   />
 
-                  {/* Ficha descriptiva de la habitación seleccionada */}
+                  {/* Ficha descriptiva de la habitación seleccionada con jerarquía completa */}
                   {selectedRoom && (
-                    <div className="border-primary/20 bg-primary/5 text-ink mt-2.5 flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-[11px]">
-                      <span className="text-primary font-bold">
-                        Habitación {selectedRoom.number} - {selectedRoom.floor}
-                      </span>
-                      {selectedRoom.status && (
-                        <>
-                          <span className="text-ink-muted">·</span>
-                          <span className="text-ink-muted capitalize">
-                            Estado: {selectedRoom.status}
-                          </span>
-                        </>
-                      )}
-                      {selectedRoom.price_override != null && (
-                        <>
-                          <span className="text-ink-muted">·</span>
-                          <span>
-                            Tarifa:{' '}
-                            <strong>
-                              {formatPrecioCOP(selectedRoom.price_override)}
-                              /noche
-                            </strong>
-                          </span>
-                        </>
-                      )}
-                    </div>
+                    <RoomSelectedHierarchyCard
+                      room={selectedRoom}
+                      hierarchy={roomHierarchyMap.get(selectedRoom.id)}
+                    />
                   )}
                 </div>
 
@@ -1291,6 +1298,7 @@ export function ReservaInteractiveForm() {
                       <RecursosDropdown
                         id="select-persona"
                         label="Huésped titular registrado"
+                        isLoading={loadingPersons}
                         placeholder={
                           loadingPersons
                             ? 'Consultando huéspedes (/persons)…'
@@ -1634,9 +1642,9 @@ export function ReservaInteractiveForm() {
                           className={`size-2 rounded-full ${selectedStateObj.dotColor}`}
                           aria-hidden="true"
                         />
-                        <span className="text-ink-muted text-[11px] font-medium">
+                        <span className="text-neutral text-[11px] font-medium">
                           Estado seleccionado:{' '}
-                          <strong>{selectedStateObj.label}</strong>
+                          <strong className="text-ink">{selectedStateObj.label}</strong>
                         </span>
                       </div>
                     )}
@@ -1707,14 +1715,11 @@ export function ReservaInteractiveForm() {
                     Resumen de Estadía
                   </h3>
                   {selectedStateObj && (
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[10px] font-bold ${selectedStateObj.badgeClass}`}
-                    >
-                      <span
-                        className={`size-1.5 rounded-full ${selectedStateObj.dotColor}`}
-                      />
-                      {selectedStateObj.label}
-                    </span>
+                    <ReservaStateBadge
+                      label={selectedStateObj.label}
+                      status={selectedStateObj.value}
+                      size="sm"
+                    />
                   )}
                 </div>
 

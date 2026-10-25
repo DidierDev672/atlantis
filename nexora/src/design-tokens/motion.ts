@@ -107,3 +107,32 @@ export const springPill: Variants = {
     },
   },
 }
+
+/**
+ * Aparición con resorte (pop-in): El badge entra escalando desde cero con rebote elástico.
+ * Ideal para estados nuevos como "Progreso", "Completada" o "Finalizada" y "Cancelada".
+ */
+export const popIn: Variants = {
+  hidden: {
+    opacity: 0,
+    scale: 0,
+  },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    transition: {
+      type: 'spring',
+      stiffness: 440,
+      damping: 20,
+      mass: 0.55,
+    },
+  },
+  exit: {
+    opacity: 0,
+    scale: 0.75,
+    transition: {
+      duration: 0.15,
+      ease: 'easeOut',
+    },
+  },
+}

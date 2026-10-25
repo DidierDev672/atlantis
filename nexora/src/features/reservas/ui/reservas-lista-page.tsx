@@ -1,19 +1,22 @@
-import { useState } from 'react'
-import { AnimatePresence } from 'motion/react'
-import { useReservasList } from '../application/use-reservas-list'
-import { ReservasListaHeader } from './molecules/reservas-lista-header'
-import { ReservasListaToolbar } from './molecules/reservas-lista-toolbar'
-import { ReservasFeedbackBanner } from './molecules/reservas-feedback-banner'
-import { ReservaDetalleModal } from './molecules/reserva-detalle-modal'
-import { ReservasListContainer } from './organisms/reservas-list-container'
+import { useState } from 'react';
+import { AnimatePresence } from 'motion/react';
+import { useReservasList } from '../application/use-reservas-list';
+import { ReservasListaHeader } from './molecules/reservas-lista-header';
+import { ReservasListaToolbar } from './molecules/reservas-lista-toolbar';
+import { ReservasFeedbackBanner } from './molecules/reservas-feedback-banner';
+import { ReservaDetalleModal } from './molecules/reserva-detalle-modal';
+import { ReservasListContainer } from './organisms/reservas-list-container';
+import { Loading, useDelayVisibility } from '../../../shared/loading';
 
 interface ReservasListaPageProps {
-  onNuevaReserva?: () => void
+  onNuevaReserva?: () => void;
 }
 
 export function ReservasListaPage({ onNuevaReserva }: ReservasListaPageProps) {
-  const [selectedReservaId, setSelectedReservaId] = useState<string | null>(null)
-  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
+  const [selectedReservaId, setSelectedReservaId] = useState<string | null>(
+    null
+  );
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const {
     viewMode,
     setViewMode,
@@ -31,22 +34,29 @@ export function ReservasListaPage({ onNuevaReserva }: ReservasListaPageProps) {
     refetch,
     totalCount,
     filteredCount,
-  } = useReservasList()
+  } = useReservasList();
+
+  // Visibilidad controlada de la carga balanceada con useDelayVisibility
+  const isBalancedLoading = loading || refreshing;
+  const isVisibleLoading = useDelayVisibility(isBalancedLoading, {
+    delay: 0,
+    minDuration: 500,
+  });
 
   const handleResetFilters = () => {
-    setSearchQuery('')
-    setStatusFilter('all')
-  }
+    setSearchQuery('');
+    setStatusFilter('all');
+  };
 
   const handleOpenDetail = (id: string) => {
-    setSelectedReservaId(id)
-    setIsDetailModalOpen(true)
-  }
+    setSelectedReservaId(id);
+    setIsDetailModalOpen(true);
+  };
 
   const handleCloseDetail = () => {
-    setIsDetailModalOpen(false)
-    setSelectedReservaId(null)
-  }
+    setIsDetailModalOpen(false);
+    setSelectedReservaId(null);
+  };
 
   return (
     <div className="space-y-6">
@@ -77,23 +87,52 @@ export function ReservasListaPage({ onNuevaReserva }: ReservasListaPageProps) {
         filteredCount={filteredCount}
       />
 
-      {/* Contenedor principal con scroll infinito para tarjetas o tabla */}
-      <ReservasListContainer
-        viewMode={viewMode}
-        items={visibleItems}
-        loading={loading}
-        hasMore={hasMore}
-        onLoadMore={loadMore}
-        onResetFilters={handleResetFilters}
-        onSelectReserva={handleOpenDetail}
-      />
+      {/* Contenedor principal con carga balanceada y scroll infinito para tarjetas o tabla */}
+      <div className="relative min-h-[300px]">
+        {isVisibleLoading && visibleItems.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-2xl border border-line bg-panel p-16 text-center shadow-xs">
+            <Loading
+              variant="block"
+              size="md"
+              label="Cargando reservas balanceadas…"
+              description="Conectando con el catálogo de estadías mediante balanceo preventivo de carga."
+              delay={0}
+              minDuration={500}
+            />
+          </div>
+        ) : (
+          <>
+            <ReservasListContainer
+              viewMode={viewMode}
+              items={visibleItems}
+              loading={isVisibleLoading}
+              hasMore={hasMore}
+              onLoadMore={loadMore}
+              onResetFilters={handleResetFilters}
+              onSelectReserva={handleOpenDetail}
+            />
 
-      {/* Modal para visualizar el detalle completo de la reserva (GET /reserve/{id}) */}
+            {/* Overlay sutil mientras se actualiza con balanceo de carga */}
+            {isVisibleLoading && refreshing && visibleItems.length > 0 && (
+              <Loading
+                variant="overlay"
+                size="md"
+                label="Actualizando reservas…"
+                description="Sincronizando el catálogo con balanceo de carga."
+                delay={0}
+                minDuration={400}
+              />
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Modal para visualizar el detalle completo de la reserva/estadía (GET /stay/{id}) */}
       <ReservaDetalleModal
         isOpen={isDetailModalOpen}
         reservaId={selectedReservaId}
         onClose={handleCloseDetail}
       />
     </div>
-  )
+  );
 }

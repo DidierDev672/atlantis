@@ -32,6 +32,7 @@ export async function postStay(
         number_of_guests: payload.person_ids.length || 1,
         state: payload.status,
         created_by: payload.created_by,
+        total_price: payload.security_deposit,
       };
       const fallback = await api.post<StayApiResponseItem>('/reserve', fallbackPayload, {
         validateStatus: () => true,

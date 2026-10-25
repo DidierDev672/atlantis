@@ -6,6 +6,24 @@ import type { ReservaApiDto } from '../domain/reserva-list-types'
  */
 export const MOCK_RESERVAS_DATA: ReservaApiDto[] = [
   {
+    id: 'stay-4f9a12c8b73e5120',
+    room_id: '131295be018b7ad7',
+    reservation_id: 'res-88a21bc901e457fa',
+    person_ids: [
+      '88b2342cac6a4f1b',
+      'ef13b46784715adf',
+    ],
+    check_in_date: '2026-10-24T15:00:00Z',
+    check_out_date: '2026-10-26T12:00:00Z',
+    payment_method: 'card',
+    security_deposit: 0,
+    remarks: 'Check-in directo sin observaciones',
+    status: 'progress',
+    created_by: 'ariasdev672@gmail.com',
+    created_at: '2026-10-24T12:30:00Z',
+    updated_at: '2026-10-24T12:30:00Z',
+  },
+  {
     id: 'res_9a8b1c2d3e4f5001',
     room_id: 'room_suite_101',
     person_id: 'per_carlos_mendoza',
@@ -116,6 +134,7 @@ export const MOCK_RESERVAS_DATA: ReservaApiDto[] = [
  * Evita estrictamente mostrar identificadores crudos (id/room_id) al usuario.
  */
 export const MOCK_ROOM_CATALOG: Record<string, { name: string; floor: number }> = {
+  '131295be018b7ad7': { name: 'Habitación 101 · Suite Presidencial', floor: 1 },
   room_suite_101: { name: 'Habitación 101 · Suite Presidencial', floor: 1 },
   room_deluxe_204: { name: 'Habitación 204 · Deluxe Vista Jardín', floor: 2 },
   room_premium_305: { name: 'Habitación 305 · Premium Ejecutiva', floor: 3 },
@@ -131,6 +150,8 @@ export const MOCK_ROOM_CATALOG: Record<string, { name: string; floor: number }> 
  * Evita estrictamente mostrar identificadores crudos (person_id) al usuario.
  */
 export const MOCK_PERSON_CATALOG: Record<string, string> = {
+  '88b2342cac6a4f1b': 'DIDIER YESID ARIAS ESPEJO',
+  ef13b46784715adf: 'Valeria Gómez Restrepo',
   per_carlos_mendoza: 'Carlos Mendoza Silva',
   per_valentina_rios: 'Valentina Ríos Gómez',
   per_andres_salazar: 'Andrés Salazar Quintero',

@@ -1,71 +1,32 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { fadeUp, staggerContainer, staggerItem } from '../../../../design-tokens/motion'
-import { useStaysList } from '../../application/use-stays-list'
+import { useStaysList, type UseStaysListReturn } from '../../application/use-stays-list'
 import { RecepcionesViewSwitch } from '../molecules/recepciones-view-switch'
 import { RecepcionStayCard } from '../molecules/recepcion-stay-card'
 import { RecepcionStayTable } from '../molecules/recepcion-stay-table'
 import { RecepcionStayDetailModal } from '../molecules/recepcion-stay-detail-modal'
 import { InfiniteScroll, InfiniteScrollEnd } from '../../../../shared/ui/InfiniteScroll'
+import { Loading } from '../../../../shared/loading'
 import type { StayItem } from '../../domain/stay'
 
 export interface RecepcionesListContainerProps {
   onNewCheckIn?: () => void
+  staysListReturn?: UseStaysListReturn
 }
 
-/**
- * Skeleton animado para Cards durante el estado de carga
- */
-function StaysCardsSkeleton() {
-  return (
-    <motion.div
-      variants={fadeUp}
-      initial="hidden"
-      animate="visible"
-      className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5"
-    >
-      {[1, 2, 3, 4, 5, 6].map((i) => (
-        <div
-          key={i}
-          className="rounded-2xl border border-line bg-panel p-5 space-y-4 animate-pulse"
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="size-10 rounded-xl bg-line/60" />
-              <div className="space-y-1.5">
-                <div className="h-3 w-16 bg-line/40 rounded-sm" />
-                <div className="h-4 w-24 bg-line/60 rounded-md" />
-              </div>
-            </div>
-            <div className="h-6 w-20 bg-line/50 rounded-full" />
-          </div>
-
-          <div className="space-y-2">
-            <div className="h-3 w-32 bg-line/40 rounded-sm" />
-            <div className="flex gap-1.5">
-              <div className="h-6 w-20 bg-line/50 rounded-lg" />
-              <div className="h-6 w-20 bg-line/50 rounded-lg" />
-            </div>
-          </div>
-
-          <div className="h-20 bg-line/30 rounded-xl" />
-
-          <div className="grid grid-cols-2 gap-2.5">
-            <div className="h-12 bg-line/40 rounded-xl" />
-            <div className="h-12 bg-line/40 rounded-xl" />
-          </div>
-        </div>
-      ))}
-    </motion.div>
-  )
-}
 
 /**
  * Organismo contenedor para la supervisión y visualización de recepciones.
  * Integra consumo de GET /stays con Axios, validación de status code,
  * tarjetas detalladas, tabla responsiva y switch con animación fluida.
  */
-export function RecepcionesListContainer({ onNewCheckIn }: RecepcionesListContainerProps) {
+export function RecepcionesListContainer({
+  onNewCheckIn,
+  staysListReturn: externalStaysList,
+}: RecepcionesListContainerProps) {
+  const internalStaysList = useStaysList()
+  const staysList = externalStaysList ?? internalStaysList
   const {
     filteredStays,
     loading,
@@ -80,7 +41,7 @@ export function RecepcionesListContainer({ onNewCheckIn }: RecepcionesListContai
     paymentFilter,
     setPaymentFilter,
     reload,
-  } = useStaysList()
+  } = staysList
 
   const [selectedStay, setSelectedStay] = useState<StayItem | null>(null)
 
@@ -236,8 +197,17 @@ export function RecepcionesListContainer({ onNewCheckIn }: RecepcionesListContai
       </div>
 
       {/* 4. Contenido Principal: Cards vs. Table según el switch */}
-      {loading ? (
-        <StaysCardsSkeleton />
+      {loading && filteredStays.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-line bg-panel p-16 text-center shadow-xs">
+          <Loading
+            variant="block"
+            size="md"
+            label="Cargando recepciones y estancias…"
+            description="Consultando el estado de ocupación hotelera en tiempo real."
+            delay={0}
+            minDuration={500}
+          />
+        </div>
       ) : filteredStays.length === 0 ? (
         /* Empty State */
         <motion.div
@@ -287,6 +257,17 @@ export function RecepcionesListContainer({ onNewCheckIn }: RecepcionesListContai
           onLoadMore={() => {}}
           hasMore={false}
           isLoading={false}
+          loader={
+            <div className="flex items-center justify-center py-6">
+              <Loading
+                variant="inline"
+                size="sm"
+                label="Cargando más recepciones…"
+                delay={0}
+                minDuration={400}
+              />
+            </div>
+          }
           endMessage={<InfiniteScrollEnd label="Has visualizado todas las recepciones registradas." />}
         >
           <AnimatePresence mode="wait">

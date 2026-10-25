@@ -3,6 +3,7 @@ import { faBed, faRotateRight } from '@fortawesome/free-solid-svg-icons'
 import { motion } from 'motion/react'
 import { fadeIn, staggerContainer } from '../../../../design-tokens/motion'
 import { InfiniteScroll } from '../../../../shared/ui/InfiniteScroll'
+import { Loading } from '../../../../shared/loading'
 import type { ReservaViewItem, ReservaViewMode } from '../../domain/reserva-list-types'
 import { ReservaCardItem } from '../molecules/reserva-card-item'
 import { ReservasTablaView } from '../molecules/reservas-tabla-view'
@@ -15,6 +16,7 @@ interface ReservasListContainerProps {
   onLoadMore: () => Promise<void> | void
   onResetFilters?: () => void
   onSelectReserva?: (id: string) => void
+  onSelectHuesped?: (personId: string) => void
 }
 
 export function ReservasListContainer({
@@ -25,13 +27,19 @@ export function ReservasListContainer({
   onLoadMore,
   onResetFilters,
   onSelectReserva,
+  onSelectHuesped,
 }: ReservasListContainerProps) {
   if (loading && items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center rounded-2xl border border-line bg-panel p-16 text-center shadow-xs">
-        <span className="inline-block size-8 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
-        <p className="mt-4 text-sm font-semibold text-ink">Cargando reservas...</p>
-        <p className="mt-1 text-xs text-ink-muted">Conectando con el catálogo de estadías de Nexora.</p>
+        <Loading
+          variant="block"
+          size="md"
+          label="Cargando reservas balanceadas…"
+          description="Conectando con el catálogo de estadías mediante balanceo preventivo de carga."
+          delay={0}
+          minDuration={500}
+        />
       </div>
     )
   }
@@ -73,7 +81,13 @@ export function ReservasListContainer({
       isLoading={loading}
       loader={
         <div className="flex items-center justify-center py-6">
-          <span className="inline-block size-6 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
+          <Loading
+            variant="inline"
+            size="sm"
+            label="Cargando más reservas…"
+            delay={0}
+            minDuration={400}
+          />
         </div>
       }
       endMessage={
@@ -95,11 +109,16 @@ export function ReservasListContainer({
               key={item.id}
               item={item}
               onSelect={onSelectReserva}
+              onSelectHuesped={onSelectHuesped}
             />
           ))}
         </motion.div>
       ) : (
-        <ReservasTablaView items={items} onSelect={onSelectReserva} />
+        <ReservasTablaView
+          items={items}
+          onSelect={onSelectReserva}
+          onSelectHuesped={onSelectHuesped}
+        />
       )}
     </InfiniteScroll>
   )
