@@ -14,6 +14,7 @@ import { cn } from '../lib/cn'
 import { api } from '../../../../lib/api'
 import { validateStatusCode } from '../../../../shared/lib/status-code-validator'
 import { InfiniteScroll } from '../../../../shared/ui/InfiniteScroll'
+import { Loading } from '../../../../shared/loading'
 
 const apiModuleRepository = new ApiModuleRepository()
 
@@ -65,6 +66,7 @@ export interface DropdownOption {
   label: string
   id?: string
   rawName?: string
+  customContent?: React.ReactNode
 }
 
 export interface RecursosDropdownProps {
@@ -106,12 +108,14 @@ export interface RecursosDropdownProps {
   emptyLabel?: string
   /** Identificador opcional para el elemento de formulario */
   id?: string
-  /** Tamaño del lote para el scroll infinito y renderizado progresivo (por defecto 20) */
+  /** Tamaño del lote para el scroll infinito y renderizado progresivo (por defecto 6) */
   pageSize?: number
   /** Callback opcional para cargar más opciones desde un servidor */
   onLoadMoreOptions?: () => Promise<void> | void
   /** Indica si hay más opciones en el servidor */
   hasMoreOptions?: boolean
+  /** Indica si las opciones están cargando externamente */
+  isLoading?: boolean
 }
 
 export function RecursosDropdown({
@@ -134,9 +138,10 @@ export function RecursosDropdown({
   className,
   emptyLabel: customEmptyLabel,
   id,
-  pageSize = 20,
+  pageSize = 6,
   onLoadMoreOptions,
   hasMoreOptions: externalHasMore,
+  isLoading: externalIsLoading,
 }: RecursosDropdownProps) {
   const isComponentDisabled = isDisabled ?? disabled
   const autoId = useId()
@@ -148,10 +153,25 @@ export function RecursosDropdown({
   }, [onSelectOption])
 
   const [internalOptions, setInternalOptions] = useState<ReadonlyArray<DropdownOption>>([])
-  const [loading, setLoading] = useState(externalOptions == null)
+  const [internalLoading, setInternalLoading] = useState(externalOptions == null)
+  const isOptionsLoading = externalIsLoading ?? internalLoading
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isOpen, setIsOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [isOpeningProgressive, setIsOpeningProgressive] = useState(false)
+
+  // Darle chance al Loading para que sea visible al desplegar el dropdown
+  useEffect(() => {
+    if (isOpen) {
+      setIsOpeningProgressive(true)
+      const timer = setTimeout(() => {
+        setIsOpeningProgressive(false)
+      }, 550)
+      return () => clearTimeout(timer)
+    } else {
+      setIsOpeningProgressive(false)
+    }
+  }, [isOpen])
 
   // Habilitado por defecto para búsqueda en tiempo real
   const isSearchEnabled = searchable ?? true
@@ -160,7 +180,7 @@ export function RecursosDropdown({
   const loadOptions = useCallback(async () => {
     if (externalOptions != null) return
     setErrorMessage(null)
-    setLoading(true)
+    setInternalLoading(true)
 
     try {
       // 1. Endpoint específico de roles: /roles vía GET con axios y validateStatusCode
@@ -254,7 +274,7 @@ export function RecursosDropdown({
         )
       }
     } finally {
-      setLoading(false)
+      setInternalLoading(false)
     }
   }, [externalOptions, endpoint, onChange])
 
@@ -374,8 +394,12 @@ export function RecursosDropdown({
     if (!hasMore || isLoadingMore) return
     setIsLoadingMore(true)
     try {
+      const waitTimer = new Promise((resolve) => setTimeout(resolve, 650))
       if (onLoadMoreOptions) {
-        await onLoadMoreOptions()
+        await Promise.all([onLoadMoreOptions(), waitTimer])
+      } else {
+        // Pausa adecuada (chance) para que la animación del Loading sea apreciable entre lotes
+        await waitTimer
       }
       // Incrementar el lote de opciones visibles
       setVisibleCount((prev) => Math.min(prev + pageSize, filteredOptions.length))
@@ -405,13 +429,13 @@ export function RecursosDropdown({
               <Button
                 variant="secondary"
                 onClick={() => {
-                  setLoading(true)
+                  setInternalLoading(true)
                   void loadOptions()
                 }}
-                disabled={loading || isComponentDisabled}
+                disabled={isOptionsLoading || isComponentDisabled}
                 className="mt-2 px-3 py-1 text-xs font-semibold cursor-pointer"
               >
-                {loading ? 'Consultando roles…' : 'Volver a intentar'}
+                {isOptionsLoading ? 'Consultando roles…' : 'Volver a intentar'}
               </Button>
             </div>
           </div>
@@ -438,7 +462,7 @@ export function RecursosDropdown({
 
   // Texto a mostrar en el trigger en modo simple
   const singleSelectDisplayText = (() => {
-    if (loading) return 'Cargando opciones…'
+    if (isOptionsLoading) return 'Cargando opciones…'
     if (selectedOption) return selectedOption.label
     if (resolvedValue) {
       const matchByLabel = options.find(
@@ -475,9 +499,9 @@ export function RecursosDropdown({
         aria-haspopup="listbox"
         aria-expanded={isOpen}
         aria-labelledby={`${fieldId}-label`}
-        disabled={isComponentDisabled || loading}
+        disabled={isComponentDisabled || isOptionsLoading}
         onClick={() => {
-          if (isComponentDisabled || loading) return
+          if (isComponentDisabled || isOptionsLoading) return
           setIsOpen((prev) => {
             if (prev) {
               setSearchTerm('')
@@ -500,9 +524,16 @@ export function RecursosDropdown({
         {multiple ? (
           // Modo Múltiple: Chips de valores seleccionados
           <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
-            {selectedValues.length === 0 ? (
+            {isOptionsLoading ? (
+              <Loading
+                variant="inline"
+                size="sm"
+                label="Cargando opciones…"
+                delay={0}
+              />
+            ) : selectedValues.length === 0 ? (
               <span className="text-ink-soft text-xs sm:text-sm">
-                {loading ? 'Cargando opciones…' : (placeholder ?? 'Elige una o varias opciones…')}
+                {placeholder ?? 'Elige una o varias opciones…'}
               </span>
             ) : (
               selectedValues.map((val) => {
@@ -530,15 +561,24 @@ export function RecursosDropdown({
             )}
           </div>
         ) : (
-          // Modo Simple: Texto de la opción seleccionada
-          <span
-            className={cn(
-              'truncate text-xs sm:text-sm flex-1',
-              hasSingleValue ? 'text-ink font-medium' : 'text-ink-soft',
-            )}
-          >
-            {singleSelectDisplayText}
-          </span>
+          // Modo Simple: Texto de la opción seleccionada o Loading
+          isOptionsLoading ? (
+            <Loading
+              variant="inline"
+              size="sm"
+              label="Cargando opciones…"
+              delay={0}
+            />
+          ) : (
+            <span
+              className={cn(
+                'truncate text-xs sm:text-sm flex-1',
+                hasSingleValue ? 'text-ink font-medium' : 'text-ink-soft',
+              )}
+            >
+              {singleSelectDisplayText}
+            </span>
+          )
         )}
 
         <span className="shrink-0 text-ink-muted pl-2">
@@ -614,16 +654,25 @@ export function RecursosDropdown({
                 }
               }}
             >
-              {filteredOptions.length === 0 ? (
+              {isOptionsLoading || isOpeningProgressive ? (
+                <div className="flex items-center justify-center py-7 px-4">
+                  <Loading
+                    variant="block"
+                    size="sm"
+                    label="Cargando opciones…"
+                    description="Preparando opciones disponibles"
+                    delay={0}
+                    minDuration={500}
+                  />
+                </div>
+              ) : filteredOptions.length === 0 ? (
                 <motion.div
                   variants={dropdownStaggerItem}
                   className="p-4 text-center text-xs text-ink-soft"
                 >
-                  {loading
-                    ? 'Cargando opciones…'
-                    : searchTerm.trim()
-                      ? `No se encontraron resultados para "${searchTerm}".`
-                      : (customEmptyLabel ?? 'No hay opciones disponibles.')}
+                  {searchTerm.trim()
+                    ? `No se encontraron resultados para "${searchTerm}".`
+                    : (customEmptyLabel ?? 'No hay opciones disponibles.')}
                 </motion.div>
               ) : (
                 <InfiniteScroll
@@ -632,9 +681,14 @@ export function RecursosDropdown({
                   isLoading={isLoadingMore}
                   rootMargin="0px 0px 80px 0px"
                   loader={
-                    <div className="flex items-center justify-center py-2 text-xs text-ink-muted">
-                      <span className="inline-block size-3 animate-spin rounded-full border-2 border-primary/20 border-t-primary mr-1.5" />
-                      <span className="text-[11px]">Cargando más opciones…</span>
+                    <div className="flex items-center justify-center py-2.5">
+                      <Loading
+                        variant="inline"
+                        size="sm"
+                        label="Cargando más opciones…"
+                        delay={0}
+                        minDuration={150}
+                      />
                     </div>
                   }
                   endMessage={
@@ -731,7 +785,11 @@ export function RecursosDropdown({
                               : 'text-ink hover:bg-black/5 dark:hover:bg-white/5',
                           )}
                         >
-                          <span className="truncate flex-1 pr-2">{opt.label}</span>
+                          {opt.customContent ? (
+                            <div className="flex-1 min-w-0 pr-2">{opt.customContent}</div>
+                          ) : (
+                            <span className="truncate flex-1 pr-2">{opt.label}</span>
+                          )}
                           {isSelected && (
                             <FontAwesomeIcon
                               icon={faCheck}

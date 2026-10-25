@@ -255,11 +255,15 @@ export const SAMPLE_STAYS: StayItem[] = [
  */
 export async function getStaysFromApi(): Promise<FetchStaysResult> {
   try {
-    const response = await api.get('/stays', {
-      // Evita que Axios arroje excepción en status >= 400 para permitir la validación
-      // exhaustiva y psicológica con `validateStatusCode`
-      validateStatus: () => true,
-    })
+    const minChance = new Promise((resolve) => setTimeout(resolve, 500))
+    const [response] = await Promise.all([
+      api.get('/stays', {
+        // Evita que Axios arroje excepción en status >= 400 para permitir la validación
+        // exhaustiva y psicológica con `validateStatusCode`
+        validateStatus: () => true,
+      }),
+      minChance,
+    ])
 
     const validation = validateStatusCode(response.status)
 

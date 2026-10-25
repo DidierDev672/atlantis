@@ -44,6 +44,15 @@ const DEMO_COMPANIONS_MAP: Record<
     phone_number?: string
   }>
 > = {
+  '88b2342cac6a4f1b': [
+    {
+      name: 'Valeria Gómez Restrepo',
+      document_number: '1032456789',
+      document_type: 'CC',
+      email: 'valeria.gomez@correo.com',
+      phone_number: '+57 311 234 5678',
+    },
+  ],
   per_carlos_mendoza: [
     {
       name: 'Elena Silva',
@@ -240,9 +249,7 @@ export function ReservaDetalleModal({
       name: titularPersonData?.name || detail.personDisplayName,
       roomName: detail.roomDisplayName,
       documentType: titularPersonData?.document_type || 'CC',
-      documentNumber:
-        titularPersonData?.document_number ||
-        (detail.personId?.startsWith('per_') ? undefined : detail.personId),
+      documentNumber: titularPersonData?.document_number || undefined,
       email: titularPersonData?.email,
       phoneNumber: titularPersonData?.phone_number,
       statusLabel: 'Titular confirmado',
