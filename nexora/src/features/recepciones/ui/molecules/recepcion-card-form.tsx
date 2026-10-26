@@ -71,6 +71,9 @@ export function RecepcionCardForm({
     [metodoPagoOptions],
   )
 
+  // Determina si no existen reservas previas disponibles en el sistema (array vacío)
+  const hasNoReservas = !loadingDependencies && reservaDropdownOptions.length === 0
+
   return (
     <motion.div
       variants={fadeIn}
@@ -125,6 +128,8 @@ export function RecepcionCardForm({
               placeholder={
                 loadingDependencies
                   ? 'Cargando reservas disponibles…'
+                  : hasNoReservas
+                  ? 'Sin reservas previas pendientes de ingreso'
                   : 'Selecciona una reserva para el ingreso…'
               }
               options={reservaDropdownOptions}
@@ -132,12 +137,45 @@ export function RecepcionCardForm({
               onChange={(value) => onFieldChange('reservaId', value)}
               error={errors.reservaId}
               required
-              disabled={loadingDependencies || submitting}
+              disabled={loadingDependencies || submitting || hasNoReservas}
             />
-            <p className="mt-1 text-xs text-ink-soft">
-              Selecciona la reserva del huésped (formato: Huésped - Teléfono). Al seleccionarla, se sincronizarán
-              automáticamente la habitación asignada, datos del huésped y fechas de estadía.
-            </p>
+
+            {/* Mensaje psicológico y amigable para el recepcionista ante ausencia de reservas previas */}
+            {hasNoReservas ? (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                role="status"
+                className="mt-3 flex items-start gap-3 rounded-xl border border-sky-500/25 bg-sky-500/10 p-3.5 text-xs text-ink"
+              >
+                <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-sky-500/20 text-sky-700 dark:text-sky-300">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className="size-4"
+                    aria-hidden="true"
+                  >
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                    <polyline points="22 4 12 14.01 9 11.01" />
+                  </svg>
+                </span>
+                <div className="space-y-1">
+                  <p className="font-semibold text-sky-800 dark:text-sky-200">
+                    ✨ ¡Todo al día por aquí! No hay reservas previas pendientes
+                  </p>
+                  <p className="leading-relaxed text-ink-muted">
+                    ¡Excelente noticia! En este momento todas las reservas programadas ya fueron recibidas o no hay registros pendientes de ingreso. Si el huésped acaba de presentarse en recepción (walk-in), puedes registrar una nueva reserva en el módulo de Reservas para sincronizar sus datos y asignarle su habitación de inmediato.
+                  </p>
+                </div>
+              </motion.div>
+            ) : (
+              <p className="mt-1 text-xs text-ink-soft">
+                Selecciona la reserva del huésped (formato: Huésped - Teléfono). Al seleccionarla, se sincronizarán
+                automáticamente la habitación asignada, datos del huésped y fechas de estadía.
+              </p>
+            )}
           </div>
 
           {/* 2. CASCADA JERÁRQUICA DE UBICACIÓN */}

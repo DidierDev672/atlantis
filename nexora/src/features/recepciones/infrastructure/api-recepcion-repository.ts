@@ -1,5 +1,6 @@
 import { isAxiosError } from 'axios'
 import { api } from '../../../lib/api'
+import { validateStatusCode } from '../../../shared/lib/status-code-validator'
 import {
   calcularNoches,
   ESTADO_OPTIONS,
@@ -654,94 +655,82 @@ export class ApiRecepcionRepository implements RecepcionRepository {
   async getReservas(): Promise<ReservaInfo[]> {
     try {
       const response = await api.get<unknown>('/reserve', {
-        validateStatus: (s) => s >= 200 && s < 300,
+        validateStatus: () => true,
       })
+
+      // Validar rigurosamente el código de estado HTTP con validateStatusCode
+      const validation = validateStatusCode(response.status)
+
+      if (!validation.isValid) {
+        console.warn(
+          `[getReservas] Respuesta no válida en GET /reserve (${response.status}):`,
+          validation.message,
+        )
+        return []
+      }
 
       const raw: RawReserva[] = Array.isArray(response.data)
         ? response.data
         : (response.data as { data?: RawReserva[] })?.data ?? []
 
-      if (raw.length > 0) {
-        const enriched: ReservaInfo[] = await Promise.all(
-          raw
-            .filter((r) => Boolean(r.id))
-            .map(async (res) => {
-              const id = String(res.id)
-              const roomId = String(res.room_id || '')
-              const personId = String(res.person_id || '')
-              let guestName = ''
-              let guestPhone = ''
-
-              if (personId) {
-                const p = await this.getPersonById(personId)
-                if (p) {
-                  guestName = p.name
-                  guestPhone = p.phone_number || ''
-                }
-              }
-
-              const name = guestName || `Huésped #${personId.slice(0, 6) || id.slice(0, 6)}`
-              const phone = guestPhone || 'Sin teléfono'
-
-              return {
-                id,
-                roomId,
-                roomName: `Habitación #${roomId.slice(0, 6)}`,
-                personId,
-                guestName: name,
-                guestPhone: phone,
-                checkInDate: res.check_in_date || '',
-                checkOutDate: res.check_out_date || '',
-                totalPrice: res.total_price,
-                label: `${name} - ${phone}`,
-              }
-            }),
-        )
-
-        return enriched
+      // Si la petición fue exitosa (200 OK) pero no hay reservas (array vacío):
+      if (raw.length === 0) {
+        return []
       }
-    } catch {
-      // Fallback
-    }
 
-    return [
-      {
-        id: 'res-101',
-        roomId: 'hab-101',
-        roomName: 'Suite Panorámica 101',
-        personId: 'pers-001',
-        guestName: 'Carlos Mendoza',
-        guestPhone: '+57 310 456 7890',
-        checkInDate: '2026-09-25T14:00',
-        checkOutDate: '2026-09-28T12:00',
-        totalPrice: 555000,
-        label: 'Carlos Mendoza - +57 310 456 7890',
-      },
-      {
-        id: 'res-102',
-        roomId: 'hab-201',
-        roomName: 'Apart Familiar 201',
-        personId: 'pers-002',
-        guestName: 'María Fernanda Gómez',
-        guestPhone: '+57 300 987 6543',
-        checkInDate: '2026-09-25T15:30',
-        checkOutDate: '2026-09-30T11:00',
-        totalPrice: 1200000,
-        label: 'María Fernanda Gómez - +57 300 987 6543',
-      },
-      {
-        id: 'res-103',
-        roomId: 'hab-102',
-        roomName: 'Habitación Ejecutiva 102',
-        personId: 'pers-003',
-        guestName: 'Andrés Felipe Restrepo',
-        guestPhone: '+57 315 222 3344',
-        checkInDate: '2026-09-26T12:00',
-        checkOutDate: '2026-09-29T10:00',
-        totalPrice: 360000,
-        label: 'Andrés Felipe Restrepo - +57 315 222 3344',
-      },
-    ]
+      const enriched: ReservaInfo[] = await Promise.all(
+        raw
+          .filter((r) => Boolean(r.id))
+          .map(async (res) => {
+            const id = String(res.id)
+            const roomId = String(res.room_id || '')
+            const personId = String(res.person_id || '')
+            let guestName = ''
+            let guestPhone = ''
+
+            if (personId) {
+              const p = await this.getPersonById(personId)
+              if (p) {
+                guestName = p.name
+                guestPhone = p.phone_number || ''
+              }
+            }
+
+            const name = guestName || `Huésped #${personId.slice(0, 6) || id.slice(0, 6)}`
+            const phone = guestPhone || 'Sin teléfono'
+
+            return {
+              id,
+              roomId,
+              roomName: `Habitación #${roomId.slice(0, 6)}`,
+              personId,
+              guestName: name,
+              guestPhone: phone,
+              checkInDate: res.check_in_date || '',
+              checkOutDate: res.check_out_date || '',
+              totalPrice: res.total_price,
+              label: `${name} - ${phone}`,
+            }
+          }),
+      )
+
+      return enriched
+    } catch (error) {
+      if (isAxiosError(error) && error.response) {
+        const validation = validateStatusCode(error.response.status)
+        console.error(
+          `[getReservas] Error HTTP en GET /reserve (${error.response.status}):`,
+          validation.message,
+        )
+      } else {
+        const fallbackValidation = validateStatusCode(500)
+        console.error(
+          '[getReservas] Error de conexión o red en GET /reserve:',
+          fallbackValidation.message,
+        )
+      }
+      return []
+    }
   }
 
   async getHuespedes(): Promise<HuespedInfo[]> {
