@@ -1,33 +1,38 @@
-import { useMemo } from 'react'
-import { motion } from 'motion/react'
-import { fadeIn } from '../../../../design-tokens/motion'
-import { Input } from '../../../../shared/ui/Input'
-import { Button } from '../../../recursos/ui/atoms/button'
-import { RecursosDropdown } from '../../../recursos/ui/molecules/recursos-dropdown'
+import { useMemo } from 'react';
+import { motion } from 'motion/react';
+import { fadeIn } from '../../../../design-tokens/motion';
+import { Input } from '../../../../shared/ui/Input';
+import {
+  PostPayloadLoader,
+  RocketLaunchIcon,
+  useBalancedPostLoading,
+} from '../../../../shared/loading';
+import { Button } from '../../../recursos/ui/atoms/button';
+import { RecursosDropdown } from '../../../recursos/ui/molecules/recursos-dropdown';
 import {
   formatMetodoPago,
   formatPrecioCOP,
   normalizeMetodoPago,
   type RecepcionInput,
   type RecepcionValidationErrors,
-} from '../../domain/recepcion'
+} from '../../domain/recepcion';
 
 export interface RecepcionCardFormProps {
-  formValues: RecepcionInput
-  errors: RecepcionValidationErrors
-  sedeOptions?: ReadonlyArray<{ value: string; label: string }>
-  edificioOptions?: ReadonlyArray<{ value: string; label: string }>
-  habitacionDropdownOptions: ReadonlyArray<{ value: string; label: string }>
-  camaOptions?: ReadonlyArray<{ value: string; label: string }>
-  reservaDropdownOptions: ReadonlyArray<{ value: string; label: string }>
-  huespedDropdownOptions: ReadonlyArray<{ value: string; label: string }>
-  metodoPagoOptions: ReadonlyArray<{ value: string; label: string }>
-  estadoOptions: ReadonlyArray<{ value: string; label: string }>
-  loadingDependencies: boolean
-  submitting: boolean
-  syncNotice: string | null
-  onFieldChange: (field: keyof RecepcionInput, value: string | number) => void
-  onSubmit: (e?: React.FormEvent) => void
+  formValues: RecepcionInput;
+  errors: RecepcionValidationErrors;
+  sedeOptions?: ReadonlyArray<{ value: string; label: string }>;
+  edificioOptions?: ReadonlyArray<{ value: string; label: string }>;
+  habitacionDropdownOptions: ReadonlyArray<{ value: string; label: string }>;
+  camaOptions?: ReadonlyArray<{ value: string; label: string }>;
+  reservaDropdownOptions: ReadonlyArray<{ value: string; label: string }>;
+  huespedDropdownOptions: ReadonlyArray<{ value: string; label: string }>;
+  metodoPagoOptions: ReadonlyArray<{ value: string; label: string }>;
+  estadoOptions: ReadonlyArray<{ value: string; label: string }>;
+  loadingDependencies: boolean;
+  submitting: boolean;
+  syncNotice: string | null;
+  onFieldChange: (field: keyof RecepcionInput, value: string | number) => void;
+  onSubmit: (e?: React.FormEvent) => void;
 }
 
 export function RecepcionCardForm({
@@ -49,17 +54,17 @@ export function RecepcionCardForm({
 }: RecepcionCardFormProps) {
   // Cálculo de duración aproximada en días/horas si ambas fechas están presentes
   const durationSummary = (() => {
-    if (!formValues.checkIn || !formValues.checkOut) return null
-    const start = new Date(formValues.checkIn).getTime()
-    const end = new Date(formValues.checkOut).getTime()
-    if (isNaN(start) || isNaN(end) || end <= start) return null
-    const diffHours = Math.round((end - start) / (1000 * 60 * 60))
-    const days = Math.floor(diffHours / 24)
-    const hours = diffHours % 24
-    if (days === 0) return `${hours} horas de estadía`
-    if (hours === 0) return `${days} ${days === 1 ? 'noche' : 'noches'}`
-    return `${days} ${days === 1 ? 'noche' : 'noches'} y ${hours} hrs`
-  })()
+    if (!formValues.checkIn || !formValues.checkOut) return null;
+    const start = new Date(formValues.checkIn).getTime();
+    const end = new Date(formValues.checkOut).getTime();
+    if (isNaN(start) || isNaN(end) || end <= start) return null;
+    const diffHours = Math.round((end - start) / (1000 * 60 * 60));
+    const days = Math.floor(diffHours / 24);
+    const hours = diffHours % 24;
+    if (days === 0) return `${hours} horas de estadía`;
+    if (hours === 0) return `${days} ${days === 1 ? 'noche' : 'noches'}`;
+    return `${days} ${days === 1 ? 'noche' : 'noches'} y ${hours} hrs`;
+  })();
 
   // Opciones de método de pago estrictamente garantizadas en español
   const metodoPagoOpcionesEnEspanol = useMemo(
@@ -68,39 +73,43 @@ export function RecepcionCardForm({
         value: normalizeMetodoPago(opt.value),
         label: formatMetodoPago(opt.label),
       })),
-    [metodoPagoOptions],
-  )
+    [metodoPagoOptions]
+  );
 
   // Determina si no existen reservas previas disponibles en el sistema (array vacío)
-  const hasNoReservas = !loadingDependencies && reservaDropdownOptions.length === 0
+  const hasNoReservas =
+    !loadingDependencies && reservaDropdownOptions.length === 0;
+
+  // Gestión de carga balanceada: garantiza tiempo suficiente para visualizar la construcción del payload
+  const { isBalancedVisible, stage } = useBalancedPostLoading({
+    active: submitting,
+    preparingDuration: 750, // Permite visualizar claramente la fase de preparación y empaquetado del payload
+    transmittingMinDuration: 650, // Tiempo de vuelo del cohete y transmisión activa
+    confirmingDuration: 450, // Confirmación segura antes del cierre
+  });
 
   return (
     <motion.div
       variants={fadeIn}
       initial="hidden"
       animate="visible"
-      className="rounded-2xl border border-line bg-panel p-6 shadow-sm sm:p-8"
+      className="border-line bg-panel relative overflow-hidden rounded-2xl border p-6 shadow-sm sm:p-8"
     >
-      {/* Cabecera de la Card */}
-      <div className="mb-6 flex flex-col gap-1 border-b border-line/60 pb-5">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-xl font-bold text-ink">Registro de recepción y entrega de llave</h2>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-            Paso único · Check-in
-          </span>
-        </div>
-        <p className="text-sm text-ink-muted">
-          Completa o verifica la información de ingreso. Si el huésped ya cuenta con reserva previa,
-          elígela para autocompletar la habitación y sus datos.
-        </p>
-      </div>
+      {/* Carga balanceada durante la construcción y envío del payload (POST /stay) */}
+      <PostPayloadLoader
+        visible={isBalancedVisible}
+        stage={stage}
+        variant="overlay"
+        endpoint="POST /stay"
+        payloadSummary="Construyendo payload y registrando estadía"
+      />
 
       {/* Notificación de sincronización si se seleccionó una reserva */}
       {syncNotice && (
         <motion.div
           initial={{ opacity: 0, y: -6 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-6 flex items-center gap-2.5 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-xs text-primary font-medium"
+          className="border-primary/20 bg-primary/5 text-primary mb-6 flex items-center gap-2.5 rounded-xl border px-4 py-3 text-xs font-medium"
         >
           <svg
             viewBox="0 0 24 24"
@@ -129,8 +138,8 @@ export function RecepcionCardForm({
                 loadingDependencies
                   ? 'Cargando reservas disponibles…'
                   : hasNoReservas
-                  ? 'Sin reservas previas pendientes de ingreso'
-                  : 'Selecciona una reserva para el ingreso…'
+                    ? 'Sin reservas previas pendientes de ingreso'
+                    : 'Selecciona una reserva para el ingreso…'
               }
               options={reservaDropdownOptions}
               value={formValues.reservaId}
@@ -146,7 +155,7 @@ export function RecepcionCardForm({
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 1, y: 0 }}
                 role="status"
-                className="mt-3 flex items-start gap-3 rounded-xl border border-sky-500/25 bg-sky-500/10 p-3.5 text-xs text-ink"
+                className="text-ink mt-3 flex items-start gap-3 rounded-xl border border-sky-500/25 bg-sky-500/10 p-3.5 text-xs"
               >
                 <span className="grid size-6 shrink-0 place-items-center rounded-lg bg-sky-500/20 text-sky-700 dark:text-sky-300">
                   <svg
@@ -165,23 +174,30 @@ export function RecepcionCardForm({
                   <p className="font-semibold text-sky-800 dark:text-sky-200">
                     ✨ ¡Todo al día por aquí! No hay reservas previas pendientes
                   </p>
-                  <p className="leading-relaxed text-ink-muted">
-                    ¡Excelente noticia! En este momento todas las reservas programadas ya fueron recibidas o no hay registros pendientes de ingreso. Si el huésped acaba de presentarse en recepción (walk-in), puedes registrar una nueva reserva en el módulo de Reservas para sincronizar sus datos y asignarle su habitación de inmediato.
+                  <p className="text-ink-muted leading-relaxed">
+                    ¡Excelente noticia! En este momento todas las reservas
+                    programadas ya fueron recibidas o no hay registros
+                    pendientes de ingreso. Si el huésped acaba de presentarse en
+                    recepción (walk-in), puedes registrar una nueva reserva en
+                    el módulo de Reservas para sincronizar sus datos y asignarle
+                    su habitación de inmediato.
                   </p>
                 </div>
               </motion.div>
             ) : (
-              <p className="mt-1 text-xs text-ink-soft">
-                Selecciona la reserva del huésped (formato: Huésped - Teléfono). Al seleccionarla, se sincronizarán
-                automáticamente la habitación asignada, datos del huésped y fechas de estadía.
+              <p className="text-ink-soft mt-1 text-xs">
+                Selecciona la reserva del huésped (formato: Huésped - Teléfono).
+                Al seleccionarla, se sincronizarán automáticamente la habitación
+                asignada, datos del huésped y fechas de estadía.
               </p>
             )}
           </div>
 
           {/* 2. CASCADA JERÁRQUICA DE UBICACIÓN */}
-          <div className="sm:col-span-2 rounded-2xl border border-line/80 bg-canvas/60 p-4 sm:p-5 space-y-4">
-            <p className="text-xs font-bold uppercase tracking-wider text-ink">
-              Ubicación Física en la Red Hotelera (Sede ➔ Edificio ➔ Habitación ➔ Cama)
+          <div className="border-line/80 bg-canvas/60 space-y-4 rounded-2xl border p-4 sm:col-span-2 sm:p-5">
+            <p className="text-ink text-xs font-bold tracking-wider uppercase">
+              Ubicación Física en la Red Hotelera (Sede ➔ Edificio ➔ Habitación
+              ➔ Cama)
             </p>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -288,7 +304,10 @@ export function RecepcionCardForm({
               required
               disabled={submitting}
               min={formValues.checkIn}
-              hint={durationSummary ?? 'Fecha y hora acordada para la entrega de llaves.'}
+              hint={
+                durationSummary ??
+                'Fecha y hora acordada para la entrega de llaves.'
+              }
             />
           </div>
 
@@ -299,7 +318,9 @@ export function RecepcionCardForm({
               placeholder="Seleccionar método de pago…"
               options={metodoPagoOpcionesEnEspanol}
               value={normalizeMetodoPago(formValues.metodoPago)}
-              onChange={(value) => onFieldChange('metodoPago', normalizeMetodoPago(value))}
+              onChange={(value) =>
+                onFieldChange('metodoPago', normalizeMetodoPago(value))
+              }
               error={errors.metodoPago}
               required
               disabled={submitting}
@@ -329,14 +350,21 @@ export function RecepcionCardForm({
               label="Depósito de garantía"
               placeholder="Ej. 50000"
               value={formValues.depositoGarantia}
-              onChange={(e) => onFieldChange('depositoGarantia', e.target.value)}
+              onChange={(e) =>
+                onFieldChange('depositoGarantia', e.target.value)
+              }
               error={errors.depositoGarantia}
-              icon={<span className="text-xs font-semibold text-ink-muted">COP $</span>}
+              icon={
+                <span className="text-ink-muted text-xs font-semibold">
+                  COP $
+                </span>
+              }
               iconPosition="left"
               required
               disabled={submitting}
               hint={
-                formValues.depositoGarantia !== '' && !isNaN(Number(formValues.depositoGarantia))
+                formValues.depositoGarantia !== '' &&
+                !isNaN(Number(formValues.depositoGarantia))
                   ? `Monto en custodia: ${formatPrecioCOP(Number(formValues.depositoGarantia))} (reembolsable al check-out si no hay consumos o daños).`
                   : 'Monto retenido como salvaguarda durante la estadía (puede ser 0 si no se requiere).'
               }
@@ -347,7 +375,7 @@ export function RecepcionCardForm({
           <div className="sm:col-span-2">
             <label
               htmlFor="recepcion-remarks"
-              className="mb-1.5 block text-sm font-medium text-ink"
+              className="text-ink mb-1.5 block text-sm font-medium"
             >
               Observaciones (remarks)
             </label>
@@ -358,38 +386,37 @@ export function RecepcionCardForm({
               value={formValues.observaciones ?? ''}
               onChange={(e) => onFieldChange('observaciones', e.target.value)}
               disabled={submitting}
-              className="w-full rounded-xl border border-line bg-panel px-4 py-2.5 text-sm text-ink shadow-xs outline-none transition placeholder:text-ink-soft hover:border-ink-soft focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+              className="border-line bg-panel text-ink placeholder:text-ink-soft hover:border-ink-soft focus:border-primary focus:ring-primary/20 w-full resize-y rounded-xl border px-4 py-2.5 text-sm shadow-xs transition outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-50"
             />
-            <p className="mt-1.5 text-xs text-ink-soft">
-              Opcional. Si no ingresas observaciones, se registrará como &quot;No remarks&quot; por defecto.
+            <p className="text-ink-soft mt-1.5 text-xs">
+              Opcional. Si no ingresas observaciones, se registrará como
+              &quot;No remarks&quot; por defecto.
             </p>
           </div>
         </div>
 
         {/* Botón de acción principal */}
-        <div className="flex flex-col-reverse sm:flex-row items-center justify-between gap-3 pt-4 border-t border-line/60">
-          <p className="text-xs text-ink-soft text-center sm:text-left">
-            Al registrar, se actualizará el estado de la habitación y se emitirá el comprobante.
+        <div className="border-line/60 flex flex-col-reverse items-center justify-between gap-3 border-t pt-4 sm:flex-row">
+          <p className="text-ink-soft text-center text-xs sm:text-left">
+            Al registrar, se actualizará el estado de la habitación y se emitirá
+            el comprobante.
           </p>
           <Button
             type="submit"
             variant="primary"
-            disabled={submitting || loadingDependencies}
-            className="w-full sm:w-auto px-6 py-2.5 font-semibold text-sm"
+            disabled={isBalancedVisible || loadingDependencies}
+            className="w-full px-6 py-2.5 text-sm font-semibold transition-all sm:w-auto"
           >
-            {submitting ? (
-              <span className="flex items-center gap-2">
-                <svg
-                  className="size-4 animate-spin"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  aria-hidden="true"
-                >
-                  <circle cx="12" cy="12" r="10" strokeDasharray="32" strokeDashoffset="12" />
-                </svg>
-                Registrando recepción…
+            {isBalancedVisible ? (
+              <span className="flex items-center justify-center gap-2.5">
+                <RocketLaunchIcon stage={stage} size="sm" />
+                <span>
+                  {stage === 'preparing'
+                    ? 'Construyendo payload…'
+                    : stage === 'transmitting'
+                      ? 'Despegando y transmitiendo…'
+                      : '¡Recepción confirmada!'}
+                </span>
               </span>
             ) : (
               'Confirmar y registrar recepción'
@@ -398,5 +425,5 @@ export function RecepcionCardForm({
         </div>
       </form>
     </motion.div>
-  )
+  );
 }

@@ -6,12 +6,13 @@ import { useRoomNumbers } from '../../application/use-room-numbers'
 import { HuespedDetalleModal } from './huesped-detalle-modal'
 import { RoomDetailModal } from './room-detail-modal'
 import { RecepcionStayCard } from './recepcion-stay-card'
+import { RecepcionEstadoBadge } from '../atoms/recepcion-estado-badge'
 import {
   calculateStayNights,
+  formatGuestInitials,
   formatPaymentMethod,
   formatSecurityDeposit,
   formatStayDate,
-  getStayStatusConfig,
   type StayItem,
 } from '../../domain/stay'
 
@@ -102,7 +103,6 @@ export function RecepcionStayTable({ stays, onSelectStay }: RecepcionStayTablePr
             className="divide-y divide-line/60"
           >
             {stays.map((stay) => {
-              const statusCfg = getStayStatusConfig(stay.status)
               const paymentInfo = formatPaymentMethod(stay.payment_method)
               const checkIn = formatStayDate(stay.check_in_date)
               const checkOut = formatStayDate(stay.check_out_date)
@@ -165,15 +165,13 @@ export function RecepcionStayTable({ stays, onSelectStay }: RecepcionStayTablePr
                     </button>
                   </td>
 
-                  {/* 2. person_ids */}
+                  {/* 2. person_ids (Huéspedes: iniciales) */}
                   <td className="px-4 py-4">
-                    <div className="flex flex-wrap items-center gap-1 max-w-[220px]">
+                    <div className="flex flex-wrap items-center gap-1.5 max-w-[220px]">
                       {stay.person_ids.length > 0 ? (
                         stay.person_ids.map((pid, idx) => {
                           const guestName = guestNames[pid] || `Huésped ${idx + 1}`
-                          const initial = guestNames[pid]
-                            ? guestNames[pid].charAt(0).toUpperCase()
-                            : String(idx + 1)
+                          const initials = formatGuestInitials(guestNames[pid], idx + 1)
 
                           return (
                             <button
@@ -183,13 +181,11 @@ export function RecepcionStayTable({ stays, onSelectStay }: RecepcionStayTablePr
                                 e.stopPropagation()
                                 setInspectPersonId(pid)
                               }}
-                              className="inline-flex items-center gap-1 rounded-md border border-line bg-canvas px-2 py-0.5 text-[11px] font-medium text-ink hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-colors cursor-pointer"
+                              className="group/guest inline-flex size-7 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10 text-primary text-[10px] font-bold tracking-wider shadow-2xs hover:bg-primary hover:text-white hover:border-primary hover:scale-110 active:scale-95 transition-all cursor-pointer"
                               title={`Ver ficha completa de ${guestName}`}
+                              aria-label={`Ver ficha de ${guestName}`}
                             >
-                              <span className="grid size-3.5 place-items-center rounded-full bg-primary/10 text-primary text-[9px] font-bold">
-                                {initial}
-                              </span>
-                              <span className="truncate max-w-[110px]">{guestName}</span>
+                              {initials}
                             </button>
                           )
                         })
@@ -245,12 +241,7 @@ export function RecepcionStayTable({ stays, onSelectStay }: RecepcionStayTablePr
 
                   {/* 7. Estado */}
                   <td className="px-5 py-4 whitespace-nowrap text-center">
-                    <span
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold ${statusCfg.colorClasses}`}
-                    >
-                      <span className={`size-1.5 rounded-full ${statusCfg.dotClass}`} />
-                      {statusCfg.label}
-                    </span>
+                    <RecepcionEstadoBadge status={stay.status} />
                   </td>
                 </motion.tr>
               )

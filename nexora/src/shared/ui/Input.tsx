@@ -1,24 +1,31 @@
-import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react'
-import { AnimatePresence, motion, type Variants } from 'motion/react'
-import { fadeIn } from '../../design-tokens/motion'
-import { cn } from '../lib/cn'
+import {
+  useId,
+  useState,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from 'react';
+import { AnimatePresence, motion, type Variants } from 'motion/react';
+import { fadeIn } from '../../design-tokens/motion';
+import { cn } from '../lib/cn';
+import { faEye, faEyeSlash } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   /** Etiqueta superior del campo. Si se omite, el input queda sin label. */
-  label?: string
+  label?: string;
   /** Mensaje de error de validación, mostrado en rojo. */
-  error?: string
+  error?: string;
   /** Texto de ayuda bajo el campo. Se oculta mientras haya un error. */
-  hint?: ReactNode
+  hint?: ReactNode;
   /** Icono opcional dentro del input (lado izquierdo o derecho). */
-  icon?: ReactNode
+  icon?: ReactNode;
   /** Lado donde se coloca el icono. Por defecto `left`. */
-  iconPosition?: 'left' | 'right'
+  iconPosition?: 'left' | 'right';
   /** Elemento interactivo opcional al final del input (ej. botón para mostrar/ocultar). */
-  action?: ReactNode
-  required?: boolean
+  action?: ReactNode;
+  required?: boolean;
   /** Estado deshabilitado del campo (alias de `disabled`). */
-  isDisabled?: boolean
+  isDisabled?: boolean;
 }
 
 /** Variantes de Framer Motion para el anillo de foco animado y suave */
@@ -43,7 +50,7 @@ const focusRingVariants: Variants = {
       ease: 'easeOut',
     },
   },
-}
+};
 
 export function Input({
   label,
@@ -59,22 +66,55 @@ export function Input({
   id,
   onFocus,
   onBlur,
+  type = 'text',
   ...props
 }: InputProps) {
-  const [isFocused, setIsFocused] = useState(false)
-  const isInputDisabled = isDisabled ?? disabled
-  const autoId = useId()
-  const fieldId = id ?? autoId
-  const errorId = `${fieldId}-error`
-  const hasIcon = icon != null
+  const [showPassword, setShowPassword] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const isInputDisabled = isDisabled ?? disabled;
+  const autoId = useId();
+  const fieldId = id ?? autoId;
+  const errorId = `${fieldId}-error`;
+  const hasIcon = icon != null;
+
+  // Logica de password
+  const isPassword = type === 'password';
+  const resolvedType = isPassword && showPassword ? 'text' : type;
+
+  // El toggle solo aparece si es password y el consumidor no paso su propio `action`
+  const passwordToggle =
+    isPassword && !action ? (
+      <button
+        type="button"
+        onClick={() => setShowPassword((prev) => !prev)}
+        onMouseDown={(e) => e.preventDefault()} // mantiene el foco en el input
+        disabled={isInputDisabled}
+        aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+        aria-pressed={showPassword}
+        aria-controls={fieldId}
+        className="text-ink-soft hover:text-ink focus-visible:ring-primary/40 flex h-8 w-8 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {showPassword ? (
+          <FontAwesomeIcon icon={faEye} />
+        ) : (
+          <FontAwesomeIcon icon={faEyeSlash} />
+        )}
+      </button>
+    ) : null;
+
+  const actionNode = action ?? passwordToggle;
+  const hasAction = Boolean(actionNode);
 
   return (
     <div className={cn('w-full', className)}>
       {label && (
-        <label htmlFor={fieldId} className="mb-1.5 block text-sm font-medium text-ink">
+        <label
+          htmlFor={fieldId}
+          className="text-ink mb-1.5 block text-sm font-medium"
+        >
           {label}
           {required && (
-            <span aria-hidden="true" className="ml-0.5 text-danger">
+            <span aria-hidden="true" className="text-danger ml-0.5">
               *
             </span>
           )}
@@ -86,8 +126,8 @@ export function Input({
           <span
             aria-hidden="true"
             className={cn(
-              'pointer-events-none absolute inset-y-0 flex items-center text-ink-soft z-10',
-              iconPosition === 'left' ? 'left-3.5' : 'right-3.5',
+              'text-ink-soft pointer-events-none absolute inset-y-0 z-10 flex items-center',
+              iconPosition === 'left' ? 'left-3.5' : 'right-3.5'
             )}
           >
             {icon}
@@ -96,25 +136,27 @@ export function Input({
 
         <input
           id={fieldId}
+          type={resolvedType}
           disabled={isInputDisabled}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? errorId : undefined}
           onFocus={(e) => {
-            setIsFocused(true)
-            onFocus?.(e)
+            setIsFocused(true);
+            onFocus?.(e);
           }}
           onBlur={(e) => {
-            setIsFocused(false)
-            onBlur?.(e)
+            setIsFocused(false);
+            onBlur?.(e);
           }}
           className={cn(
-            'w-full rounded-xl border bg-panel px-4 py-2.5 text-sm text-ink shadow-xs outline-none transition-colors placeholder:text-ink-soft',
+            'bg-panel text-ink placeholder:text-ink-soft w-full rounded-xl border px-4 py-2.5 text-sm shadow-xs transition-colors outline-none',
             hasIcon && (iconPosition === 'left' ? 'pl-10' : 'pr-10'),
+            hasAction && 'pr-11',
             Boolean(action) && 'pr-11',
             error
               ? 'border-danger/60 focus:border-danger'
               : 'border-line hover:border-ink-soft focus:border-primary',
-            'disabled:cursor-not-allowed disabled:opacity-50',
+            'disabled:cursor-not-allowed disabled:opacity-50'
           )}
           {...props}
         />
@@ -132,14 +174,14 @@ export function Input({
                 'pointer-events-none absolute inset-0 rounded-xl ring-2',
                 error
                   ? 'ring-danger/30 shadow-[0_0_0_3px_rgba(156,59,49,0.12),0_0_14px_rgba(156,59,49,0.15)]'
-                  : 'ring-primary/25 shadow-[0_0_0_3px_rgba(90,49,31,0.12),0_0_14px_rgba(90,49,31,0.15)] dark:shadow-[0_0_0_3px_rgba(212,199,183,0.1),0_0_14px_rgba(212,199,183,0.12)]',
+                  : 'ring-primary/25 shadow-[0_0_0_3px_rgba(90,49,31,0.12),0_0_14px_rgba(90,49,31,0.15)] dark:shadow-[0_0_0_3px_rgba(212,199,183,0.1),0_0_14px_rgba(212,199,183,0.12)]'
               )}
             />
           )}
         </AnimatePresence>
 
         {action && (
-          <span className="pointer-events-none absolute inset-y-0 right-1.5 flex items-center [&_button]:pointer-events-auto z-10">
+          <span className="pointer-events-none absolute inset-y-0 right-1.5 z-10 flex items-center [&_button]:pointer-events-auto">
             {action}
           </span>
         )}
@@ -155,7 +197,7 @@ export function Input({
             exit="exit"
             id={errorId}
             role="alert"
-            className="mt-1.5 text-xs font-medium text-danger"
+            className="text-danger mt-1.5 text-xs font-medium"
           >
             {error}
           </motion.p>
@@ -163,8 +205,8 @@ export function Input({
       </AnimatePresence>
 
       {!error && hint != null && (
-        <p className="mt-1.5 text-xs leading-relaxed text-ink-soft">{hint}</p>
+        <p className="text-ink-soft mt-1.5 text-xs leading-relaxed">{hint}</p>
       )}
     </div>
-  )
+  );
 }

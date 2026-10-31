@@ -28,14 +28,29 @@ export interface RecepcionRepository {
   getSedes(): Promise<SedeInfo[]>
 
   /**
+   * Obtiene una sede puntual por ID (GET /headquarters/{id}).
+   */
+  getHeadquarterById(id: string): Promise<SedeInfo>
+
+  /**
    * Obtiene los edificios, opcionalmente filtrados por sede (GET /building).
    */
   getEdificios(sedeId?: string): Promise<EdificioInfo[]>
 
   /**
-   * Obtiene las sub-sedes asociadas a una sede específica (GET /sub-headquarters/by-headquarter/{sedeId}).
+   * Obtiene un edificio puntual por ID (GET /building/{id}).
+   */
+  getBuildingById(id: string): Promise<EdificioInfo>
+
+  /**
+   * Obtiene las sub-sedes asociadas a una sede específica (GET /sub-headquarters/by-headquarter/{id_headquarters}).
    */
   getSubSedes(sedeId: string): Promise<SubSedeInfo[]>
+
+  /**
+   * Alias explícito para consulta por sede (GET /sub-headquarters/by-headquarter/{id_headquarters}).
+   */
+  getSubHeadquartersByHeadquarter(headquartersId: string): Promise<SubSedeInfo[]>
 
   /**
    * Obtiene las habitaciones del hotel, opcionalmente filtradas por edificio (GET /room).

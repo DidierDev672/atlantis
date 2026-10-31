@@ -14,6 +14,8 @@ import {
   type ThemeElementKey,
   THEME_BOTTOM_ITEMS,
 } from '../molecules/theme-bottom-menu'
+import { ThemeBackgroundImageSection } from '../molecules/theme-background-image-section'
+import { SparklesIcon } from '../../../dashboard/ui/icons'
 
 export interface CustomThemePageProps {
   onBack: () => void
@@ -27,12 +29,15 @@ const DEFAULT_ELEMENT_COLORS: Record<ThemeElementKey, string> = {
   sidebar: '#222222',
   card: '#FFFFFF',
   pildoras: '#FF6E1F',
+  logo: '#FFFFFF',
 }
 
 export function CustomThemePage({ onBack }: CustomThemePageProps) {
   const appliedPalette = useTemaStore((state) => state.appliedPalette)
   const applyPalette = useTemaStore((state) => state.applyPalette)
   const resetToDefault = useTemaStore((state) => state.resetToDefault)
+  const hotelLogo = useTemaStore((state) => state.hotelLogo)
+  const hotelName = useTemaStore((state) => state.hotelName)
 
   const initialElementColors = useMemo(() => {
     if (!appliedPalette?.colors?.length) return DEFAULT_ELEMENT_COLORS
@@ -45,9 +50,11 @@ export function CustomThemePage({ onBack }: CustomThemePageProps) {
       sidebar: tokens.sidebar || DEFAULT_ELEMENT_COLORS.sidebar,
       card: tokens.panel || DEFAULT_ELEMENT_COLORS.card,
       pildoras: tokens.surface || DEFAULT_ELEMENT_COLORS.pildoras,
+      logo: DEFAULT_ELEMENT_COLORS.logo,
     }
   }, [appliedPalette])
 
+  const [activeTabSection, setActiveTabSection] = useState<'colors' | 'logo' | 'all'>('all')
   const [activeElement, setActiveElement] = useState<ThemeElementKey>('titulo')
   const [elementColors, setElementColors] =
     useState<Record<ThemeElementKey, string>>(initialElementColors)
@@ -75,6 +82,9 @@ export function CustomThemePage({ onBack }: CustomThemePageProps) {
 
   const handleSelectElement = (key: ThemeElementKey) => {
     setActiveElement(key)
+    if (key === 'logo' && activeTabSection === 'colors') {
+      setActiveTabSection('logo')
+    }
     setSelectedColor(elementColors[key] ?? null)
   }
 
@@ -163,14 +173,90 @@ export function CustomThemePage({ onBack }: CustomThemePageProps) {
         </div>
       </motion.div>
 
+      {/* Selector de Sección: Paleta de Colores vs Imagen de Fondo Global */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-panel p-2 shadow-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTabSection('colors')}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
+              activeTabSection === 'colors'
+                ? 'bg-primary text-white shadow-xs'
+                : 'text-ink-muted hover:bg-black/5 hover:text-ink dark:hover:bg-white/5'
+            }`}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="size-4"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7z" />
+            </svg>
+            1. Paleta de Colores
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTabSection('logo')
+              setActiveElement('logo')
+            }}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
+              activeTabSection === 'logo'
+                ? 'bg-primary text-white shadow-xs'
+                : 'text-ink-muted hover:bg-black/5 hover:text-ink dark:hover:bg-white/5'
+            }`}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="size-4"
+              aria-hidden="true"
+            >
+              <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+              <circle cx="9" cy="9" r="2" />
+              <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+            </svg>
+            2. Logo del Hotel (Menú principal)
+            {hotelLogo && (
+              <span className="size-2 rounded-full bg-emerald-500 animate-pulse" title="Logo activo en el menú principal" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTabSection('all')}
+            className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
+              activeTabSection === 'all'
+                ? 'bg-primary text-white shadow-xs'
+                : 'text-ink-muted hover:bg-black/5 hover:text-ink dark:hover:bg-white/5'
+            }`}
+          >
+            Ver ambas secciones
+          </button>
+        </div>
+
+        <span className="text-[11px] font-semibold text-ink-muted px-2 hidden sm:inline">
+          Zustand Store · Persistencia Reactiva
+        </span>
+      </div>
+
       {/* Barra de menú para los colores con botones Aplicar tema y Restablecer tema predeterminado */}
-      <ColorMenuBar
-        selectedColor={selectedColor}
-        onSelectColor={handleColorSelect}
-        onApplyTheme={handleApplyTheme}
-        isApplied={isApplied}
-        onResetDefaultTheme={handleResetDefaultTheme}
-      />
+      {(activeTabSection === 'colors' || activeTabSection === 'all') && (
+        <ColorMenuBar
+          selectedColor={selectedColor}
+          onSelectColor={handleColorSelect}
+          onApplyTheme={handleApplyTheme}
+          isApplied={isApplied}
+          onResetDefaultTheme={handleResetDefaultTheme}
+        />
+      )}
 
       {/* Mensaje de confirmación psicológica al aplicar o restablecer el tema */}
       <AnimatePresence>
@@ -251,34 +337,70 @@ export function CustomThemePage({ onBack }: CustomThemePageProps) {
         transition={{ duration: 0.3, ease: 'easeOut' }}
         className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-4 sm:flex-row sm:items-center sm:justify-between"
       >
-        <div className="flex items-center gap-3">
-          <span
-            style={{
-              backgroundColor: elementColors[activeElement],
-              borderRadius: '6px',
-            }}
-            className="size-9 shadow-inner ring-1 ring-black/10 dark:ring-white/10 shrink-0"
-            aria-hidden="true"
-          />
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
-                Elemento en edición:
-              </span>
-              <span className="font-bold text-primary">{activeItem?.label}</span>
+        {activeElement === 'logo' ? (
+          <div className="flex items-center gap-3">
+            <span
+              className="grid size-9 place-items-center rounded-lg bg-cream text-primary overflow-hidden shadow-inner ring-1 ring-black/10 dark:ring-white/10 shrink-0"
+              aria-hidden="true"
+            >
+              {hotelLogo ? (
+                <img
+                  src={hotelLogo}
+                  alt="Logo del hotel"
+                  className="size-full object-cover"
+                />
+              ) : (
+                <SparklesIcon className="size-4 text-primary" />
+              )}
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                  Elemento en edición:
+                </span>
+                <span className="font-bold text-primary">Logo representativo del hotel</span>
+              </div>
+              <p className="text-xs text-ink-muted">
+                {hotelLogo ? 'Logo personalizado cargado' : 'Ícono predeterminado'} · Se ubica a la izquierda del nombre Nexora en el menú principal.
+              </p>
             </div>
-            <p className="text-xs text-ink-muted">
-              Color asignado:{' '}
-              <strong className="font-mono text-ink">
-                {elementColors[activeElement]}
-              </strong>
-            </p>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <span
+              style={{
+                backgroundColor: elementColors[activeElement],
+                borderRadius: '6px',
+              }}
+              className="size-9 shadow-inner ring-1 ring-black/10 dark:ring-white/10 shrink-0"
+              aria-hidden="true"
+            />
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                  Elemento en edición:
+                </span>
+                <span className="font-bold text-primary">{activeItem?.label}</span>
+              </div>
+              <p className="text-xs text-ink-muted">
+                Color asignado:{' '}
+                <strong className="font-mono text-ink">
+                  {elementColors[activeElement]}
+                </strong>
+              </p>
+            </div>
+          </div>
+        )}
 
         <p className="text-xs text-ink-muted">
-          Haz clic en cualquier color de la barra superior para cambiar el tono de{' '}
-          <strong className="text-ink">{activeItem?.label}</strong>.
+          {activeElement === 'logo'
+            ? 'Carga o cambia el logo del hotel en la sección inferior para mostrarlo con orgullo en tu menú principal.'
+            : (
+              <>
+                Haz clic en cualquier color de la barra superior para cambiar el tono de{' '}
+                <strong className="text-ink">{activeItem?.label}</strong>.
+              </>
+            )}
         </p>
       </motion.div>
 
@@ -343,9 +465,24 @@ export function CustomThemePage({ onBack }: CustomThemePageProps) {
                   : 'hover:opacity-95'
               }`}
             >
-              <span className="text-[10px] font-bold uppercase tracking-wider text-white/70">
-                Sidebar
-              </span>
+              {/* Cabecera del sidebar mostrando el logo a la izquierda de Nexora */}
+              <div className="flex items-center gap-2 mb-2 pb-1.5 border-b border-white/10">
+                <span className="grid size-6 place-items-center rounded-lg bg-cream text-primary overflow-hidden shrink-0 shadow-xs">
+                  {hotelLogo ? (
+                    <img
+                      src={hotelLogo}
+                      alt="Logo del hotel"
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    <SparklesIcon className="size-3 text-primary" />
+                  )}
+                </span>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold text-white truncate block">Nexora</span>
+                  <span className="text-[10px] text-white/70 truncate block">{hotelName}</span>
+                </div>
+              </div>
               <ul className="mt-2 space-y-1.5 text-xs text-white/90">
                 <li className="rounded px-2 py-1 bg-white/10 font-medium">Panel</li>
                 <li className="rounded px-2 py-1 text-white/60">Recursos</li>
@@ -450,6 +587,11 @@ export function CustomThemePage({ onBack }: CustomThemePageProps) {
           </div>
         </div>
       </motion.div>
+
+      {/* Sección para implementar el logo representativo del hotel en el sidebar (Zustand) */}
+      {(activeTabSection === 'logo' || activeTabSection === 'all') && (
+        <ThemeBackgroundImageSection />
+      )}
 
       {/* Botón de volver */}
       <div className="flex justify-center pt-2">

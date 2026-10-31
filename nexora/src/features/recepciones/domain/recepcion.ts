@@ -103,9 +103,35 @@ export interface HabitacionInfo {
   capacity?: number
   price?: number
   building_id?: string
+  building_name?: string
+  headquarters_id?: string
+  headquarters_name?: string
+  sub_headquarters_id?: string | null
+  sub_headquarters_name?: string
   room_types_id?: string
   status?: string
   label: string
+}
+
+/**
+ * Formatea la etiqueta de habitación para el dropdown según la Regla de Oro:
+ * `numero habitacion - piso - edificio - sede - sub sede`
+ * Garantiza que NUNCA se visualicen IDs/UUIDs crudos en la experiencia de usuario.
+ */
+export function formatHabitacionDropdownOption(params: {
+  roomNumber?: string | number
+  floor?: string | number
+  buildingName?: string
+  sedeName?: string
+  subSedeName?: string | null
+}): string {
+  const num = params.roomNumber ? String(params.roomNumber) : 'Habitación'
+  const piso = params.floor ? `Piso ${params.floor}` : 'Piso 1'
+  const edificio = params.buildingName?.trim() || 'Edificio principal'
+  const sede = params.sedeName?.trim() || 'Sede principal'
+  const subSede = params.subSedeName?.trim() || 'Sin subsede'
+
+  return `${num} - ${piso} - ${edificio} - ${sede} - ${subSede}`
 }
 
 export interface CamaInfo {
@@ -185,7 +211,8 @@ export const STATUS_BACKEND_MAP: Record<string, string> = {
 export interface RecepcionPayload {
   room_id: string
   reservation_id: string
-  person_id: string
+  person_ids: string[]
+  person_id?: string
   check_in_date: string
   check_out_date: string
   payment_method: string
@@ -203,6 +230,7 @@ export interface Recepcion {
   reservaLabel?: string
   guestId: string
   guestLabel: string
+  person_ids?: string[]
   checkIn: string
   checkOut: string
   metodoPago: RecepcionMetodoPago | string

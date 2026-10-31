@@ -3,12 +3,12 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useGuestNames } from '../../application/use-guest-names'
 import { useRoomNumber } from '../../application/use-room-numbers'
 import { RoomDetailModal } from './room-detail-modal'
+import { RecepcionEstadoBadge } from '../atoms/recepcion-estado-badge'
 import {
   calculateStayNights,
   formatPaymentMethod,
   formatSecurityDeposit,
   formatStayDate,
-  getStayStatusConfig,
   type StayItem,
 } from '../../domain/stay'
 
@@ -101,7 +101,6 @@ export function RecepcionStayDetailModal({
 
   if (!currentStay) return null
 
-  const statusCfg = getStayStatusConfig(currentStay.status)
   const paymentInfo = formatPaymentMethod(currentStay.payment_method)
   const checkIn = formatStayDate(currentStay.check_in_date)
   const checkOut = formatStayDate(currentStay.check_out_date)
@@ -205,12 +204,7 @@ export function RecepcionStayDetailModal({
               {/* Estado de la estancia */}
               <div className="flex items-center justify-between rounded-2xl bg-canvas/60 p-3.5 border border-line">
                 <span className="font-semibold text-ink-muted">Estado actual:</span>
-                <span
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-semibold ${statusCfg.colorClasses}`}
-                >
-                  <span className={`size-1.5 rounded-full ${statusCfg.dotClass}`} />
-                  {statusCfg.label}
-                </span>
+                <RecepcionEstadoBadge status={currentStay.status} size="md" />
               </div>
 
               {/* Habitación asignada (número obtenido vía GET /room/{id} con Axios) */}

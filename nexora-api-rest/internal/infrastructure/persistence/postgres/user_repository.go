@@ -83,7 +83,7 @@ func (r *UserRepository) FindByID(ctx context.Context, id domain.UserID) (domain
 }
 
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (domain.User, error) {
-	user, err := scanUser(r.conn.QueryRow(ctx, "SELECT "+userColumns+" FROM users WHERE email = $1", email))
+	user, err := scanUser(r.conn.QueryRow(ctx, "SELECT "+userColumns+" FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))", email))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.User{}, domain.ErrUserNotFound

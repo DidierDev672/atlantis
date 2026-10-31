@@ -4,7 +4,7 @@ import { fadeIn, fadeUp } from '../../../../design-tokens/motion'
 import { api } from '../../../../lib/api'
 import { PersonaRegistroForm } from '../molecules/persona-registro-form'
 import { Button } from '../../../recursos/ui/atoms/button'
-import { toPersonaPayload, type Persona, type PersonaInput } from '../../domain/persona'
+import { toPersonaPayload, DEFAULT_ROLE_ID, type Persona, type PersonaInput } from '../../domain/persona'
 
 export interface RegistroPersonaPanelProps {
   onBackToDirectory?: () => void
@@ -38,9 +38,15 @@ export function RegistroPersonaPanel({ onBackToDirectory, onSuccess }: RegistroP
           numeroDocumento: values.numeroDocumento,
           nombre: values.nombre,
           name: values.name ?? values.nombre,
+          fechaNacimiento: values.fechaNacimiento,
+          date_of_birth: values.fechaNacimiento,
+          genero: values.genero,
+          gender: values.gender ?? values.genero,
+          nacionalidad: values.nacionalidad,
+          nationality: values.nationality ?? values.nacionalidad,
           telefono: values.telefono,
           email: values.email,
-          roles: values.roles ?? [],
+          roles: values.roles && values.roles.length > 0 ? values.roles : [DEFAULT_ROLE_ID],
           creadoEn: data?.creadoEn ?? new Date().toISOString(),
         }
 

@@ -10,7 +10,7 @@ export function PersonGenderBadge({ gender, className = '' }: PersonGenderBadgeP
 
   let badgeClasses = 'bg-stone-500/10 text-stone-700 border-stone-500/20'
 
-  if (tone === 'blue') {
+  if (tone === 'indigo') {
     badgeClasses = 'bg-blue-500/10 text-blue-800 border-blue-500/25 dark:text-blue-300 dark:border-blue-600/30'
   } else if (tone === 'rose') {
     badgeClasses = 'bg-rose-500/10 text-rose-800 border-rose-500/25 dark:text-rose-300 dark:border-rose-600/30'
@@ -24,7 +24,7 @@ export function PersonGenderBadge({ gender, className = '' }: PersonGenderBadgeP
       className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${badgeClasses} ${className}`}
     >
       {/* Icono de género */}
-      {tone === 'blue' ? (
+      {tone === 'indigo' ? (
         <svg
           viewBox="0 0 24 24"
           fill="none"

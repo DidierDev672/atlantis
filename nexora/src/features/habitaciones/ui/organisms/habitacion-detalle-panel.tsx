@@ -66,7 +66,7 @@ function mapEdificioOptions(items: unknown[]): EdificioOption[] {
         floorNumber:
           parsedFloor && !isNaN(parsedFloor) && parsedFloor > 0
             ? parsedFloor
-            : undefined,
+            : 5,
       };
     })
     .filter((item) => item.value.length > 0 && item.label.length > 0);

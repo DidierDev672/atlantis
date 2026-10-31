@@ -5,12 +5,13 @@ import { useGuestNames } from '../../application/use-guest-names'
 import { useRoomNumber } from '../../application/use-room-numbers'
 import { HuespedDetalleModal } from './huesped-detalle-modal'
 import { RoomDetailModal } from './room-detail-modal'
+import { RecepcionEstadoBadge } from '../atoms/recepcion-estado-badge'
 import {
   calculateStayNights,
+  formatGuestInitials,
   formatPaymentMethod,
   formatSecurityDeposit,
   formatStayDate,
-  getStayStatusConfig,
   type StayItem,
 } from '../../domain/stay'
 
@@ -36,7 +37,6 @@ export function RecepcionStayCard({ stay, onClick, variants }: RecepcionStayCard
   const guestNames = useGuestNames(stay.person_ids)
   const roomNumber = useRoomNumber(stay.room_id)
 
-  const statusCfg = getStayStatusConfig(stay.status)
   const paymentInfo = formatPaymentMethod(stay.payment_method)
   const checkIn = formatStayDate(stay.check_in_date)
   const checkOut = formatStayDate(stay.check_out_date)
@@ -98,12 +98,7 @@ export function RecepcionStayCard({ stay, onClick, variants }: RecepcionStayCard
           </button>
 
           {/* Badge de Estado */}
-          <span
-            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusCfg.colorClasses}`}
-          >
-            <span className={`size-1.5 rounded-full ${statusCfg.dotClass}`} />
-            {statusCfg.label}
-          </span>
+          <RecepcionEstadoBadge status={stay.status} size="sm" />
         </div>
 
         {/* Sección: person_ids (Huéspedes asignados) */}
@@ -132,13 +127,11 @@ export function RecepcionStayCard({ stay, onClick, variants }: RecepcionStayCard
             </span>
           </div>
 
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {stay.person_ids.length > 0 ? (
               stay.person_ids.map((personId, index) => {
                 const guestName = guestNames[personId] || `Huésped ${index + 1}`
-                const initial = guestNames[personId]
-                  ? guestNames[personId].charAt(0).toUpperCase()
-                  : String(index + 1)
+                const initials = formatGuestInitials(guestNames[personId], index + 1)
 
                 return (
                   <button
@@ -148,29 +141,11 @@ export function RecepcionStayCard({ stay, onClick, variants }: RecepcionStayCard
                       e.stopPropagation()
                       setInspectPersonId(personId)
                     }}
-                    className="group/guest inline-flex items-center gap-1.5 rounded-lg border border-line bg-canvas/80 px-2.5 py-1 text-xs font-medium text-ink hover:border-primary/50 hover:text-primary hover:bg-primary/5 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shadow-2xs"
+                    className="group/guest inline-flex size-7.5 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10 text-primary text-[11px] font-bold tracking-wider shadow-2xs hover:bg-primary hover:text-white hover:border-primary hover:scale-110 active:scale-95 transition-all cursor-pointer"
                     title={`Ver ficha completa de ${guestName}`}
+                    aria-label={`Ver ficha de ${guestName}`}
                   >
-                    <span className="grid size-4 place-items-center rounded-full bg-primary/10 text-primary text-[10px] font-bold group-hover/guest:bg-primary group-hover/guest:text-white transition-colors">
-                      {initial}
-                    </span>
-                    <span className="max-w-[130px] sm:max-w-[160px] truncate font-medium">
-                      {guestName}
-                    </span>
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="size-3 text-ink-muted group-hover/guest:text-primary transition-colors shrink-0"
-                      aria-hidden="true"
-                    >
-                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                      <polyline points="15 3 21 3 21 9" />
-                      <line x1="10" y1="14" x2="21" y2="3" />
-                    </svg>
+                    {initials}
                   </button>
                 )
               })

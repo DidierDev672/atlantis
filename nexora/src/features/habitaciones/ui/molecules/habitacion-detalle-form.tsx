@@ -193,21 +193,37 @@ export function HabitacionDetalleForm({
       .get<unknown>(`/building/${encodeURIComponent(edificioId)}`)
       .then((res) => {
         if (!isMounted) return
-        const raw = res.data as { data?: { floor_number?: number } } | { floor_number?: number }
-        const item = raw && typeof raw === 'object' && 'data' in raw && raw.data ? raw.data : raw
-        const fNum =
-          item &&
-          typeof item === 'object' &&
-          'floor_number' in item &&
-          typeof item.floor_number === 'number'
-            ? item.floor_number
-            : undefined
-        if (fNum != null && fNum > 0) {
-          setFetchedFloors((prev) => ({ ...prev, [edificioId]: fNum }))
+        const rawData = res.data
+        let item: Record<string, unknown> | null = null
+        if (Array.isArray(rawData)) {
+          item = (rawData[0] as Record<string, unknown>) ?? null
+        } else if (rawData && typeof rawData === 'object') {
+          const wrapper = rawData as { data?: unknown }
+          if (Array.isArray(wrapper.data)) {
+            item = (wrapper.data[0] as Record<string, unknown>) ?? null
+          } else if (wrapper.data && typeof wrapper.data === 'object') {
+            item = wrapper.data as Record<string, unknown>
+          } else {
+            item = rawData as Record<string, unknown>
+          }
         }
+
+        const rawFloor = item?.floor_number ?? item?.floorNumber
+        const fNum =
+          typeof rawFloor === 'number'
+            ? rawFloor
+            : typeof rawFloor === 'string'
+              ? parseInt(rawFloor, 10)
+              : undefined
+
+        const validFloors = fNum != null && !isNaN(fNum) && fNum > 0 ? fNum : 5
+        setFetchedFloors((prev) => ({ ...prev, [edificioId]: validFloors }))
       })
       .catch(() => {
-        // Fallback silencioso
+        // Fallback seguro para no bloquear la selección del piso
+        if (isMounted) {
+          setFetchedFloors((prev) => ({ ...prev, [edificioId]: 5 }))
+        }
       })
       .finally(() => {
         if (isMounted) setLoadingFloors(false)

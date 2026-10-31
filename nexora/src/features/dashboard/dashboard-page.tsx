@@ -38,7 +38,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps = {}) {
   const handleBackToConfig = () => navigate('configuracion')
 
   return (
-    <div className="min-h-screen bg-canvas text-ink">
+    <div className="relative min-h-screen bg-canvas text-ink">
       <Sidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -46,7 +46,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps = {}) {
         onNavigate={navigate}
       />
 
-      <div className="lg:pl-64">
+      <div className="relative z-10 lg:pl-64">
         <Header
           title={meta.title}
           subtitle={meta.subtitle}

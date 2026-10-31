@@ -60,3 +60,17 @@ export function getWeekdayLabels(
     };
   });
 }
+
+export type MonthOption = { value: number; label: string };
+
+/** Meses del año (0 a 11) con su nombre localizado y capitalizado. */
+export function getMonthLabels(locale: string): MonthOption[] {
+  return Array.from({ length: 12 }, (_, monthIndex) => {
+    const date = new Date(2023, monthIndex, 1);
+    const monthName = formatter(locale, { month: 'long' }).format(date);
+    return {
+      value: monthIndex,
+      label: capitalize(monthName),
+    };
+  });
+}

@@ -26,7 +26,6 @@ type Options = {
  * Navegación del calendario: mes visible, día con foco y teclado.
  * El día con foco (`focusedDate`) siempre pertenece al mes visible.
  */
-
 export function useCalendar({
   initialDate,
   minDate,
@@ -55,6 +54,28 @@ export function useCalendar({
   );
 
   const goToMonth = (delta: number) => moveTo(addMonths(focusedDate, delta));
+
+  const setYear = useCallback(
+    (year: number) => {
+      const currentMonth = viewMonth.getMonth();
+      const currentDay = focusedDate.getDate();
+      const maxDay = new Date(year, currentMonth + 1, 0).getDate();
+      const safeDay = Math.min(currentDay, maxDay);
+      moveTo(new Date(year, currentMonth, safeDay), false);
+    },
+    [viewMonth, focusedDate, moveTo]
+  );
+
+  const setMonth = useCallback(
+    (month: number) => {
+      const currentYear = viewMonth.getFullYear();
+      const currentDay = focusedDate.getDate();
+      const maxDay = new Date(currentYear, month + 1, 0).getDate();
+      const safeDay = Math.min(currentDay, maxDay);
+      moveTo(new Date(currentYear, month, safeDay), false);
+    },
+    [viewMonth, focusedDate, moveTo]
+  );
 
   const canGoPrev =
     !minDate || compareDays(endOfMonth(addMonths(viewMonth, -1)), minDate) >= 0;
@@ -89,6 +110,8 @@ export function useCalendar({
     canGoNext,
     moveTo,
     goToMonth,
+    setYear,
+    setMonth,
     onGridKeyDown,
   };
 }

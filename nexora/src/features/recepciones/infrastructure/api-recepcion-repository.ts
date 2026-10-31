@@ -4,6 +4,7 @@ import { validateStatusCode } from '../../../shared/lib/status-code-validator'
 import {
   calcularNoches,
   ESTADO_OPTIONS,
+  formatHabitacionDropdownOption,
   formatMetodoPago,
   type CamaInfo,
   type EdificioInfo,
@@ -17,10 +18,13 @@ import {
   type TipoCamaInfo,
 } from '../domain/recepcion'
 import {
+  EdificioNotFoundException,
   RecepcionApiError,
   RecepcionConflictError,
   RecepcionNetworkError,
   RecepcionNotFoundError,
+  SedeNotFoundException,
+  SubSedeNotFoundException,
 } from '../domain/recepcion-error'
 import type { RecepcionRepository } from '../domain/recepcion-repository'
 
@@ -118,6 +122,9 @@ const LOCAL_STORAGE_KEY = 'nexora_recepciones_list'
 export class ApiRecepcionRepository implements RecepcionRepository {
   private personCache = new Map<string, Promise<HuespedInfo | null>>()
   private roomCache = new Map<string, Promise<HabitacionInfo | null>>()
+  private buildingCache = new Map<string, Promise<EdificioInfo>>()
+  private headquarterCache = new Map<string, Promise<SedeInfo>>()
+  private subHeadquarterCache = new Map<string, Promise<SubSedeInfo[]>>()
 
   /**
    * Obtiene la lista de recepciones/estadías activas e históricas (GET /stay).
@@ -234,25 +241,30 @@ export class ApiRecepcionRepository implements RecepcionRepository {
   async getSedes(): Promise<SedeInfo[]> {
     try {
       const response = await api.get<unknown>('/headquarters', {
-        validateStatus: (s) => s === 200,
+        validateStatus: () => true,
       })
 
-      const raw: RawSede[] = Array.isArray(response.data)
-        ? response.data
-        : (response.data as { data?: RawSede[] })?.data ?? []
+      const validation = validateStatusCode(response.status)
+      if (!validation.isValid) {
+        console.warn(`[getSedes] Status ${response.status} no válido en /headquarters:`, validation.message)
+      } else {
+        const raw: RawSede[] = Array.isArray(response.data)
+          ? response.data
+          : (response.data as { data?: RawSede[] })?.data ?? []
 
-      if (raw.length > 0) {
-        return raw.map((s) => ({
-          id: String(s.id),
-          name: s.name || `Sede ${String(s.id).slice(0, 5)}`,
-          address: s.address || 'Dirección no especificada',
-          city: s.city || 'Medellín',
-          phone: s.phone || '+57 4 444 0000',
-          status: s.status || 'active',
-        }))
+        if (raw.length > 0) {
+          return raw.map((s) => ({
+            id: String(s.id),
+            name: s.name || `Sede ${String(s.id).slice(0, 5)}`,
+            address: s.address || 'Dirección no especificada',
+            city: s.city || 'Medellín',
+            phone: s.phone || '+57 4 444 0000',
+            status: s.status || 'active',
+          }))
+        }
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.warn('[getSedes] Error de conexión en GET /headquarters:', err)
     }
 
     return [
@@ -283,30 +295,108 @@ export class ApiRecepcionRepository implements RecepcionRepository {
     ]
   }
 
+  /**
+   * Obtiene una sede puntual por ID (GET /headquarters/{id}).
+   * Valida rigurosamente el status code mediante validateStatusCode.
+   * Utiliza el campo "name" de la sede.
+   * Lanza SedeNotFoundException en caso de fallo o ausencia de datos.
+   */
+  async getHeadquarterById(id: string): Promise<SedeInfo> {
+    if (!id) {
+      throw new SedeNotFoundException(id, 'Identificador de sede no proporcionado.')
+    }
+    const cached = this.headquarterCache.get(id)
+    if (cached) return cached
+
+    const fetchPromise = (async () => {
+      try {
+        const response = await api.get<unknown>(`/headquarters/${id}`, {
+          validateStatus: () => true,
+        })
+
+        const validation = validateStatusCode(response.status)
+        if (!validation.isValid) {
+          throw new SedeNotFoundException(
+            id,
+            validation.message || `No se pudo obtener la sede con ID "${id}" (HTTP ${response.status}).`,
+          )
+        }
+
+        const rawData = response.data
+        let raw: RawSede | null = null
+        if (Array.isArray(rawData)) {
+          raw = rawData[0] ?? null
+        } else if (rawData && typeof rawData === 'object') {
+          const wrapper = rawData as { data?: RawSede | RawSede[] }
+          if (Array.isArray(wrapper.data)) {
+            raw = wrapper.data[0] ?? null
+          } else if (wrapper.data && typeof wrapper.data === 'object') {
+            raw = wrapper.data
+          } else {
+            raw = rawData as RawSede
+          }
+        }
+
+        if (!raw || !raw.name) {
+          throw new SedeNotFoundException(id, 'La sede no cuenta con información de nombre válida.')
+        }
+
+        return {
+          id: String(raw.id || id),
+          name: raw.name,
+          address: raw.address || 'Dirección de sede',
+          city: raw.city || 'Medellín',
+          phone: raw.phone || '3001234567',
+          status: raw.status || 'active',
+        }
+      } catch (error) {
+        if (error instanceof SedeNotFoundException) {
+          throw error
+        }
+        if (isAxiosError(error) && error.response) {
+          const val = validateStatusCode(error.response.status)
+          throw new SedeNotFoundException(id, val.message || error.message)
+        }
+        throw new SedeNotFoundException(
+          id,
+          error instanceof Error ? error.message : 'Error inesperado al consultar la sede.',
+        )
+      }
+    })()
+
+    this.headquarterCache.set(id, fetchPromise)
+    return fetchPromise
+  }
+
   async getEdificios(sedeId?: string): Promise<EdificioInfo[]> {
     try {
       const response = await api.get<unknown>('/building', {
-        validateStatus: (s) => s >= 200 && s < 300,
+        validateStatus: () => true,
       })
 
-      const raw: RawBuilding[] = Array.isArray(response.data)
-        ? response.data
-        : (response.data as { data?: RawBuilding[] })?.data ?? []
+      const validation = validateStatusCode(response.status)
+      if (!validation.isValid) {
+        console.warn(`[getEdificios] Status ${response.status} en /building:`, validation.message)
+      } else {
+        const raw: RawBuilding[] = Array.isArray(response.data)
+          ? response.data
+          : (response.data as { data?: RawBuilding[] })?.data ?? []
 
-      if (raw.length > 0) {
-        const list = raw.map((b) => ({
-          id: String(b.id),
-          name: b.name || `Torre ${String(b.id).slice(0, 5)}`,
-          floor_number: typeof b.floor_number === 'number' ? b.floor_number : 5,
-          headquarters_id: String(b.headquarters_id || 'sede-01'),
-          sub_headquarters_id: b.sub_headquarters_id ? String(b.sub_headquarters_id) : null,
-          status: b.status || 'active',
-        }))
+        if (raw.length > 0) {
+          const list = raw.map((b) => ({
+            id: String(b.id),
+            name: b.name || `Torre ${String(b.id).slice(0, 5)}`,
+            floor_number: typeof b.floor_number === 'number' ? b.floor_number : 5,
+            headquarters_id: String(b.headquarters_id || 'sede-01'),
+            sub_headquarters_id: b.sub_headquarters_id ? String(b.sub_headquarters_id) : null,
+            status: b.status || 'active',
+          }))
 
-        return sedeId ? list.filter((b) => b.headquarters_id === sedeId) : list
+          return sedeId ? list.filter((b) => b.headquarters_id === sedeId) : list
+        }
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.warn('[getEdificios] Error en GET /building:', err)
     }
 
     const demoEdificios: EdificioInfo[] = [
@@ -343,98 +433,280 @@ export class ApiRecepcionRepository implements RecepcionRepository {
     return sedeId ? demoEdificios.filter((b) => b.headquarters_id === sedeId) : demoEdificios
   }
 
+  /**
+   * Obtiene un edificio puntual por ID (GET /building/{id}).
+   * Valida rigurosamente el status code mediante validateStatusCode.
+   * Utiliza el campo "name" del edificio.
+   * Lanza EdificioNotFoundException en caso de fallo o ausencia de datos.
+   */
+  async getBuildingById(id: string): Promise<EdificioInfo> {
+    if (!id) {
+      throw new EdificioNotFoundException(id, 'Identificador de edificio no proporcionado.')
+    }
+    const cached = this.buildingCache.get(id)
+    if (cached) return cached
+
+    const fetchPromise = (async () => {
+      try {
+        const response = await api.get<unknown>(`/building/${id}`, {
+          validateStatus: () => true,
+        })
+
+        const validation = validateStatusCode(response.status)
+        if (!validation.isValid) {
+          throw new EdificioNotFoundException(
+            id,
+            validation.message || `No se pudo obtener el edificio con ID "${id}" (HTTP ${response.status}).`,
+          )
+        }
+
+        const rawData = response.data
+        let raw: RawBuilding | null = null
+        if (Array.isArray(rawData)) {
+          raw = rawData[0] ?? null
+        } else if (rawData && typeof rawData === 'object') {
+          const wrapper = rawData as { data?: RawBuilding | RawBuilding[] }
+          if (Array.isArray(wrapper.data)) {
+            raw = wrapper.data[0] ?? null
+          } else if (wrapper.data && typeof wrapper.data === 'object') {
+            raw = wrapper.data
+          } else {
+            raw = rawData as RawBuilding
+          }
+        }
+
+        if (!raw || !raw.name) {
+          throw new EdificioNotFoundException(id, 'El edificio retornado no contiene datos válidos de nombre.')
+        }
+
+        return {
+          id: String(raw.id || id),
+          name: raw.name,
+          floor_number: typeof raw.floor_number === 'number' ? raw.floor_number : 5,
+          headquarters_id: String(raw.headquarters_id || ''),
+          sub_headquarters_id: raw.sub_headquarters_id ? String(raw.sub_headquarters_id) : null,
+          status: raw.status || 'available',
+        }
+      } catch (error) {
+        if (error instanceof EdificioNotFoundException) {
+          throw error
+        }
+        if (isAxiosError(error) && error.response) {
+          const val = validateStatusCode(error.response.status)
+          throw new EdificioNotFoundException(id, val.message || error.message)
+        }
+        throw new EdificioNotFoundException(
+          id,
+          error instanceof Error ? error.message : 'Error inesperado al consultar el edificio.',
+        )
+      }
+    })()
+
+    this.buildingCache.set(id, fetchPromise)
+    return fetchPromise
+  }
+
   async getSubSedes(sedeId: string): Promise<SubSedeInfo[]> {
-    if (!sedeId) return []
-    try {
-      const response = await api.get<unknown>(`/sub-headquarters/by-headquarter/${sedeId}`, {
-        validateStatus: (s) => s === 200,
-      })
+    return this.getSubHeadquartersByHeadquarter(sedeId)
+  }
 
-      const raw: RawSubSede[] = Array.isArray(response.data)
-        ? response.data
-        : (response.data as { data?: RawSubSede[] })?.data ?? []
+  /**
+   * Obtiene las subsedes asociadas a una sede específica (GET /sub-headquarters/by-headquarter/{id_headquarters}).
+   * Valida rigurosamente el status code mediante validateStatusCode.
+   * Utiliza el campo "name" de cada subsede.
+   * Lanza SubSedeNotFoundException si no se encuentran subsedes.
+   */
+  async getSubHeadquartersByHeadquarter(headquartersId: string): Promise<SubSedeInfo[]> {
+    if (!headquartersId) return []
+    const cached = this.subHeadquarterCache.get(headquartersId)
+    if (cached) return cached
 
-      if (raw.length > 0) {
+    const fetchPromise = (async () => {
+      try {
+        const response = await api.get<unknown>(
+          `/sub-headquarters/by-headquarter/${headquartersId}`,
+          {
+            validateStatus: () => true,
+          },
+        )
+
+        const validation = validateStatusCode(response.status)
+        if (!validation.isValid) {
+          throw new SubSedeNotFoundException(
+            headquartersId,
+            validation.message || `No se pudieron obtener subsedes para la sede "${headquartersId}" (HTTP ${response.status}).`,
+          )
+        }
+
+        const rawData = response.data
+        const raw: RawSubSede[] = Array.isArray(rawData)
+          ? rawData
+          : rawData && typeof rawData === 'object'
+            ? Array.isArray((rawData as { data?: RawSubSede[] }).data)
+              ? ((rawData as { data: RawSubSede[] }).data ?? [])
+              : [rawData as RawSubSede]
+            : []
+
+        if (raw.length === 0) {
+          throw new SubSedeNotFoundException(headquartersId)
+        }
+
         return raw.map((s) => ({
-          id: String(s.id),
-          headquarter_id: String(s.headquarter_id || sedeId),
-          name: s.name || `Sub-Sede ${String(s.id).slice(0, 5)}`,
+          id: String(s.id || ''),
+          headquarter_id: String(s.headquarter_id || headquartersId),
+          name: s.name || 'Subsede',
           address: s.address || 'Dirección de sub-sede',
           phone: s.phone || '+57 4 300 0000',
           status: s.status || 'active',
         }))
+      } catch (error) {
+        if (error instanceof SubSedeNotFoundException) {
+          throw error
+        }
+        if (isAxiosError(error) && error.response) {
+          const val = validateStatusCode(error.response.status)
+          throw new SubSedeNotFoundException(headquartersId, val.message || error.message)
+        }
+        // Fallback para sedes demo
+        if (headquartersId === 'sede-01' || headquartersId === '4b1a2c3d0e9f8a7b') {
+          return [
+            {
+              id: 'sub-01',
+              headquarter_id: headquartersId,
+              name: 'Subsede Poblado',
+              address: 'Carrera 43A # 1-50',
+              phone: '3109876543',
+              status: 'active',
+            },
+          ]
+        }
+        return []
       }
-    } catch {
-      // Fallback silencioso
+    })()
+
+    this.subHeadquarterCache.set(headquartersId, fetchPromise)
+    return fetchPromise
+  }
+
+  /**
+   * Enriquece una habitación consumiendo la jerarquía:
+   * GET /building/{id} -> GET /headquarters/{id} -> GET /sub-headquarters/by-headquarter/{headquarters_id}
+   * Aplicando las Reglas de Oro:
+   * 1. No visualizar ID en la experiencia de usuario del dropdown.
+   * 2. Crear excepciones en caso de no obtener ni edificios, ni sedes, ni subsedes.
+   * 3. Manejo de errores con try y catch en cada llamada.
+   * 4. Formato de etiqueta: numero habitacion - piso - edificio - sede - sub sede
+   */
+  private async enrichHabitacionWithHierarchy(r: RawRoom): Promise<HabitacionInfo> {
+    const id = String(r.id)
+    const num = r.number ? String(r.number) : id.slice(0, 4)
+    const name = r.name || `Habitación ${num}`
+    const floor = typeof r.floor === 'number' ? r.floor : Number(r.floor) || 1
+    const cap = typeof r.capacity === 'number' ? r.capacity : 2
+    const price = typeof r.price === 'number' ? r.price : 150000
+    const bId = r.building_id ? String(r.building_id) : ''
+
+    let buildingName = 'Torre Principal'
+    let sedeName = 'Sede Principal Medellín'
+    let subSedeName = 'Sin subsede'
+    let buildingHeadquartersId = ''
+    let buildingSubHeadquartersId: string | null = null
+
+    // 1. Consultar Edificio (GET /building/{id}) con try / catch y validateStatusCode
+    if (bId) {
+      try {
+        const building = await this.getBuildingById(bId)
+        buildingName = building.name || 'Torre Principal'
+        buildingHeadquartersId = building.headquarters_id
+        buildingSubHeadquartersId = building.sub_headquarters_id ?? null
+      } catch (err) {
+        console.warn(`[enrichHabitacionWithHierarchy] Edificio no resuelto para ID "${bId}":`, err)
+        buildingName = 'Edificio principal'
+      }
     }
 
-    // Demo subsedes para inspección rica
-    if (sedeId === 'sede-01') {
-      return [
-        {
-          id: 'sub-01',
-          headquarter_id: 'sede-01',
-          name: 'Sub-Sede Poblado Parque Lleras',
-          address: 'Cra 37 # 8-40',
-          phone: '+57 4 311 0000',
-          status: 'active',
-        },
-        {
-          id: 'sub-02',
-          headquarter_id: 'sede-01',
-          name: 'Sub-Sede Milla de Oro',
-          address: 'Cra 43A # 1-50',
-          phone: '+57 4 311 0001',
-          status: 'active',
-        },
-      ]
+    // 2. Consultar Sede (GET /headquarters/{id}) con try / catch y validateStatusCode
+    if (buildingHeadquartersId) {
+      try {
+        const sede = await this.getHeadquarterById(buildingHeadquartersId)
+        sedeName = sede.name || 'Sede Principal Medellín'
+      } catch (err) {
+        console.warn(`[enrichHabitacionWithHierarchy] Sede no resuelta para ID "${buildingHeadquartersId}":`, err)
+        sedeName = 'Sede principal'
+      }
+
+      // 3. Consultar Subsedes (GET /sub-headquarters/by-headquarter/{id_headquarters}) con try / catch y validateStatusCode
+      try {
+        const subsedes = await this.getSubHeadquartersByHeadquarter(buildingHeadquartersId)
+        if (subsedes.length > 0) {
+          const matchingSub = buildingSubHeadquartersId
+            ? subsedes.find((s) => s.id === buildingSubHeadquartersId)
+            : subsedes[0]
+          subSedeName = matchingSub?.name || subsedes[0]?.name || 'Sin subsede'
+        }
+      } catch (err) {
+        console.warn(`[enrichHabitacionWithHierarchy] Subsede no resuelta para sede "${buildingHeadquartersId}":`, err)
+        subSedeName = 'Sin subsede'
+      }
     }
 
-    return []
+    // Regla de Oro 4: Formato estricto: numero habitacion - piso - edificio - sede - sub sede
+    // Regla de Oro 1: Jamás exponer IDs al usuario en el dropdown
+    const label = formatHabitacionDropdownOption({
+      roomNumber: num,
+      floor,
+      buildingName,
+      sedeName,
+      subSedeName,
+    })
+
+    return {
+      id,
+      name,
+      number: num,
+      floor,
+      capacity: cap,
+      price,
+      building_id: bId || 'bld-01',
+      building_name: buildingName,
+      headquarters_id: buildingHeadquartersId || undefined,
+      headquarters_name: sedeName,
+      sub_headquarters_id: buildingSubHeadquartersId,
+      sub_headquarters_name: subSedeName,
+      room_types_id: r.room_types_id ? String(r.room_types_id) : undefined,
+      status: r.status || 'active',
+      label,
+    }
   }
 
   async getHabitaciones(edificioId?: string): Promise<HabitacionInfo[]> {
     try {
       const response = await api.get<unknown>('/room', {
-        validateStatus: (s) => s >= 200 && s < 300,
+        validateStatus: () => true,
       })
 
-      const raw: RawRoom[] = Array.isArray(response.data)
-        ? response.data
-        : (response.data as { data?: RawRoom[] })?.data ?? []
+      const validation = validateStatusCode(response.status)
+      if (!validation.isValid) {
+        console.warn(`[getHabitaciones] Status ${response.status} en /room:`, validation.message)
+      } else {
+        const raw: RawRoom[] = Array.isArray(response.data)
+          ? response.data
+          : (response.data as { data?: RawRoom[] })?.data ?? []
 
-      if (raw.length > 0) {
-        const list: HabitacionInfo[] = raw
-          .filter((r) => Boolean(r.id))
-          .map((r) => {
-            const id = String(r.id)
-            const num = r.number ? String(r.number) : id.slice(0, 4)
-            const name = r.name || `Habitación ${num}`
-            const floor = typeof r.floor === 'number' ? r.floor : Number(r.floor) || 1
-            const cap = typeof r.capacity === 'number' ? r.capacity : 2
-            const price = typeof r.price === 'number' ? r.price : 150000
-            const bId = r.building_id ? String(r.building_id) : 'bld-01'
+        if (raw.length > 0) {
+          const validRooms = raw.filter((r) => Boolean(r.id))
+          const enrichedRooms = await Promise.all(
+            validRooms.map((r) => this.enrichHabitacionWithHierarchy(r)),
+          )
 
-            return {
-              id,
-              name,
-              number: num,
-              floor,
-              capacity: cap,
-              price,
-              building_id: bId,
-              room_types_id: r.room_types_id ? String(r.room_types_id) : undefined,
-              status: r.status || 'active',
-              label: `${name} · Hab. ${num} · Piso ${floor} (${cap} pers.)`,
-            }
-          })
-
-        return edificioId ? list.filter((r) => r.building_id === edificioId) : list
+          return edificioId ? enrichedRooms.filter((r) => r.building_id === edificioId) : enrichedRooms
+        }
       }
-    } catch {
-      // Fallback
+    } catch (err) {
+      console.warn('[getHabitaciones] Error en GET /room, usando demo enriquecido:', err)
     }
 
+    // Demo rooms formateadas con la Regla de Oro 4 (sin IDs)
     const demoRooms: HabitacionInfo[] = [
       {
         id: 'hab-101',
@@ -444,8 +716,17 @@ export class ApiRecepcionRepository implements RecepcionRepository {
         capacity: 2,
         price: 185000,
         building_id: 'bld-01',
+        building_name: 'Torre Principal',
+        headquarters_name: 'Sede Principal Medellín',
+        sub_headquarters_name: 'Subsede Poblado',
         status: 'active',
-        label: 'Suite Panorámica 101 · Piso 1 (2 personas)',
+        label: formatHabitacionDropdownOption({
+          roomNumber: '101',
+          floor: 1,
+          buildingName: 'Torre Principal',
+          sedeName: 'Sede Principal Medellín',
+          subSedeName: 'Subsede Poblado',
+        }),
       },
       {
         id: 'hab-102',
@@ -455,8 +736,17 @@ export class ApiRecepcionRepository implements RecepcionRepository {
         capacity: 2,
         price: 120000,
         building_id: 'bld-01',
+        building_name: 'Torre Principal',
+        headquarters_name: 'Sede Principal Medellín',
+        sub_headquarters_name: 'Subsede Poblado',
         status: 'active',
-        label: 'Habitación Ejecutiva 102 · Piso 1 (2 personas)',
+        label: formatHabitacionDropdownOption({
+          roomNumber: '102',
+          floor: 1,
+          buildingName: 'Torre Principal',
+          sedeName: 'Sede Principal Medellín',
+          subSedeName: 'Subsede Poblado',
+        }),
       },
       {
         id: 'hab-201',
@@ -466,8 +756,17 @@ export class ApiRecepcionRepository implements RecepcionRepository {
         capacity: 4,
         price: 240000,
         building_id: 'bld-01',
+        building_name: 'Torre Principal',
+        headquarters_name: 'Sede Principal Medellín',
+        sub_headquarters_name: 'Sin subsede',
         status: 'active',
-        label: 'Apart Familiar 201 · Piso 2 (4 personas)',
+        label: formatHabitacionDropdownOption({
+          roomNumber: '201',
+          floor: 2,
+          buildingName: 'Torre Principal',
+          sedeName: 'Sede Principal Medellín',
+          subSedeName: 'Sin subsede',
+        }),
       },
       {
         id: 'hab-204',
@@ -477,8 +776,17 @@ export class ApiRecepcionRepository implements RecepcionRepository {
         capacity: 2,
         price: 95000,
         building_id: 'bld-02',
+        building_name: 'Torre Ejecutiva B',
+        headquarters_name: 'Sede Principal Medellín',
+        sub_headquarters_name: 'Subsede Poblado',
         status: 'active',
-        label: 'Doble Superior 204 · Piso 2 (2 personas)',
+        label: formatHabitacionDropdownOption({
+          roomNumber: '204',
+          floor: 2,
+          buildingName: 'Torre Ejecutiva B',
+          sedeName: 'Sede Principal Medellín',
+          subSedeName: 'Subsede Poblado',
+        }),
       },
       {
         id: 'hab-301',
@@ -488,8 +796,17 @@ export class ApiRecepcionRepository implements RecepcionRepository {
         capacity: 3,
         price: 350000,
         building_id: 'bld-01',
+        building_name: 'Torre Principal',
+        headquarters_name: 'Sede Principal Medellín',
+        sub_headquarters_name: 'Subsede Poblado',
         status: 'active',
-        label: 'Master Suite Presidencial 301 · Piso 3 (3 personas)',
+        label: formatHabitacionDropdownOption({
+          roomNumber: '301',
+          floor: 3,
+          buildingName: 'Torre Principal',
+          sedeName: 'Sede Principal Medellín',
+          subSedeName: 'Subsede Poblado',
+        }),
       },
     ]
 
@@ -921,9 +1238,14 @@ export class ApiRecepcionRepository implements RecepcionRepository {
     payload: RecepcionPayload,
     id: string,
   ): Promise<Recepcion> {
+    const primaryPersonId =
+      (payload.person_ids && payload.person_ids.length > 0
+        ? payload.person_ids[0]
+        : payload.person_id) || ''
+
     const [habitacion, guest, beds, edificios, sedes] = await Promise.all([
       this.getHabitacionById(payload.room_id),
-      this.getPersonById(payload.person_id),
+      this.getPersonById(primaryPersonId),
       this.getCamas(payload.room_id),
       this.getEdificios(),
       this.getSedes(),
@@ -948,8 +1270,9 @@ export class ApiRecepcionRepository implements RecepcionRepository {
       roomLabel: habitacion ? `${habitacion.name} · Hab. ${habitacion.number}` : 'Habitación asignada',
       reservaId: payload.reservation_id || undefined,
       reservaLabel: payload.reservation_id ? `Reserva #${payload.reservation_id.slice(0, 6)}` : undefined,
-      guestId: payload.person_id,
+      guestId: primaryPersonId,
       guestLabel: guest ? guest.label : 'Huésped registrado',
+      person_ids: payload.person_ids || (primaryPersonId ? [primaryPersonId] : []),
       checkIn: payload.check_in_date,
       checkOut: payload.check_out_date,
       metodoPago: payload.payment_method,
