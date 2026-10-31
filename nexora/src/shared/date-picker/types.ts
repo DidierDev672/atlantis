@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 
-/** 0 = domingo, 1 = lunes ... 6 = sabadoss */
+/** 0 = domingo, 1 = lunes ... 6 = sabados */
 export type WeekStart = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 export type DateRange = { start: Date | null; end: Date | null };
@@ -25,7 +25,7 @@ export interface CalendarLabels {
   clearValue: string;
 }
 
-/**  Posicion de la banda de rango dentro de una celda */
+/** Posicion de la banda de rango dentro de una celda */
 export type RangeBand = 'none' | 'start' | 'middle' | 'end';
 
 export interface DayState {
@@ -63,6 +63,10 @@ export interface PickerFieldProps extends DateConstraints {
   /** Alineación del calendario respecto al campo. */
   align?: 'start' | 'end';
   labels?: Partial<CalendarLabels>;
+  /** Año mínimo disponible en el selector de años. Por defecto año actual - 100 o minDate. */
+  minYear?: number;
+  /** Año máximo disponible en el selector de años. Por defecto año actual + 10 o maxDate. */
+  maxYear?: number;
   className?: string;
   /** Se dispara cuando el foco sale del campo (compatible con react-hook-form). */
   onBlur?: () => void;

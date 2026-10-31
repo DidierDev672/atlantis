@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faRotateRight } from '@fortawesome/free-solid-svg-icons'
 import { fadeUp, staggerContainer, staggerItem } from '../../../../design-tokens/motion'
 import { useStaysList, type UseStaysListReturn } from '../../application/use-stays-list'
 import { RecepcionesViewSwitch } from '../molecules/recepciones-view-switch'
@@ -169,6 +171,21 @@ export function RecepcionesListContainer({
 
           {/* Switch interactivo Card / Table (Requisito explícito del usuario) */}
           <RecepcionesViewSwitch viewMode={viewMode} onChange={setViewMode} />
+
+          {/* Botón para refrescar la información de tablas y tarjetas */}
+          <button
+            type="button"
+            onClick={() => void reload()}
+            disabled={loading}
+            aria-label="Refrescar información de recepciones y estancias"
+            title="Refrescar información"
+            className="flex size-9 items-center justify-center rounded-xl border border-line bg-canvas text-ink-muted hover:border-primary/40 hover:bg-panel hover:text-primary transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
+          >
+            <FontAwesomeIcon
+              icon={faRotateRight}
+              className={`size-3.5 transition-transform ${loading ? 'animate-spin text-primary' : ''}`}
+            />
+          </button>
 
           {/* Botón de nuevo check-in */}
           {onNewCheckIn && (

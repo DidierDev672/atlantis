@@ -312,10 +312,12 @@ export function useRecepcionForm(
     const backendStatus = STATUS_BACKEND_MAP[formValues.estado] || 'progress'
     const createdByEmail = getCreatedByFromLocalStorage()
 
+    const personIds = formValues.huespedId ? [formValues.huespedId] : []
+
     const payload: RecepcionPayload = {
       room_id: formValues.habitacionId,
       reservation_id: formValues.reservaId,
-      person_id: formValues.huespedId,
+      person_ids: personIds,
       check_in_date: formatToIsoUtc(formValues.checkIn),
       check_out_date: formatToIsoUtc(formValues.checkOut),
       payment_method: backendPayment,
@@ -324,6 +326,9 @@ export function useRecepcionForm(
       status: backendStatus,
       created_by: createdByEmail,
     }
+
+    // Ventana deliberada para reflejar la construcción, empaquetado y verificación del payload
+    await new Promise((resolve) => setTimeout(resolve, 600))
 
     try {
       const created = await repository.createRecepcion(payload)

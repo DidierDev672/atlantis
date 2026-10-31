@@ -3,6 +3,7 @@ import { useEffect, type ReactNode } from 'react'
 import { NAV_ITEMS, type NavId } from '../navigation'
 import { BedIcon, BuildingIcon, CalendarIcon, ClipboardCheckIcon, ConciergeBellIcon, CubeIcon, HomeIcon, PaletteIcon, SettingsIcon, ShieldIcon, SparklesIcon, TagIcon, UserIcon, UsersIcon, UtensilsIcon } from '../icons'
 import { SidebarNavItem } from '../molecules/sidebar-nav-item'
+import { useTemaStore } from '../../../tema/application/tema-store'
 
 const NAV_ICONS: Record<NavId, ReactNode> = {
   home: <HomeIcon className="size-[18px]" />,
@@ -29,15 +30,28 @@ function SidebarBody({
   activeId: NavId
   onNavigate: (id: NavId) => void
 }) {
+  const hotelLogo = useTemaStore((state) => state.hotelLogo)
+  const hotelName = useTemaStore((state) => state.hotelName)
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 px-5 pt-6 pb-5">
-        <span className="grid size-10 place-items-center rounded-xl bg-cream text-primary shadow-sm">
-          <SparklesIcon className="size-5" />
+        <span className="grid size-10 place-items-center rounded-xl bg-cream text-primary shadow-sm overflow-hidden shrink-0">
+          {hotelLogo ? (
+            <img
+              src={hotelLogo}
+              alt={hotelName || 'Logo del hotel'}
+              className="size-full object-cover"
+            />
+          ) : (
+            <SparklesIcon className="size-5" />
+          )}
         </span>
-        <div>
-          <p className="text-base font-bold text-cream">Nexora</p>
-          <p className="text-[11px] text-cream/50">Hoteles · Operaciones</p>
+        <div className="min-w-0 flex-1">
+          <p className="text-base font-bold text-cream truncate">Nexora</p>
+          <p className="text-[11px] text-cream/70 truncate" title={hotelName}>
+            {hotelName}
+          </p>
         </div>
       </div>
 

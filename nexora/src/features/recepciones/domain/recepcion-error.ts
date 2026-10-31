@@ -36,3 +36,64 @@ export class RecepcionNetworkError extends RecepcionApiError {
     this.name = 'RecepcionNetworkError'
   }
 }
+
+/**
+ * Excepción lanzada cuando no se puede obtener la información del edificio (/building/{id}).
+ */
+export class EdificioNotFoundException extends RecepcionApiError {
+  constructor(edificioId?: string, mensaje?: string) {
+    super(
+      404,
+      mensaje ||
+        (edificioId
+          ? `No se encontró el edificio con identificador "${edificioId}".`
+          : 'No se encontraron edificios registrados en el sistema.')
+    )
+    this.name = 'EdificioNotFoundException'
+  }
+}
+
+/**
+ * Excepción lanzada cuando no se puede obtener la información de la sede (/headquarters/{id}).
+ */
+export class SedeNotFoundException extends RecepcionApiError {
+  constructor(sedeId?: string, mensaje?: string) {
+    super(
+      404,
+      mensaje ||
+        (sedeId
+          ? `No se encontró la sede con identificador "${sedeId}".`
+          : 'No se encontraron sedes registradas en el sistema.')
+    )
+    this.name = 'SedeNotFoundException'
+  }
+}
+
+/**
+ * Excepción lanzada cuando no se pueden obtener subsedes (/sub-headquarters/by-headquarter/{id_headquarters}).
+ */
+export class SubSedeNotFoundException extends RecepcionApiError {
+  constructor(headquarterId?: string, mensaje?: string) {
+    super(
+      404,
+      mensaje ||
+        (headquarterId
+          ? `No se encontraron subsedes asociadas a la sede "${headquarterId}".`
+          : 'No se encontraron subsedes registradas en el sistema.')
+    )
+    this.name = 'SubSedeNotFoundException'
+  }
+}
+
+/**
+ * Excepción compuesta cuando la jerarquía completa de ubicación física (Edificio, Sede, Subsede) no está disponible.
+ */
+export class UbicacionHierarchyNotFoundException extends RecepcionApiError {
+  constructor(mensaje?: string) {
+    super(
+      404,
+      mensaje || 'No fue posible resolver la jerarquía completa de ubicación (Edificio, Sede y Subsede).'
+    )
+    this.name = 'UbicacionHierarchyNotFoundException'
+  }
+}

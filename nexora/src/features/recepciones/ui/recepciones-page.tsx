@@ -1,47 +1,49 @@
-import { useState } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
-import { RecepcionHeader } from './molecules/recepcion-header'
-import { RecepcionesListContainer } from './organisms/recepciones-list-container'
-import { RecepcionPanel } from './organisms/recepcion-panel'
-import { useStaysList } from '../application/use-stays-list'
-import { Loading, useDelayVisibility } from '../../../shared/loading'
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { RecepcionHeader } from './molecules/recepcion-header';
+import { RecepcionesListContainer } from './organisms/recepciones-list-container';
+import { RecepcionPanel } from './organisms/recepcion-panel';
+import { useStaysList } from '../application/use-stays-list';
+import { Loading, useDelayVisibility } from '../../../shared/loading';
 
 export function RecepcionesPage() {
-  const [activeTab, setActiveTab] = useState<'lista' | 'nuevo'>('lista')
-  const staysList = useStaysList()
+  const [activeTab, setActiveTab] = useState<'lista' | 'nuevo'>('lista');
+  const staysList = useStaysList();
 
   // Control de permanencia y visibilidad con useDelayVisibility mientras se carga la información
   const isVisibleLoading = useDelayVisibility(staysList.loading, {
     delay: 0,
     minDuration: 500,
-  })
+  });
 
   return (
-    <div className="min-h-screen bg-canvas px-4 py-8 sm:px-6 lg:px-8">
+    <div className="bg-canvas min-h-screen px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-7xl space-y-8">
         {/* Cabecera con animación slideIn y copywriting psicológico */}
         <RecepcionHeader
-          badgeText="Recepción · Estancias y Check-in"
+          badgeText="Recepción · Estancias"
           title={
             activeTab === 'lista'
               ? 'Lista de recepciones y estancias'
-              : 'Nuevo registro de check-in'
+              : 'Nuevo registro'
           }
           subtitle={
             activeTab === 'lista'
               ? 'Supervisa la ocupación activa, consulta habitaciones, huéspedes asignados y depósitos de garantía en tiempo real.'
               : 'Registra el ingreso de un huésped asignando sede, edificio, habitación y cama en tu inventario hotelero.'
           }
-          onNewCheckIn={activeTab === 'lista' ? () => setActiveTab('nuevo') : undefined}
+          onNewCheckIn={
+            activeTab === 'lista' ? () => setActiveTab('nuevo') : undefined
+          }
         />
 
         {/* Barra de pestañas secundarias para alternar entre Listado y Registro */}
-        <div className="flex items-center justify-between border-b border-line pb-1">
+        <div className="border-line flex items-center justify-between border-b pb-1">
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setActiveTab('lista')}
-              className={`relative flex items-center gap-2 px-4 py-2.5 text-xs font-semibold transition cursor-pointer ${
+              className={`relative flex cursor-pointer items-center gap-2 px-4 py-2.5 text-xs font-semibold transition ${
                 activeTab === 'lista'
                   ? 'text-primary'
                   : 'text-ink-muted hover:text-ink'
@@ -66,7 +68,7 @@ export function RecepcionesPage() {
               {activeTab === 'lista' && (
                 <motion.div
                   layoutId="activeRecepcionesTabIndicator"
-                  className="absolute inset-x-0 bottom-0 h-0.5 bg-primary"
+                  className="bg-primary absolute inset-x-0 bottom-0 h-0.5"
                   transition={{ type: 'spring', stiffness: 500, damping: 35 }}
                 />
               )}
@@ -75,7 +77,7 @@ export function RecepcionesPage() {
             <button
               type="button"
               onClick={() => setActiveTab('nuevo')}
-              className={`relative flex items-center gap-2 px-4 py-2.5 text-xs font-semibold transition cursor-pointer ${
+              className={`relative flex cursor-pointer items-center gap-2 px-4 py-2.5 text-xs font-semibold transition ${
                 activeTab === 'nuevo'
                   ? 'text-primary'
                   : 'text-ink-muted hover:text-ink'
@@ -100,7 +102,7 @@ export function RecepcionesPage() {
               {activeTab === 'nuevo' && (
                 <motion.div
                   layoutId="activeRecepcionesTabIndicator"
-                  className="absolute inset-x-0 bottom-0 h-0.5 bg-primary"
+                  className="bg-primary absolute inset-x-0 bottom-0 h-0.5"
                   transition={{ type: 'spring', stiffness: 500, damping: 35 }}
                 />
               )}
@@ -111,7 +113,7 @@ export function RecepcionesPage() {
             <button
               type="button"
               onClick={() => setActiveTab('lista')}
-              className="text-xs text-primary font-semibold hover:underline cursor-pointer flex items-center gap-1"
+              className="text-primary flex cursor-pointer items-center gap-1 text-xs font-semibold hover:underline"
             >
               ← Volver al listado
             </button>
@@ -130,7 +132,7 @@ export function RecepcionesPage() {
               className="relative min-h-[360px]"
             >
               {isVisibleLoading && staysList.stays.length === 0 ? (
-                <div className="flex flex-col items-center justify-center rounded-2xl border border-line bg-panel p-16 text-center shadow-xs">
+                <div className="border-line bg-panel flex flex-col items-center justify-center rounded-2xl border p-16 text-center shadow-xs">
                   <Loading
                     variant="block"
                     size="md"
@@ -176,5 +178,5 @@ export function RecepcionesPage() {
         </AnimatePresence>
       </div>
     </div>
-  )
+  );
 }

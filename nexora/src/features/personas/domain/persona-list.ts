@@ -1,4 +1,5 @@
 import type { StatusCodeValidationResult } from '../../../shared/lib/status-code-validator'
+import { calculateAge, formatAgeText } from './calculate-age'
 
 export type PersonViewMode = 'cards' | 'table'
 
@@ -33,37 +34,37 @@ export function formatDocumentType(documentType?: string): string {
   if (!documentType) return 'Sin documento'
   const normalized = documentType.toLowerCase().trim()
   switch (normalized) {
-    case 'id_card':
-      return 'Tarjeta de Identidad'
     case 'national_id':
-    case 'dni':
-    case 'cc':
+    case 'cedula':
       return 'Cédula de Ciudadanía'
+    case 'id_card':
+    case 'tarjeta_identidad':
+      return 'Tarjeta de Identidad'
     case 'foreign_id':
-    case 'ce':
+    case 'tarjeta_extranjera':
       return 'Cédula de Extranjería'
     case 'passport':
     case 'pasaporte':
       return 'Pasaporte'
     default:
-      return documentType.charAt(0).toUpperCase() + documentType.slice(1).replace(/_/g, ' ')
+      return documentType
   }
 }
 
 /**
- * Formatea el género en una etiqueta legible con indicación visual.
+ * Normaliza el género a una etiqueta en español y tono de badge.
  */
 export function formatGender(gender?: string): {
   label: string
   short: string
-  tone: 'blue' | 'rose' | 'amber' | 'neutral'
+  tone: 'indigo' | 'rose' | 'amber'
 } {
   if (!gender) {
-    return { label: 'No especificado', short: '-', tone: 'neutral' }
+    return { label: 'No especificado', short: '—', tone: 'amber' }
   }
-  const g = gender.toUpperCase().trim()
+  const g = gender.trim().toUpperCase()
   if (g === 'M' || g === 'MASCULINO' || g === 'MALE') {
-    return { label: 'Masculino', short: 'M', tone: 'blue' }
+    return { label: 'Masculino', short: 'M', tone: 'indigo' }
   }
   if (g === 'F' || g === 'FEMENINO' || g === 'FEMALE') {
     return { label: 'Femenino', short: 'F', tone: 'rose' }
@@ -95,15 +96,9 @@ export function formatBirthDate(dateStr?: string): {
       timeZone: 'UTC',
     }).format(date)
 
-    // Cálculo de edad
-    const today = new Date()
-    let age = today.getUTCFullYear() - date.getUTCFullYear()
-    const m = today.getUTCMonth() - date.getUTCMonth()
-    if (m < 0 || (m === 0 && today.getUTCDate() < date.getUTCDate())) {
-      age--
-    }
-
-    const ageText = age >= 0 && age < 130 ? `${age} años` : ''
+    // Cálculo de edad usando la función de dominio reutilizable
+    const age = calculateAge(date)
+    const ageText = formatAgeText(age)
 
     return { formatted, ageText }
   } catch {

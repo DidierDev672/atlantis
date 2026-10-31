@@ -6,6 +6,9 @@ import { fadeIn, fadeUp } from '../../../design-tokens/motion'
 import { Input } from '../../../shared/ui/Input'
 import { cn } from '../../../shared/lib/cn'
 import { updateAuthUserFromLoginResponse } from '../../../shared/auth-storage'
+import { useTemaStore } from '../../tema/application/tema-store'
+import { Rocket } from '../../../shared/rocket'
+import { validateStatusCode } from '../../../shared/lib/status-code-validator'
 
 const TOKEN_KEY = 'nexora.auth.token'
 
@@ -19,6 +22,9 @@ interface LoginProps {
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export function Login({ onSuccess, onContinue }: LoginProps) {
+  const hotelLogo = useTemaStore((state) => state.hotelLogo)
+  const hotelName = useTemaStore((state) => state.hotelName)
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -60,12 +66,19 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
     setServerError(null)
 
     try {
-      const response = await api.post('/login', {
-        email: email.trim(),
-        password,
-      })
+      // Consumimos el endpoint en segundo plano mientras el cohete despega
+      const [response] = await Promise.all([
+        api.post('/login', {
+          email: email.trim(),
+          password,
+        }),
+        // Pausa breve para apreciar el despegue del cohete sin cortes abruptos
+        new Promise((resolve) => setTimeout(resolve, 1400)),
+      ])
 
-      if (response.status === 200 || response.status === 201) {
+      const validation = validateStatusCode(response.status)
+
+      if (validation.isValid) {
         const token = (response.data?.token || response.data?.access_token || response.data?.data?.token) as string | undefined
         if (token) {
           localStorage.setItem(TOKEN_KEY, token)
@@ -77,16 +90,24 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
         updateAuthUserFromLoginResponse(response.data, email.trim(), token)
 
         setWelcomeEmail(email.trim())
-      }
-    } catch (error) {
-      const status = isAxiosError(error) ? error.response?.status : undefined
-      if (status === 400 || status === 401) {
-        setServerError(
-          'No pudimos reconocer esas credenciales. Revisa el correo y la contraseña, y vuelve a intentarlo.',
-        )
       } else {
         setServerError(
-          'Nexora no pudo conectarse en este momento. Revisa tu conexión y vuelve a intentarlo en un momento.',
+          validation.message || 'No fue posible iniciar sesión. Verifica tus datos de acceso.'
+        )
+      }
+    } catch (error) {
+      if (isAxiosError(error)) {
+        const status = error.response?.status ?? 0
+        const validation = validateStatusCode(status)
+        setServerError(
+          validation.message ||
+            'No pudimos reconocer esas credenciales. Revisa el correo y la contraseña, y vuelve a intentarlo.'
+        )
+      } else {
+        const fallbackValidation = validateStatusCode(0)
+        setServerError(
+          fallbackValidation.message ||
+            'Nexora no pudo conectarse en este momento. Revisa tu conexión y vuelve a intentarlo en un momento.'
         )
       }
     } finally {
@@ -152,28 +173,40 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
                     aria-hidden="true"
                     animate={{ y: [0, -6, 0] }}
                     transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
-                    className="grid size-16 place-items-center rounded-full bg-gradient-to-br from-primary to-secondary shadow-lg shadow-primary/25"
+                    className="grid size-16 place-items-center rounded-2xl bg-cream text-primary overflow-hidden shadow-lg shadow-primary/25"
                   >
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="size-8 text-cream"
-                    >
-                      <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
-                      <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
-                      <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
-                      <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
-                    </svg>
+                    {hotelLogo ? (
+                      <img
+                        src={hotelLogo}
+                        alt={hotelName || 'Logo del hotel'}
+                        className="size-full object-cover"
+                      />
+                    ) : (
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="size-8 text-primary"
+                      >
+                        <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
+                        <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
+                        <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
+                        <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
+                      </svg>
+                    )}
                   </motion.div>
                 </div>
 
-                <h1 className="text-2xl font-bold text-ink">Tu hotel toma vida en Nexora</h1>
+                <h1 className="text-2xl font-bold text-ink">
+                  {hotelName !== 'Hoteles · Operaciones' ? hotelName : 'Tu hotel toma vida en Nexora'}
+                </h1>
                 <p className="mt-1 text-sm text-ink-muted">
-                  Tu hotel ya te espera: entra y retoma el control de cada detalle con un solo clic.
+                  {hotelName !== 'Hoteles · Operaciones'
+                    ? `Bienvenido al panel de operaciones de ${hotelName}.`
+                    : 'Tu hotel ya te espera: entra y retoma el control de cada detalle con un solo clic.'}
                 </p>
               </div>
 
@@ -325,7 +358,7 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
         <motion.div
           role="status"
           aria-live="polite"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/80 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/85 p-4 backdrop-blur-md"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
         >
@@ -333,16 +366,27 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
             variants={fadeUp}
             initial="hidden"
             animate="visible"
-            className="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl border border-line bg-panel px-8 py-10 text-center shadow-xl"
+            className="flex w-full max-w-sm flex-col items-center gap-5 rounded-3xl border border-line bg-panel p-6 sm:p-8 text-center shadow-2xl"
           >
-            <span className="relative flex size-14 items-center justify-center" aria-hidden="true">
-              <span className="absolute inset-0 rounded-full bg-primary/10" />
-              <span className="size-10 animate-spin rounded-full border-[3px] border-primary/20 border-t-primary" />
-            </span>
-            <div className="space-y-1">
-              <h3 className="text-base font-bold text-ink">Verificando tu acceso…</h3>
+            <div className="relative flex items-center justify-center">
+              <Rocket
+                size="md"
+                autoLaunch
+                loop
+                interactive={false}
+                timing={{ ignitionMs: 800, ascentMs: 1800 }}
+                className="shadow-2xl ring-1 ring-primary/20 bg-canvas/60"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-lg font-bold text-ink">
+                {hotelName !== 'Hoteles · Operaciones'
+                  ? `Despegando hacia ${hotelName}…`
+                  : 'Iniciando despegue hacia tu hotel…'}
+              </h3>
               <p className="text-sm text-ink-muted">
-                Un momento: Nexora está preparando el escenario para ti.
+                Verificando credenciales y preparando el panel en segundo plano.
               </p>
             </div>
           </motion.div>
@@ -361,6 +405,10 @@ function SuccessState({
   onClose: () => void
   onContinue?: () => void
 }) {
+  const hotelLogo = useTemaStore((state) => state.hotelLogo)
+  const hotelName = useTemaStore((state) => state.hotelName)
+  const displayName = hotelName !== 'Hoteles · Operaciones' ? hotelName : 'tu hotel'
+
   return (
     <motion.div
       variants={fadeUp}
@@ -368,25 +416,35 @@ function SuccessState({
       animate="visible"
       className="flex flex-col items-center gap-4 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-6 py-12 text-center"
     >
-      <span className="grid size-14 place-items-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="size-7"
-          aria-hidden="true"
-        >
-          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-          <path d="m9 11 3 3L22 4" />
-        </svg>
+      <span className="grid size-16 place-items-center rounded-2xl bg-cream text-primary overflow-hidden shadow-md shrink-0">
+        {hotelLogo ? (
+          <img
+            src={hotelLogo}
+            alt={displayName}
+            className="size-full object-cover"
+          />
+        ) : (
+          <span className="grid size-14 place-items-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="size-7"
+              aria-hidden="true"
+            >
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <path d="m9 11 3 3L22 4" />
+            </svg>
+          </span>
+        )}
       </span>
       <div className="space-y-1">
-        <h3 className="text-xl font-bold text-ink">¡Bienvenido de vuelta!</h3>
+        <h3 className="text-xl font-bold text-ink">¡Bienvenido a {displayName}!</h3>
         <p className="text-sm leading-relaxed text-ink-muted">
-          Nexora acaba de encender las luces de tu hotel solo para ti. Tus huéspedes te esperan y
+          Nexora acaba de encender las luces de {displayName} solo para ti. Tus huéspedes te esperan y
           hoy también va a ser un gran día para tu equipo.
         </p>
         <p className="text-xs font-medium text-ink-soft">{email}</p>

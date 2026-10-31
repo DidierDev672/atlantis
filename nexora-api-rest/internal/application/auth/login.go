@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"log"
 	"strings"
 
 	"nexora-api-rest/internal/domain"
@@ -41,6 +42,7 @@ func (uc *AuthenticateUseCase) Authenticate(ctx context.Context, in Authenticate
 
 	user, err := uc.repo.FindByEmail(ctx, email)
 	if errors.Is(err, domain.ErrUserNotFound) {
+		log.Printf("[AUTH] login failed: user not found with email %q", email)
 		// The email does not exist, but spending the same bcrypt cost here
 		// keeps response time constant and hides that fact (anti-timing).
 		uc.verifier.Compare(in.Password, uc.dummy)
@@ -50,7 +52,8 @@ func (uc *AuthenticateUseCase) Authenticate(ctx context.Context, in Authenticate
 		return "", err
 	}
 
-	if user.Status != domain.UserStatusActive {
+	if strings.ToLower(strings.TrimSpace(string(user.Status))) != string(domain.UserStatusActive) {
+		log.Printf("[AUTH] login failed: user %q is not active (status in DB: %q, expected: %q)", email, user.Status, domain.UserStatusActive)
 		// Inactive accounts are rejected with the same generic error, again
 		// consuming the same work so the reason stays unobservable.
 		uc.verifier.Compare(in.Password, uc.dummy)
@@ -58,6 +61,7 @@ func (uc *AuthenticateUseCase) Authenticate(ctx context.Context, in Authenticate
 	}
 
 	if err := uc.verifier.Compare(in.Password, user.PasswordHash); err != nil {
+		log.Printf("[AUTH] login failed: password verification failed for user %q: %v", email, err)
 		return "", ErrInvalidCredentials
 	}
 

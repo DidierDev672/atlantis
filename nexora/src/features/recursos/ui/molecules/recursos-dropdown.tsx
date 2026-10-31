@@ -160,9 +160,9 @@ export function RecursosDropdown({
   const [searchTerm, setSearchTerm] = useState('')
   const [isOpeningProgressive, setIsOpeningProgressive] = useState(false)
 
-  // Darle chance al Loading para que sea visible al desplegar el dropdown
+  // Darle chance al Loading para que sea visible al desplegar el dropdown solo en carga asíncrona interna
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && externalOptions == null) {
       setIsOpeningProgressive(true)
       const timer = setTimeout(() => {
         setIsOpeningProgressive(false)
@@ -171,7 +171,7 @@ export function RecursosDropdown({
     } else {
       setIsOpeningProgressive(false)
     }
-  }, [isOpen])
+  }, [isOpen, externalOptions])
 
   // Habilitado por defecto para búsqueda en tiempo real
   const isSearchEnabled = searchable ?? true
@@ -289,7 +289,10 @@ export function RecursosDropdown({
   useEffect(() => {
     if (!isOpen) return
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node
+      // Si el elemento fue desmontado durante el evento (animación o re-render), no tratarlo como click fuera
+      if (!document.contains(target)) return
+      if (dropdownRef.current && !dropdownRef.current.contains(target)) {
         setIsOpen(false)
         setSearchTerm('')
       }
@@ -719,6 +722,9 @@ export function RecursosDropdown({
                             type="button"
                             role="option"
                             aria-selected={isSelected}
+                            onMouseDown={(e) => {
+                              e.stopPropagation()
+                            }}
                             onClick={() => toggleMultiOption(opt.value)}
                             className={cn(
                               'flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs transition-colors text-left cursor-pointer group',
@@ -772,6 +778,9 @@ export function RecursosDropdown({
                           type="button"
                           role="option"
                           aria-selected={isSelected}
+                          onMouseDown={(e) => {
+                            e.stopPropagation()
+                          }}
                           onClick={() => {
                             onChange?.(opt.value)
                             onSelectOption?.(opt)

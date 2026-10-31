@@ -123,6 +123,10 @@ export function calculateStayNights(checkInStr?: string, checkOutStr?: string): 
 
 /**
  * Mapeo de estado para feedback visual y accesibilidad.
+ * Sincronizado con los colores oficiales de recepción:
+ * - Progreso:   #EDCD44
+ * - Cancelada:  #DC3E26
+ * - Finalizada: #daf6a6
  */
 export function getStayStatusConfig(status?: string | null): {
   label: string
@@ -138,30 +142,30 @@ export function getStayStatusConfig(status?: string | null): {
     case 'activa':
       return {
         label: 'En progreso',
-        colorClasses: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
-        dotClass: 'bg-emerald-500 animate-pulse',
+        colorClasses: 'bg-[#EDCD44]/15 text-[#755d00] dark:text-[#f7e38a] border-[#EDCD44]/45',
+        dotClass: 'bg-[#EDCD44] animate-pulse',
       }
     case 'completed':
     case 'finalizada':
     case 'checked_out':
       return {
         label: 'Finalizada',
-        colorClasses: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20',
-        dotClass: 'bg-blue-500',
+        colorClasses: 'bg-[#daf6a6]/30 text-[#355403] dark:text-[#d3f595] border-[#9ad645]/50',
+        dotClass: 'bg-[#7cb518]',
       }
     case 'canceled':
     case 'cancelled':
     case 'cancelada':
       return {
         label: 'Cancelada',
-        colorClasses: 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20',
-        dotClass: 'bg-rose-500',
+        colorClasses: 'bg-[#DC3E26]/15 text-[#9c1f0b] dark:text-[#ff7861] border-[#DC3E26]/40',
+        dotClass: 'bg-[#DC3E26]',
       }
     default:
       return {
         label: status || 'Registrada',
-        colorClasses: 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
-        dotClass: 'bg-amber-500',
+        colorClasses: 'bg-neutral/10 text-ink-muted border-line',
+        dotClass: 'bg-neutral',
       }
   }
 }
@@ -243,5 +247,37 @@ export function formatDateOfBirth(dateStr?: string | null): string {
   } catch {
     return dateStr
   }
+}
+
+/**
+ * Extrae las iniciales del nombre de un huésped para su representación en avatars.
+ * Ejemplos:
+ * - "Juan Pérez" -> "JP"
+ * - "María Camila Rodríguez" -> "MC"
+ * - "Carlos" -> "CA"
+ * - "Huésped 1" -> "H1"
+ */
+export function formatGuestInitials(name?: string | null, fallbackIndex?: number): string {
+  if (!name || !name.trim()) {
+    return typeof fallbackIndex === 'number' ? `H${fallbackIndex}` : 'H'
+  }
+  const cleanName = name.trim()
+
+  // Manejar nombres genéricos o temporales como "Huésped 1", "Huésped 2"
+  const matchHuesped = cleanName.match(/^huésped\s*(\d+)$/i)
+  if (matchHuesped) {
+    return `H${matchHuesped[1]}`
+  }
+
+  const words = cleanName.split(/\s+/).filter(Boolean)
+  if (words.length === 0) {
+    return typeof fallbackIndex === 'number' ? `H${fallbackIndex}` : 'H'
+  }
+  if (words.length === 1) {
+    return words[0].slice(0, Math.min(2, words[0].length)).toUpperCase()
+  }
+  const first = words[0][0] || ''
+  const second = words[1][0] || ''
+  return (first + second).toUpperCase()
 }
 
