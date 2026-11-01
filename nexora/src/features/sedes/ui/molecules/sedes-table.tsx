@@ -39,17 +39,17 @@ export function SedesTable({
 }: SedesTableProps) {
   return (
     <>
-      {/* 1. Vista adaptable en Tarjetas (Cards) para pantallas móviles / pequeñas (< md) */}
+      {/* Vista en tarjetas para pantallas pequeñas (< md) */}
       <motion.ul
-        key="sedes-table-responsive-cards"
+        key="sedes-table-cards"
         variants={STAGGER_CONTAINER_VARIANTS}
         initial="hidden"
         animate="visible"
-        className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:hidden"
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 md:hidden"
       >
-        {sedes.map((sede) => (
+        {sedes.map((sede, index) => (
           <SedeItem
-            key={`table-responsive-card-${sede.id}`}
+            key={`table-card-${sede.id}-${index}`}
             sede={sede}
             variants={STAGGER_ITEM_VARIANTS}
             onDelete={onDelete ? () => onDelete(sede) : undefined}
@@ -93,9 +93,9 @@ export function SedesTable({
             animate="visible"
             className="divide-y divide-line/70"
           >
-            {sedes.map((sede) => (
+            {sedes.map((sede, index) => (
               <motion.tr
-                key={sede.id}
+                key={`table-row-${sede.id}-${index}`}
                 variants={STAGGER_ROW_VARIANTS}
                 className="group hover:bg-canvas/50 transition-colors"
               >

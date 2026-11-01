@@ -1,69 +1,71 @@
-import { useState, type FormEvent } from 'react'
-import { motion } from 'motion/react'
-import { isAxiosError } from 'axios'
-import { api } from '../../../lib/api'
-import { fadeIn, fadeUp } from '../../../design-tokens/motion'
-import { Input } from '../../../shared/ui/Input'
-import { cn } from '../../../shared/lib/cn'
-import { updateAuthUserFromLoginResponse } from '../../../shared/auth-storage'
-import { useTemaStore } from '../../tema/application/tema-store'
-import { Rocket } from '../../../shared/rocket'
-import { validateStatusCode } from '../../../shared/lib/status-code-validator'
+import { useState, type FormEvent } from 'react';
+import { motion } from 'motion/react';
+import { isAxiosError } from 'axios';
+import { api } from '../../../lib/api';
+import { fadeIn, fadeUp } from '../../../design-tokens/motion';
+import { Input } from '../../../shared/ui/Input';
+import { cn } from '../../../shared/lib/cn';
+import { updateAuthUserFromLoginResponse } from '../../../shared/auth-storage';
+import { useTemaStore } from '../../tema/application/tema-store';
+import { Rocket } from '../../../shared/rocket';
+import { validateStatusCode } from '../../../shared/lib/status-code-validator';
 
-const TOKEN_KEY = 'nexora.auth.token'
+const TOKEN_KEY = 'nexora.auth.token';
 
 interface LoginProps {
   /** Se invoca al recibir el token, por si la app quiere redirigir o persistir más allá. */
-  onSuccess?: (token: string) => void
+  onSuccess?: (token: string) => void;
   /** Se invoca al pulsar "Continuar a mi hotel", para navegar al dashboard. */
-  onContinue?: () => void
+  onContinue?: () => void;
 }
 
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function Login({ onSuccess, onContinue }: LoginProps) {
-  const hotelLogo = useTemaStore((state) => state.hotelLogo)
-  const hotelName = useTemaStore((state) => state.hotelName)
+  const hotelLogo = useTemaStore((state) => state.hotelLogo);
+  const hotelName = useTemaStore((state) => state.hotelName);
 
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({})
-  const [loading, setLoading] = useState(false)
-  const [serverError, setServerError] = useState<string | null>(null)
-  const [welcomeEmail, setWelcomeEmail] = useState<string | null>(null)
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [errors, setErrors] = useState<{ email?: string; password?: string }>(
+    {}
+  );
+  const [loading, setLoading] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [welcomeEmail, setWelcomeEmail] = useState<string | null>(null);
 
   // Limpia el error de un campo en cuanto el usuario vuelve a escribir.
   const clearError = (field: 'email' | 'password') => {
-    setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev))
-  }
+    setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
+  };
 
   // Valida campos vacíos y formato del correo.
   const validate = () => {
-    const next: typeof errors = {}
-    const value = email.trim()
+    const next: typeof errors = {};
+    const value = email.trim();
 
     if (!value) {
-      next.email = 'Escribe tu correo para continuar.'
+      next.email = 'Escribe tu correo para continuar.';
     } else if (!EMAIL_PATTERN.test(value)) {
-      next.email = 'Revisa el formato: usuario@correo.com'
+      next.email = 'Revisa el formato: usuario@correo.com';
     }
 
     if (!password) {
-      next.password = 'Escribe tu contraseña.'
+      next.password = 'Escribe tu contraseña.';
     }
 
-    return next
-  }
+    return next;
+  };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const nextErrors = validate()
-    setErrors(nextErrors)
-    if (nextErrors.email || nextErrors.password) return
+    event.preventDefault();
+    const nextErrors = validate();
+    setErrors(nextErrors);
+    if (nextErrors.email || nextErrors.password) return;
 
-    setLoading(true)
-    setServerError(null)
+    setLoading(true);
+    setServerError(null);
 
     try {
       // Consumimos el endpoint en segundo plano mientras el cohete despega
@@ -74,53 +76,56 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
         }),
         // Pausa breve para apreciar el despegue del cohete sin cortes abruptos
         new Promise((resolve) => setTimeout(resolve, 1400)),
-      ])
+      ]);
 
-      const validation = validateStatusCode(response.status)
+      const validation = validateStatusCode(response.status);
 
       if (validation.isValid) {
-        const token = (response.data?.token || response.data?.access_token || response.data?.data?.token) as string | undefined
+        const token = (response.data?.token ||
+          response.data?.access_token ||
+          response.data?.data?.token) as string | undefined;
         if (token) {
-          localStorage.setItem(TOKEN_KEY, token)
-          localStorage.setItem('auth_token', token)
-          onSuccess?.(token)
+          localStorage.setItem(TOKEN_KEY, token);
+          localStorage.setItem('auth_token', token);
+          onSuccess?.(token);
         }
 
         // Actualizar la información auth_user en localStorage según la respuesta devuelta por la API REST
-        updateAuthUserFromLoginResponse(response.data, email.trim(), token)
+        updateAuthUserFromLoginResponse(response.data, email.trim(), token);
 
-        setWelcomeEmail(email.trim())
+        setWelcomeEmail(email.trim());
       } else {
         setServerError(
-          validation.message || 'No fue posible iniciar sesión. Verifica tus datos de acceso.'
-        )
+          validation.message ||
+            'No fue posible iniciar sesión. Verifica tus datos de acceso.'
+        );
       }
     } catch (error) {
       if (isAxiosError(error)) {
-        const status = error.response?.status ?? 0
-        const validation = validateStatusCode(status)
+        const status = error.response?.status ?? 0;
+        const validation = validateStatusCode(status);
         setServerError(
           validation.message ||
             'No pudimos reconocer esas credenciales. Revisa el correo y la contraseña, y vuelve a intentarlo.'
-        )
+        );
       } else {
-        const fallbackValidation = validateStatusCode(0)
+        const fallbackValidation = validateStatusCode(0);
         setServerError(
           fallbackValidation.message ||
             'Nexora no pudo conectarse en este momento. Revisa tu conexión y vuelve a intentarlo en un momento.'
-        )
+        );
       }
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <main className="flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-[#2a1710] via-primary to-secondary px-4 py-12 sm:px-6">
+    <main className="via-primary to-secondary flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-[#2a1710] px-4 py-12 sm:px-6">
       {/* Resplandor decorativo que suaviza el fondo y da profundidad. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -top-32 right-8 size-72 rounded-full bg-cream/10 blur-3xl"
+        className="bg-cream/10 pointer-events-none absolute -top-32 right-8 size-72 rounded-full blur-3xl"
       />
 
       <section aria-label="Inicio de sesión" className="w-full max-w-md">
@@ -128,7 +133,7 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
           variants={fadeIn}
           initial="hidden"
           animate="visible"
-          className="rounded-3xl border border-line bg-panel p-6 shadow-2xl sm:p-8"
+          className="border-line bg-panel rounded-3xl border p-6 shadow-2xl sm:p-8"
         >
           {welcomeEmail ? (
             <SuccessState
@@ -142,7 +147,7 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
                 <div className="relative mx-auto mb-5 flex size-20 items-center justify-center">
                   <span
                     aria-hidden="true"
-                    className="absolute inset-2 rounded-full bg-primary/15 blur-xl"
+                    className="bg-primary/15 absolute inset-2 rounded-full blur-xl"
                   />
 
                   <motion.span
@@ -150,9 +155,13 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
                     initial={{ opacity: 0, scale: 0 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{ delay: 0.2 }}
-                    className="absolute -left-1 -top-2 text-primary/70"
+                    className="text-primary/70 absolute -top-2 -left-1"
                   >
-                    <svg viewBox="0 0 24 24" className="size-5" fill="currentColor">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="size-5"
+                      fill="currentColor"
+                    >
                       <path d="M12 2l2.9 6.26 6.6.8-4.9 4.5 1.3 6.44L12 16.9 6.1 20l1.3-6.44L2.5 9.06l6.6-.8L12 2z" />
                     </svg>
                   </motion.span>
@@ -162,9 +171,13 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.35 }}
-                    className="absolute -right-1 top-4 text-secondary/70"
+                    className="text-secondary/70 absolute top-4 -right-1"
                   >
-                    <svg viewBox="0 0 24 24" className="size-3" fill="currentColor">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="size-3"
+                      fill="currentColor"
+                    >
                       <path d="M12 2l2.9 6.26 6.6.8-4.9 4.5 1.3 6.44L12 16.9 6.1 20l1.3-6.44L2.5 9.06l6.6-.8L12 2z" />
                     </svg>
                   </motion.span>
@@ -172,8 +185,12 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
                   <motion.div
                     aria-hidden="true"
                     animate={{ y: [0, -6, 0] }}
-                    transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
-                    className="grid size-16 place-items-center rounded-2xl bg-cream text-primary overflow-hidden shadow-lg shadow-primary/25"
+                    transition={{
+                      duration: 3.5,
+                      repeat: Infinity,
+                      ease: 'easeInOut',
+                    }}
+                    className="bg-cream text-primary shadow-primary/25 grid size-16 place-items-center overflow-hidden rounded-2xl shadow-lg"
                   >
                     {hotelLogo ? (
                       <img
@@ -189,7 +206,7 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
                         strokeWidth="1.8"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        className="size-8 text-primary"
+                        className="text-primary size-8"
                       >
                         <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
                         <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
@@ -200,17 +217,23 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
                   </motion.div>
                 </div>
 
-                <h1 className="text-2xl font-bold text-ink">
-                  {hotelName !== 'Hoteles · Operaciones' ? hotelName : 'Tu hotel toma vida en Nexora'}
+                <h1 className="text-ink text-2xl font-bold">
+                  {hotelName !== 'Hoteles · Operaciones'
+                    ? hotelName
+                    : 'Tu hotel toma vida en Nexora'}
                 </h1>
-                <p className="mt-1 text-sm text-ink-muted">
+                <p className="text-ink-muted mt-1 text-sm">
                   {hotelName !== 'Hoteles · Operaciones'
                     ? `Bienvenido al panel de operaciones de ${hotelName}.`
                     : 'Tu hotel ya te espera: entra y retoma el control de cada detalle con un solo clic.'}
                 </p>
               </div>
 
-              <form onSubmit={handleSubmit} className="mt-6 space-y-4" noValidate>
+              <form
+                onSubmit={handleSubmit}
+                className="mt-6 space-y-4"
+                noValidate
+              >
                 <Input
                   label="Correo electrónico"
                   type="email"
@@ -219,8 +242,8 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
                   placeholder="tu@hotel.com"
                   value={email}
                   onChange={(event) => {
-                    setEmail(event.target.value)
-                    clearError('email')
+                    setEmail(event.target.value);
+                    clearError('email');
                   }}
                   error={errors.email}
                   icon={
@@ -247,17 +270,21 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
                   placeholder="••••••••"
                   value={password}
                   onChange={(event) => {
-                    setPassword(event.target.value)
-                    clearError('password')
+                    setPassword(event.target.value);
+                    clearError('password');
                   }}
                   error={errors.password}
                   action={
                     <button
                       type="button"
                       onClick={() => setShowPassword((visible) => !visible)}
-                      aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                      aria-label={
+                        showPassword
+                          ? 'Ocultar contraseña'
+                          : 'Mostrar contraseña'
+                      }
                       aria-pressed={showPassword}
-                      className="flex size-8 items-center justify-center rounded-lg text-ink-soft outline-none transition-colors hover:bg-primary/5 hover:text-ink focus-visible:ring-2 focus-visible:ring-primary/40"
+                      className="text-ink-soft hover:bg-primary/5 hover:text-ink focus-visible:ring-primary/40 flex size-8 items-center justify-center rounded-lg transition-colors outline-none focus-visible:ring-2"
                     >
                       {showPassword ? (
                         <svg
@@ -314,7 +341,7 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
                     initial="hidden"
                     animate="visible"
                     role="alert"
-                    className="rounded-xl border border-danger/25 bg-danger/10 px-4 py-3 text-sm font-medium text-danger"
+                    className="border-danger/25 bg-danger/10 text-danger rounded-xl border px-4 py-3 text-sm font-medium"
                   >
                     {serverError}
                   </motion.p>
@@ -326,7 +353,7 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
                   transition={{ type: 'spring', stiffness: 500, damping: 25 }}
                   disabled={loading}
                   className={cn(
-                    'inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-primary/25 outline-none transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-panel disabled:pointer-events-none disabled:opacity-60',
+                    'bg-primary shadow-primary/25 hover:bg-primary/90 focus-visible:ring-primary/40 focus-visible:ring-offset-panel inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-lg transition-colors outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-60'
                   )}
                 >
                   {loading ? (
@@ -343,9 +370,12 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
                 </motion.button>
               </form>
 
-              <p className="mt-4 text-center text-xs text-ink-soft">
+              <p className="text-ink-soft mt-4 text-center text-xs">
                 ¿No es tu equipo?{' '}
-                <a href="#" className="font-medium text-primary hover:text-primary/80">
+                <a
+                  href="#"
+                  className="text-primary hover:text-primary/80 font-medium"
+                >
                   Restablece tu contraseña
                 </a>
               </p>
@@ -358,7 +388,7 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
         <motion.div
           role="status"
           aria-live="polite"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/85 p-4 backdrop-blur-md"
+          className="bg-canvas/85 fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
         >
@@ -366,7 +396,7 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
             variants={fadeUp}
             initial="hidden"
             animate="visible"
-            className="flex w-full max-w-sm flex-col items-center gap-5 rounded-3xl border border-line bg-panel p-6 sm:p-8 text-center shadow-2xl"
+            className="border-line bg-panel flex w-full max-w-sm flex-col items-center gap-5 rounded-3xl border p-6 text-center shadow-2xl sm:p-8"
           >
             <div className="relative flex items-center justify-center">
               <Rocket
@@ -375,17 +405,17 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
                 loop
                 interactive={false}
                 timing={{ ignitionMs: 800, ascentMs: 1800 }}
-                className="shadow-2xl ring-1 ring-primary/20 bg-canvas/60"
+                className="ring-primary/20 bg-canvas/60 shadow-2xl ring-1"
               />
             </div>
 
             <div className="space-y-1.5">
-              <h3 className="text-lg font-bold text-ink">
+              <h3 className="text-ink text-lg font-bold">
                 {hotelName !== 'Hoteles · Operaciones'
                   ? `Despegando hacia ${hotelName}…`
                   : 'Iniciando despegue hacia tu hotel…'}
               </h3>
-              <p className="text-sm text-ink-muted">
+              <p className="text-ink-muted text-sm">
                 Verificando credenciales y preparando el panel en segundo plano.
               </p>
             </div>
@@ -393,7 +423,7 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
         </motion.div>
       )}
     </main>
-  )
+  );
 }
 
 function SuccessState({
@@ -401,13 +431,14 @@ function SuccessState({
   onClose,
   onContinue,
 }: {
-  email: string
-  onClose: () => void
-  onContinue?: () => void
+  email: string;
+  onClose: () => void;
+  onContinue?: () => void;
 }) {
-  const hotelLogo = useTemaStore((state) => state.hotelLogo)
-  const hotelName = useTemaStore((state) => state.hotelName)
-  const displayName = hotelName !== 'Hoteles · Operaciones' ? hotelName : 'tu hotel'
+  const hotelLogo = useTemaStore((state) => state.hotelLogo);
+  const hotelName = useTemaStore((state) => state.hotelName);
+  const displayName =
+    hotelName !== 'Hoteles · Operaciones' ? hotelName : 'tu hotel';
 
   return (
     <motion.div
@@ -416,7 +447,7 @@ function SuccessState({
       animate="visible"
       className="flex flex-col items-center gap-4 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-6 py-12 text-center"
     >
-      <span className="grid size-16 place-items-center rounded-2xl bg-cream text-primary overflow-hidden shadow-md shrink-0">
+      <span className="bg-cream text-primary grid size-16 shrink-0 place-items-center overflow-hidden rounded-2xl shadow-md">
         {hotelLogo ? (
           <img
             src={hotelLogo}
@@ -442,19 +473,22 @@ function SuccessState({
         )}
       </span>
       <div className="space-y-1">
-        <h3 className="text-xl font-bold text-ink">¡Bienvenido a {displayName}!</h3>
-        <p className="text-sm leading-relaxed text-ink-muted">
-          Nexora acaba de encender las luces de {displayName} solo para ti. Tus huéspedes te esperan y
-          hoy también va a ser un gran día para tu equipo.
+        <h3 className="text-ink text-xl font-bold">
+          ¡Bienvenido a {displayName}!
+        </h3>
+        <p className="text-ink-muted text-sm leading-relaxed">
+          Nexora acaba de encender las luces de {displayName} solo para ti. Tus
+          huéspedes te esperan y hoy también va a ser un gran día para tu
+          equipo.
         </p>
-        <p className="text-xs font-medium text-ink-soft">{email}</p>
+        <p className="text-ink-soft text-xs font-medium">{email}</p>
       </div>
       <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
         <motion.button
           type="button"
           whileTap={{ scale: 0.97 }}
           onClick={onContinue}
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white outline-none transition-colors hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary/40"
+          className="bg-primary hover:bg-primary/90 focus-visible:ring-primary/40 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors outline-none focus-visible:ring-2"
         >
           Continuar a mi hotel
         </motion.button>
@@ -462,11 +496,11 @@ function SuccessState({
           type="button"
           whileTap={{ scale: 0.97 }}
           onClick={onClose}
-          className="rounded-lg border border-line px-4 py-2 text-sm font-medium text-ink-muted outline-none transition-colors hover:bg-primary/5 hover:text-ink focus-visible:ring-2 focus-visible:ring-primary/30"
+          className="border-line text-ink-muted hover:bg-primary/5 hover:text-ink focus-visible:ring-primary/30 rounded-lg border px-4 py-2 text-sm font-medium transition-colors outline-none focus-visible:ring-2"
         >
           Salir
         </motion.button>
       </div>
     </motion.div>
-  )
+  );
 }

@@ -1,6 +1,7 @@
 import { api } from '../../../lib/api'
 import type { Sede, SedeEstado } from '../domain/sede'
 import type { SedeRepository } from '../domain/sede-repository'
+import { LocalStorageSedeRepository } from './local-storage-sede-repository'
 
 const STATUS_TO_ESTADO: Record<string, SedeEstado> = {
   active: 'activa',
@@ -31,15 +32,36 @@ function fromApiSede(item: ApiSede): Sede {
   }
 }
 
+function deduplicateSedes(items: Sede[]): Sede[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    if (!item.id || seen.has(item.id)) {
+      return false
+    }
+    seen.add(item.id)
+    return true
+  })
+}
+
 export class ApiSedeRepository implements SedeRepository {
   private cache: Sede[] = []
+  private localFallback = new LocalStorageSedeRepository()
 
   async list(): Promise<Sede[]> {
-    const response = await api.get<ApiSede[]>('/headquarters')
-    if (response.status !== 200 || !Array.isArray(response.data)) {
-      throw new Error('Lista de sedes no disponible')
+    try {
+      const response = await api.get<ApiSede[]>('/headquarters')
+      if (response.status === 200 && Array.isArray(response.data) && response.data.length > 0) {
+        this.cache = deduplicateSedes(response.data.map(fromApiSede))
+        return this.cache
+      }
+    } catch {
+      // Fallback seguro a datos locales de semillas en caso de que el backend no responda
+      const localList = await this.localFallback.list()
+      this.cache = deduplicateSedes(localList)
+      return this.cache
     }
-    this.cache = response.data.map(fromApiSede)
+    const localList = await this.localFallback.list()
+    this.cache = deduplicateSedes(localList)
     return this.cache
   }
 
@@ -50,13 +72,17 @@ export class ApiSedeRepository implements SedeRepository {
     } else {
       this.cache.push(sede)
     }
+    this.cache = deduplicateSedes(this.cache)
+    this.localFallback.save(sede)
   }
 
   remove(id: string): void {
     this.cache = this.cache.filter((sede) => sede.id !== id)
+    this.localFallback.remove(id)
   }
 
   removeStatic(id: string): void {
     this.cache = this.cache.filter((sede) => sede.id !== id)
+    this.localFallback.removeStatic(id)
   }
 }

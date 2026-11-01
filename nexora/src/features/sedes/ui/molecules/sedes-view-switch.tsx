@@ -9,7 +9,7 @@ export interface SedesViewSwitchProps {
 }
 
 /**
- * Switch interactivo para alternar con fluidez entre vista en Tarjetas (Cards) y vista en Tabla (Table)
+ * Switch interactivo para alternar con fluidez entre vista en Tarjetas y vista en Tabla
  * en la sección de Sedes registradas.
  */
 export function SedesViewSwitch({
@@ -29,7 +29,7 @@ export function SedesViewSwitch({
         role="radio"
         aria-checked={viewMode === 'cards'}
         aria-label="Visualizar sedes en tarjetas"
-        title="Visualizar en tarjetas (cards)"
+        title="Visualizar en tarjetas"
         onClick={() => onChange('cards')}
         className={`relative flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
           viewMode === 'cards'

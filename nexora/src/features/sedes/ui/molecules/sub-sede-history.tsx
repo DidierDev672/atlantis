@@ -31,7 +31,7 @@ export function SubSedeHistory({ parentName, subSedes }: SubSedeHistoryProps) {
     <ol className="relative" aria-label={`Sub sedes de ${parentName}`}>
       {subSedes.map((sub, index) => (
         <motion.li
-          key={sub.id ?? `${parentName}-${sub.name}-${index}`}
+          key={sub.id ? `sub-sede-${sub.id}-${index}` : `${parentName}-${sub.name}-${index}`}
           initial={{ opacity: 0, x: -10 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.25, delay: index * 0.05 }}

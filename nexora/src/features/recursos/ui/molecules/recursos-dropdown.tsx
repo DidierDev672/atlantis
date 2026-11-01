@@ -104,6 +104,11 @@ export interface RecursosDropdownProps {
   required?: boolean
   /** Clases CSS adicionales */
   className?: string
+  /**
+   * Dirección de despliegue del menú emergente ('auto' | 'down' | 'up').
+   * Por defecto 'auto': detecta el espacio disponible y hace auto-flip hacia arriba si no cabe abajo.
+   */
+  direction?: 'auto' | 'down' | 'up'
   /** Mensaje de aviso cuando no hay opciones disponibles */
   emptyLabel?: string
   /** Identificador opcional para el elemento de formulario */
@@ -136,6 +141,7 @@ export function RecursosDropdown({
   isDisabled,
   required = false,
   className,
+  direction = 'auto',
   emptyLabel: customEmptyLabel,
   id,
   pageSize = 6,
@@ -147,6 +153,8 @@ export function RecursosDropdown({
   const autoId = useId()
   const fieldId = id ?? autoId
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const [computedPlacement, setComputedPlacement] = useState<'down' | 'up'>('down')
   const onSelectOptionRef = useRef(onSelectOption)
   useEffect(() => {
     onSelectOptionRef.current = onSelectOption
@@ -162,15 +170,11 @@ export function RecursosDropdown({
 
   // Darle chance al Loading para que sea visible al desplegar el dropdown solo en carga asíncrona interna
   useEffect(() => {
-    if (isOpen && externalOptions == null) {
-      setIsOpeningProgressive(true)
-      const timer = setTimeout(() => {
-        setIsOpeningProgressive(false)
-      }, 550)
-      return () => clearTimeout(timer)
-    } else {
+    if (!isOpen || externalOptions != null) return
+    const timer = setTimeout(() => {
       setIsOpeningProgressive(false)
-    }
+    }, 550)
+    return () => clearTimeout(timer)
   }, [isOpen, externalOptions])
 
   // Habilitado por defecto para búsqueda en tiempo real
@@ -315,12 +319,13 @@ export function RecursosDropdown({
   const rawOptions = externalOptions ?? internalOptions
   const isRolesEndpoint = endpoint === '/roles' || endpoint?.includes('roles')
   const defaultHuespedId = 'role-huesped'
-  const options =
-    rawOptions.length > 0
-      ? rawOptions
-      : isRolesEndpoint
-        ? [{ value: defaultHuespedId, label: 'Huesped', id: defaultHuespedId, rawName: 'guest' }]
-        : []
+  const options = useMemo(() => {
+    if (rawOptions.length > 0) return rawOptions
+    if (isRolesEndpoint) {
+      return [{ value: defaultHuespedId, label: 'Huesped', id: defaultHuespedId, rawName: 'guest' }]
+    }
+    return []
+  }, [rawOptions, isRolesEndpoint])
 
   // Resolver el valor seleccionado tolerando coincidencias por id, alias o por defecto
   const resolvedValue = (() => {
@@ -381,11 +386,17 @@ export function RecursosDropdown({
   // Paginación reactiva con InfiniteScroll para optimización de opciones extensas
   const [visibleCount, setVisibleCount] = useState<number>(pageSize)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
+  const [prevDeps, setPrevDeps] = useState({ searchTerm, options, pageSize })
 
-  // Reiniciar la paginación al cambiar el término de búsqueda, las opciones o el pageSize
-  useEffect(() => {
+  // Reiniciar la paginación durante render al cambiar el término de búsqueda, las opciones o el pageSize
+  if (
+    prevDeps.searchTerm !== searchTerm ||
+    prevDeps.options !== options ||
+    prevDeps.pageSize !== pageSize
+  ) {
+    setPrevDeps({ searchTerm, options, pageSize })
     setVisibleCount(pageSize)
-  }, [searchTerm, options, pageSize])
+  }
 
   const hasMore = visibleCount < filteredOptions.length || Boolean(externalHasMore)
 
@@ -410,6 +421,103 @@ export function RecursosDropdown({
       setIsLoadingMore(false)
     }
   }, [hasMore, isLoadingMore, onLoadMoreOptions, pageSize, filteredOptions.length])
+
+  // Helper: detecta ancestros que restringen el desborde (overflow: hidden, auto, scroll o diálogos)
+  const getClippingAncestors = useCallback((element: HTMLElement): HTMLElement[] => {
+    const ancestors: HTMLElement[] = []
+    let current: HTMLElement | null = element.parentElement
+
+    while (current && current !== document.body && current !== document.documentElement) {
+      const style = window.getComputedStyle(current)
+      const overflowY = style.overflowY
+      const overflowX = style.overflowX
+      const isScrollableOrHidden =
+        overflowY === 'hidden' ||
+        overflowY === 'auto' ||
+        overflowY === 'scroll' ||
+        overflowX === 'hidden' ||
+        overflowX === 'auto' ||
+        overflowX === 'scroll'
+
+      const isDialogOrRestricted =
+        current.getAttribute('role') === 'dialog' ||
+        current.classList.contains('overflow-hidden') ||
+        current.classList.contains('overflow-y-auto')
+
+      if (isScrollableOrHidden || isDialogOrRestricted) {
+        ancestors.push(current)
+      }
+      current = current.parentElement
+    }
+    return ancestors
+  }, [])
+
+  // Auto-flip: calcula si el popover debe desplegarse hacia abajo o hacia arriba según el espacio disponible
+  const updatePlacement = useCallback(() => {
+    if (direction === 'up') {
+      setComputedPlacement('up')
+      return
+    }
+    if (direction === 'down') {
+      setComputedPlacement('down')
+      return
+    }
+
+    const triggerEl = triggerRef.current ?? dropdownRef.current
+    if (!triggerEl) return
+
+    const rect = triggerEl.getBoundingClientRect()
+    let spaceBelow = window.innerHeight - rect.bottom
+    let spaceAbove = rect.top
+
+    // Inspeccionar si algún contenedor ancestro restringe el área disponible
+    const clippingAncestors = getClippingAncestors(triggerEl)
+    for (const ancestor of clippingAncestors) {
+      const ancestorRect = ancestor.getBoundingClientRect()
+      const ancestorSpaceBelow = ancestorRect.bottom - rect.bottom
+      const ancestorSpaceAbove = rect.top - ancestorRect.top
+
+      if (ancestorSpaceBelow < spaceBelow) {
+        spaceBelow = ancestorSpaceBelow
+      }
+      if (ancestorSpaceAbove < spaceAbove) {
+        spaceAbove = ancestorSpaceAbove
+      }
+    }
+
+    // Estimamos la altura requerida por el popover (entre 130px y 288px)
+    const count = filteredOptions.length || options.length || 3
+    const estimatedHeight = Math.min(
+      Math.max(count * 38 + (isSearchEnabled ? 48 : 0) + 24, 130),
+      288,
+    )
+
+    // Si el espacio inferior es menor que la altura requerida y arriba hay mayor margen, hacer flip hacia arriba
+    if (spaceBelow < estimatedHeight && spaceAbove > spaceBelow) {
+      setComputedPlacement('up')
+    } else {
+      setComputedPlacement('down')
+    }
+  }, [direction, filteredOptions.length, options.length, isSearchEnabled, getClippingAncestors])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const id = requestAnimationFrame(() => {
+      updatePlacement()
+    })
+    return () => cancelAnimationFrame(id)
+  }, [isOpen, updatePlacement])
+
+  useEffect(() => {
+    if (!isOpen || direction !== 'auto') return
+    const handleReposition = () => updatePlacement()
+    window.addEventListener('resize', handleReposition)
+    window.addEventListener('scroll', handleReposition, true)
+    return () => {
+      window.removeEventListener('resize', handleReposition)
+      window.removeEventListener('scroll', handleReposition, true)
+    }
+  }, [isOpen, direction, updatePlacement])
 
   const fieldLabel = label ?? 'Recurso'
 
@@ -485,7 +593,7 @@ export function RecursosDropdown({
   const hasSingleValue = Boolean(selectedOption || resolvedValue)
 
   return (
-    <div ref={dropdownRef} className={cn('relative space-y-1.5', className)}>
+    <div ref={dropdownRef} className={cn('space-y-1.5', className)}>
       <label id={`${fieldId}-label`} htmlFor={fieldId} className="block text-sm font-medium text-ink">
         {fieldLabel}
         {required && (
@@ -495,35 +603,41 @@ export function RecursosDropdown({
         )}
       </label>
 
-      {/* Trigger / Botón que despliega el dropdown */}
-      <button
-        type="button"
-        id={fieldId}
-        aria-haspopup="listbox"
-        aria-expanded={isOpen}
-        aria-labelledby={`${fieldId}-label`}
-        disabled={isComponentDisabled || isOptionsLoading}
-        onClick={() => {
-          if (isComponentDisabled || isOptionsLoading) return
-          setIsOpen((prev) => {
-            if (prev) {
-              setSearchTerm('')
-            } else {
+      {/* Contenedor relativo que ancla el trigger y el popover con auto-flip */}
+      <div className="relative">
+        {/* Trigger / Botón que despliega el dropdown */}
+        <button
+          ref={triggerRef}
+          type="button"
+          id={fieldId}
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
+          aria-labelledby={`${fieldId}-label`}
+          disabled={isComponentDisabled || isOptionsLoading}
+          onClick={() => {
+            if (isComponentDisabled || isOptionsLoading) return
+            if (!isOpen) {
+              updatePlacement()
+              if (externalOptions == null) {
+                setIsOpeningProgressive(true)
+              }
               setVisibleCount(pageSize)
+              setIsOpen(true)
+            } else {
+              setSearchTerm('')
+              setIsOpen(false)
             }
-            return !prev
-          })
-        }}
-        className={cn(
-          'flex min-h-[42px] w-full items-center justify-between gap-2 rounded-xl border bg-panel px-3.5 py-2 text-left text-sm text-ink shadow-xs outline-none transition cursor-pointer',
-          error
-            ? 'border-danger/60 ring-2 ring-danger/20'
-            : isOpen
-              ? 'border-primary ring-2 ring-primary/20'
-              : 'border-line hover:border-ink-soft',
-          isComponentDisabled && 'cursor-not-allowed opacity-50',
-        )}
-      >
+          }}
+          className={cn(
+            'flex min-h-[42px] w-full items-center justify-between gap-2 rounded-xl border bg-panel px-3.5 py-2 text-left text-sm text-ink shadow-xs outline-none transition cursor-pointer',
+            error
+              ? 'border-danger/60 ring-2 ring-danger/20'
+              : isOpen
+                ? 'border-primary ring-2 ring-primary/20'
+                : 'border-line hover:border-ink-soft',
+            isComponentDisabled && 'cursor-not-allowed opacity-50',
+          )}
+        >
         {multiple ? (
           // Modo Múltiple: Chips de valores seleccionados
           <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
@@ -597,11 +711,24 @@ export function RecursosDropdown({
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: 6, scale: 0.98 }}
+            initial={
+              computedPlacement === 'up'
+                ? { opacity: 0, y: 6, scale: 0.98 }
+                : { opacity: 0, y: -6, scale: 0.98 }
+            }
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.98 }}
+            exit={
+              computedPlacement === 'up'
+                ? { opacity: 0, y: 4, scale: 0.98 }
+                : { opacity: 0, y: -4, scale: 0.98 }
+            }
             transition={{ duration: 0.15 }}
-            className="absolute z-50 mt-1 flex max-h-72 w-full flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-xl"
+            className={cn(
+              'absolute z-50 flex max-h-72 w-full flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-xl',
+              computedPlacement === 'up'
+                ? 'bottom-full mb-1'
+                : 'top-full mt-1'
+            )}
             role="listbox"
             aria-multiselectable={multiple ? 'true' : undefined}
           >
@@ -816,6 +943,7 @@ export function RecursosDropdown({
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
 
       {error && (
         <p role="alert" className="mt-1 text-xs font-medium text-danger">

@@ -12,9 +12,14 @@ import {
   type SedeInput,
 } from '../../domain/sede'
 import { Button } from '../atoms/button'
-import { SelectField } from '../atoms/select-field'
+import { RecursosDropdown, type DropdownOption } from '../../../recursos/ui/molecules/recursos-dropdown'
 import { TextArea } from '../atoms/text-area'
 import { TextField } from '../atoms/text-field'
+
+const ESTADO_OPTIONS: ReadonlyArray<DropdownOption> = SEDE_ESTADOS.map((val) => ({
+  value: val,
+  label: SEDE_ESTADO_LABELS[val],
+}))
 
 export interface SedeFormProps {
   initial?: Sede | null
@@ -111,19 +116,17 @@ export function SedeForm({
           required
         />
       </div>
-      <SelectField
+      <RecursosDropdown
         label="Estado"
+        placeholder="Selecciona el estado…"
+        options={ESTADO_OPTIONS}
         value={estado}
-        onChange={(event) => setEstado(event.target.value as SedeEstado)}
+        onChange={(val) => setEstado(val as SedeEstado)}
         error={errors.estado}
+        searchable={false}
+        disabled={submitting}
         required
-      >
-        {SEDE_ESTADOS.map((value) => (
-          <option key={value} value={value}>
-            {SEDE_ESTADO_LABELS[value]}
-          </option>
-        ))}
-      </SelectField>
+      />
       <div className="flex items-center justify-end gap-2 pt-1">
         <Button type="button" variant="ghost" onClick={onCancel} disabled={submitting}>
           Cancelar
