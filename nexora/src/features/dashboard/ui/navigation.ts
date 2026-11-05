@@ -59,7 +59,7 @@ export const PAGE_META: Record<NavId, PageMeta> = {
     soonMessage: '',
   },
   cama: {
-    title: 'Cama en 3D',
+    title: 'Tipos de camas',
     subtitle:
       'Explora tu cama en tres dimensiones: gírala, acércate y descúbrela como si estuvieras frente a ella.',
     soonMessage: '',
@@ -155,4 +155,3 @@ export const BACK_TO_CONFIG_PAGES: readonly NavId[] = [
   'paletas',
   'servicios',
 ] as const;
-

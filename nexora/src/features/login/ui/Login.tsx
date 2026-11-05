@@ -9,6 +9,10 @@ import { updateAuthUserFromLoginResponse } from '../../../shared/auth-storage';
 import { useTemaStore } from '../../tema/application/tema-store';
 import { Rocket } from '../../../shared/rocket';
 import { validateStatusCode } from '../../../shared/lib/status-code-validator';
+import {
+  resolveRoleRedirect,
+  type RoleRedirectDecision,
+} from '../../roles/domain/role-router';
 
 const TOKEN_KEY = 'nexora.auth.token';
 
@@ -34,6 +38,12 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
   const [loading, setLoading] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [welcomeEmail, setWelcomeEmail] = useState<string | null>(null);
+  const [roleIssueModalData, setRoleIssueModalData] = useState<{
+    isOpen: boolean;
+    decision: RoleRedirectDecision;
+    rawRole: string;
+    userEmail: string;
+  } | null>(null);
 
   // Limpia el error de un campo en cuanto el usuario vuelve a escribir.
   const clearError = (field: 'email' | 'password') => {
@@ -93,7 +103,34 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
         // Actualizar la información auth_user en localStorage según la respuesta devuelta por la API REST
         updateAuthUserFromLoginResponse(response.data, email.trim(), token);
 
-        setWelcomeEmail(email.trim());
+        // Extraer el item `role` devuelto por el consumo del endpoint POST /login
+        const rawRole = (
+          response.data?.role ??
+          response.data?.user?.role ??
+          response.data?.data?.role ??
+          ''
+        ) as string;
+
+        // Evaluar el rol mediante el switch estructurado de roles
+        let decision: RoleRedirectDecision;
+        try {
+          decision = resolveRoleRedirect(rawRole);
+        } catch {
+          decision = resolveRoleRedirect('');
+        }
+
+        // En caso de presentar problemas con el switch de roles o requerir advertencia:
+        if (decision.hasRoleIssue) {
+          setRoleIssueModalData({
+            isOpen: true,
+            decision,
+            rawRole,
+            userEmail: email.trim(),
+          });
+        } else {
+          // Rol de recepción identificado sin problemas: mostrar pantalla de bienvenida
+          setWelcomeEmail(email.trim());
+        }
       } else {
         setServerError(
           validation.message ||
@@ -422,6 +459,21 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
           </motion.div>
         </motion.div>
       )}
+
+      {/* Modal informativo cuando se presenta un inconveniente al identificar el rol */}
+      {roleIssueModalData?.isOpen && (
+        <RoleIssueModal
+          isOpen={roleIssueModalData.isOpen}
+          decision={roleIssueModalData.decision}
+          rawRole={roleIssueModalData.rawRole}
+          onContinue={onContinue}
+          onClose={() => {
+            const savedEmail = roleIssueModalData.userEmail;
+            setRoleIssueModalData(null);
+            setWelcomeEmail(savedEmail);
+          }}
+        />
+      )}
     </main>
   );
 }
@@ -501,6 +553,155 @@ function SuccessState({
           Salir
         </motion.button>
       </div>
+    </motion.div>
+  );
+}
+
+/**
+ * Modal informativo cuando se presenta una falla o problema al identificar el rol
+ * o cuando el rol no cuenta con una vista especializada activada aún.
+ * Regla de oro: No expone IDs técnicos ni credenciales en la interfaz de usuario.
+ */
+function RoleIssueModal({
+  isOpen,
+  decision,
+  rawRole,
+  onContinue,
+  onClose,
+}: {
+  isOpen: boolean;
+  decision: RoleRedirectDecision;
+  rawRole: string;
+  onContinue?: () => void;
+  onClose: () => void;
+}) {
+  if (!isOpen) return null;
+
+  // Formato humano amigable del rol sin IDs
+  const displayRole = rawRole?.trim() || decision.roleName || 'No especificado';
+
+  return (
+    <motion.div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="role-issue-modal-title"
+      className="bg-canvas/80 fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <motion.div
+        variants={fadeUp}
+        initial="hidden"
+        animate="visible"
+        className="border-line bg-panel relative flex w-full max-w-md flex-col items-center gap-5 rounded-3xl border p-6 text-center shadow-2xl sm:p-8"
+      >
+        {/* Botón superior de cierre */}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Cerrar aviso de rol"
+          className="text-ink-muted hover:text-ink hover:bg-canvas/60 focus-visible:ring-primary/40 absolute top-4 right-4 grid size-8 place-items-center rounded-xl transition-colors outline-none focus-visible:ring-2 cursor-pointer"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="size-4"
+          >
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+
+        {/* Ícono de aviso ético y empático */}
+        <div className="relative flex size-16 items-center justify-center">
+          <span
+            aria-hidden="true"
+            className="bg-amber-500/20 absolute inset-0 rounded-full blur-lg"
+          />
+          <span className="ring-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 grid size-14 place-items-center rounded-2xl ring-1 shadow-xs">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="size-7"
+              aria-hidden="true"
+            >
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+          </span>
+        </div>
+
+        {/* Título y subtítulo */}
+        <div className="space-y-2">
+          <h3
+            id="role-issue-modal-title"
+            className="text-ink text-xl font-bold tracking-tight"
+          >
+            Aviso de Identificación de Rol
+          </h3>
+
+          {/* Chip de rol detectado (Regla de oro: No IDs) */}
+          <div className="flex justify-center">
+            <span className="border-line bg-canvas/60 text-ink-muted inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold">
+              <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
+              Rol detectado: <strong className="text-ink capitalize">{displayRole}</strong>
+            </span>
+          </div>
+
+          <p className="text-ink-muted text-sm leading-relaxed">
+            {decision.issueMessage ||
+              'Se presentó un inconveniente para identificar el rol del usuario que está iniciando sesión. No te preocupes: tus credenciales son válidas y tus datos están seguros.'}
+          </p>
+
+          <p className="text-ink-soft text-xs leading-relaxed">
+            Avanzarás a la página que normalmente se utiliza al iniciar sesión en el hotel. Próximamente se incorporarán las vistas especializadas para más roles.
+          </p>
+        </div>
+
+        {/* Botones de acción */}
+        <div className="mt-2 flex w-full flex-col gap-2 sm:flex-row sm:justify-center">
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.97 }}
+            onClick={() => {
+              onContinue?.();
+            }}
+            className="bg-primary hover:bg-primary/90 focus-visible:ring-primary/40 inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-md transition-colors outline-none focus-visible:ring-2 sm:w-auto cursor-pointer"
+          >
+            <span>Continuar al panel principal</span>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="size-4"
+              aria-hidden="true"
+            >
+              <path d="M5 12h14M12 5l7 7-7 7" />
+            </svg>
+          </motion.button>
+
+          <motion.button
+            type="button"
+            whileTap={{ scale: 0.97 }}
+            onClick={onClose}
+            className="border-line text-ink-muted hover:bg-canvas/60 hover:text-ink focus-visible:ring-primary/30 inline-flex w-full items-center justify-center rounded-xl border px-4 py-2.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 sm:w-auto cursor-pointer"
+          >
+            Cerrar aviso
+          </motion.button>
+        </div>
+      </motion.div>
     </motion.div>
   );
 }

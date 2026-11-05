@@ -25,6 +25,10 @@ func NewPermissionResourceHTTP(svc *usecase.PermissionResourceService) *Permissi
 func (h *PermissionResourceHTTP) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/permission-resource", h.handlePermissionResource)
 	mux.HandleFunc("/permission-resource/", h.handlePermissionResourceByID)
+	mux.HandleFunc("/permission", h.handlePermissionResource)
+	mux.HandleFunc("/permission/", h.handlePermissionResourceByID)
+	mux.HandleFunc("/permissions", h.handlePermissionResource)
+	mux.HandleFunc("/permissions/", h.handlePermissionResourceByID)
 }
 
 // handlePermissionResource enruta GET (listar) y POST (crear).
@@ -41,8 +45,14 @@ func (h *PermissionResourceHTTP) handlePermissionResource(w http.ResponseWriter,
 
 // handlePermissionResourceByID enruta GET/PUT/DELETE por ID.
 func (h *PermissionResourceHTTP) handlePermissionResourceByID(w http.ResponseWriter, r *http.Request) {
-	idStr := strings.TrimPrefix(r.URL.Path, "/permission-resource/")
-	id, err := strconv.Atoi(idStr)
+	path := r.URL.Path
+	for _, prefix := range []string{"/permissions/", "/permission-resource/", "/permission/"} {
+		if strings.HasPrefix(path, prefix) {
+			path = strings.TrimPrefix(path, prefix)
+			break
+		}
+	}
+	id, err := strconv.Atoi(path)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ID inválido"})
 		return
@@ -92,7 +102,8 @@ func (h *PermissionResourceHTTP) create(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, domain.ErrPermissionResourceIDRequired) ||
-			errors.Is(err, domain.ErrResourceIDRequired) {
+			errors.Is(err, domain.ErrResourceIDRequired) ||
+			errors.Is(err, domain.ErrActionRequired) {
 			status = http.StatusUnprocessableEntity
 		}
 		writeJSON(w, status, map[string]string{"error": err.Error()})
@@ -101,6 +112,10 @@ func (h *PermissionResourceHTTP) create(w http.ResponseWriter, r *http.Request) 
 
 	saved, err := h.service.Save(item)
 	if err != nil {
+		if errors.Is(err, domain.ErrDuplicatePermission) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -122,6 +137,12 @@ func (h *PermissionResourceHTTP) update(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	if strings.TrimSpace(dto.Action) != "" {
+		existing.SetAction(strings.ToLower(strings.TrimSpace(dto.Action)))
+	}
+	if strings.TrimSpace(dto.Description) != "" {
+		existing.SetDescription(strings.TrimSpace(dto.Description))
+	}
 	if dto.Permission != nil {
 		if *dto.Permission {
 			existing.Grant()
@@ -132,6 +153,10 @@ func (h *PermissionResourceHTTP) update(w http.ResponseWriter, r *http.Request, 
 
 	saved, err := h.service.Save(existing)
 	if err != nil {
+		if errors.Is(err, domain.ErrDuplicatePermission) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}

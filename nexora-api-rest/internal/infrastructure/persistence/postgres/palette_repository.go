@@ -22,7 +22,13 @@ func NewPaletteRepository(conn *pgxpool.Pool) *PaletteRepository {
 var _ domain.PaletteRepository = (*PaletteRepository)(nil)
 
 func (r *PaletteRepository) FindAll(ctx context.Context) ([]domain.Palette, error) {
-	rows, err := r.conn.Query(ctx, "SELECT id, name, is_defined, created_at FROM palettes")
+	query := "SELECT id, name, is_defined, created_at FROM palettes WHERE deleted_at IS NULL"
+	var args []any
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		query += " AND (headquarters_id = $1 OR headquarters_id IS NULL)"
+		args = append(args, string(hqID))
+	}
+	rows, err := r.conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query palettes: %w", err)
 	}
@@ -40,8 +46,6 @@ func (r *PaletteRepository) FindAll(ctx context.Context) ([]domain.Palette, erro
 		rows.Close()
 		return nil, err
 	}
-	// Close the result set before running the color queries: a pgx connection
-	// allows only one active query at a time ("conn busy" otherwise).
 	rows.Close()
 
 	for i := range palettes {
@@ -54,7 +58,7 @@ func (r *PaletteRepository) FindAll(ctx context.Context) ([]domain.Palette, erro
 
 func (r *PaletteRepository) FindByID(ctx context.Context, id domain.PaletteID) (domain.Palette, error) {
 	var p domain.Palette
-	err := r.conn.QueryRow(ctx, "SELECT id, name, is_defined, created_at FROM palettes WHERE id = $1", id).
+	err := r.conn.QueryRow(ctx, "SELECT id, name, is_defined, created_at FROM palettes WHERE id = $1 AND deleted_at IS NULL", id).
 		Scan(&p.ID, &p.Name, &p.IsDefined, &p.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -70,7 +74,13 @@ func (r *PaletteRepository) FindByID(ctx context.Context, id domain.PaletteID) (
 
 func (r *PaletteRepository) FindByName(ctx context.Context, name string) (domain.Palette, error) {
 	var p domain.Palette
-	err := r.conn.QueryRow(ctx, "SELECT id, name, is_defined, created_at FROM palettes WHERE name = $1", name).
+	query := "SELECT id, name, is_defined, created_at FROM palettes WHERE name = $1 AND deleted_at IS NULL"
+	args := []any{name}
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		query += " AND headquarters_id = $2"
+		args = append(args, string(hqID))
+	}
+	err := r.conn.QueryRow(ctx, query, args...).
 		Scan(&p.ID, &p.Name, &p.IsDefined, &p.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -91,9 +101,16 @@ func (r *PaletteRepository) Save(ctx context.Context, p domain.Palette) error {
 	}
 	defer tx.Rollback(ctx)
 
+	createdBy := domain.ActorAuditID(ctx, "")
+	var hqPtr *string
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		s := string(hqID)
+		hqPtr = &s
+	}
+
 	_, err = tx.Exec(ctx,
-		"INSERT INTO palettes (id, name, is_defined, created_at) VALUES ($1, $2, $3, $4)",
-		p.ID, p.Name, p.IsDefined, p.CreatedAt,
+		"INSERT INTO palettes (id, name, is_defined, headquarters_id, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, now())",
+		p.ID, p.Name, p.IsDefined, hqPtr, createdBy, p.CreatedAt,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -114,9 +131,10 @@ func (r *PaletteRepository) Update(ctx context.Context, p domain.Palette) error 
 	}
 	defer tx.Rollback(ctx)
 
+	updatedBy := domain.ActorAuditID(ctx, "")
 	tag, err := tx.Exec(ctx,
-		"UPDATE palettes SET name = $2, is_defined = $3 WHERE id = $1",
-		p.ID, p.Name, p.IsDefined,
+		"UPDATE palettes SET name = $2, is_defined = $3, updated_by = $4, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
+		p.ID, p.Name, p.IsDefined, updatedBy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -137,7 +155,11 @@ func (r *PaletteRepository) Update(ctx context.Context, p domain.Palette) error 
 }
 
 func (r *PaletteRepository) Delete(ctx context.Context, id domain.PaletteID) error {
-	tag, err := r.conn.Exec(ctx, "DELETE FROM palettes WHERE id = $1", id)
+	deletedBy := domain.ActorAuditID(ctx, "")
+	tag, err := r.conn.Exec(ctx,
+		"UPDATE palettes SET deleted_at = now(), deleted_by = $2 WHERE id = $1 AND deleted_at IS NULL",
+		id, deletedBy,
+	)
 	if err != nil {
 		return fmt.Errorf("delete palette: %w", err)
 	}

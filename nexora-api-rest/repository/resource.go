@@ -30,7 +30,7 @@ func (r *InMemoryResourceRepo) Save(res *domain.Resource) (int, error) {
 	id := res.ID()
 	if id == 0 {
 		id = int(atomic.AddInt64(&r.seq, 1))
-		newRes, _ := domain.NewResource(id, res.Component(), res.Name(), res.ModuleID())
+		newRes, _ := domain.NewResourceWithDetails(id, res.Code(), res.Name(), res.SortOrder(), res.ShowInMenu(), res.Component(), res.ModuleID())
 		r.store[id] = newRes
 	} else {
 		r.store[id] = res

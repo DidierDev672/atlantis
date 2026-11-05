@@ -98,6 +98,10 @@ func Run() error {
 		return fmt.Errorf("error ejecutando migraciones: %w", err)
 	}
 
+	if err := postgres.SeedInitialData(context.Background(), conn, config.Bootstrap()); err != nil {
+		return fmt.Errorf("error ejecutando seeder inicial: %w", err)
+	}
+
 	roleRepo := postgres.NewRoleRepository(conn)
 	headquarterRepo := postgres.NewHeadquarterRepository(conn)
 	subHeadquarterRepo := postgres.NewSubHeadquarterRepository(conn)
@@ -118,6 +122,7 @@ func Run() error {
 	moduleRepo := postgres.NewModuleRepository(conn)
 	resourceRepo := postgres.NewResourceRepository(conn)
 	permissionResourceRepo := postgres.NewPermissionResourceRepository(conn)
+	rolePermissionRepo := postgres.NewRolePermissionRepository(conn)
 	menuCategoryRepo := menucategory.NewPostgresRepository(conn)
 	itemMenuRepo := itemmenu.NewPostgresRepository(conn)
 	serviceRequestRepo := servicerequest.NewPostgresRepository(conn)
@@ -150,6 +155,7 @@ func Run() error {
 		serviceRequestRepo,
 		serviceAssignmentRepo,
 		guestAttendantRepo,
+		rolePermissionRepo,
 		jwtSecret,
 	)
 

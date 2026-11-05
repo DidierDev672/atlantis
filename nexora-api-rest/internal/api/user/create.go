@@ -14,14 +14,16 @@ import (
 // sub_headquarters_id, status and created_by are optional (created_by defaults
 // to "user_system").
 type createUserRequest struct {
-	Name              string  `json:"name"`
-	Email             string  `json:"email"`
-	Password          string  `json:"password"`
-	RoleID            string  `json:"role_id"`
-	HeadquartersID    *string `json:"headquarters_id"`
-	SubHeadquartersID *string `json:"sub_headquarters_id"`
-	Status            string  `json:"status"`
-	CreatedBy         string  `json:"created_by"`
+	Name              string   `json:"name"`
+	Email             string   `json:"email"`
+	Password          string   `json:"password"`
+	RoleID            string   `json:"role_id"`
+	HeadquartersID    *string  `json:"headquarters_id"`
+	HeadquartersIDs   []string `json:"headquarters_ids"`
+	AllHeadquarters   bool     `json:"all_headquarters"`
+	SubHeadquartersID *string  `json:"sub_headquarters_id"`
+	Status            string   `json:"status"`
+	CreatedBy         string   `json:"created_by"`
 }
 
 // Create is the HTTP entry point of the "create user" slice. It maps the raw
@@ -34,12 +36,30 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if actor, ok := domain.ActorFromContext(r.Context()); ok && actor.UserID != "" && !actor.IsSuperAdmin() && h.RoleRepo != nil {
+		if targetRole, rErr := h.RoleRepo.FindByID(r.Context(), domain.RoleID(req.RoleID)); rErr == nil {
+			if strings.EqualFold(string(targetRole.Name), domain.RoleSuperAdmin) {
+				httpjson.WriteError(w, http.StatusForbidden, "no tienes permisos para asignar el rol de super_admin")
+				return
+			}
+		}
+	}
+
+	hqIDs := make([]domain.HeadquarterID, 0, len(req.HeadquartersIDs))
+	for _, raw := range req.HeadquartersIDs {
+		if clean := strings.TrimSpace(raw); clean != "" {
+			hqIDs = append(hqIDs, domain.HeadquarterID(clean))
+		}
+	}
+
 	created, err := h.Creator.Create(r.Context(), userapp.CreateInput{
 		Name:              req.Name,
 		Email:             req.Email,
 		Password:          req.Password,
 		RoleID:            domain.RoleID(req.RoleID),
 		HeadquartersID:    optionalHeadquarterID(req.HeadquartersID),
+		HeadquartersIDs:   hqIDs,
+		AllHeadquarters:   req.AllHeadquarters,
 		SubHeadquartersID: optionalSubHeadquarterID(req.SubHeadquartersID),
 		Status:            req.Status,
 		CreatedBy:         req.CreatedBy,

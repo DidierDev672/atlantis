@@ -27,11 +27,17 @@ CREATE TABLE IF NOT EXISTS buildings (
     sub_headquarters_id  VARCHAR(36) REFERENCES sub_headquarters(id) ON DELETE SET NULL,
     status               VARCHAR(20) NOT NULL DEFAULT 'available',
     created_by           VARCHAR(100) NOT NULL DEFAULT '',
+    updated_by           VARCHAR(100),
+    deleted_by           VARCHAR(100),
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at           TIMESTAMPTZ,
     UNIQUE (headquarters_id, name),
     CHECK (status IN ('available', 'busy', 'maintenance', 'cleaning', 'inactive', 'occupied'))
 );
+ALTER TABLE buildings ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE buildings ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE buildings ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 `
 
 // BuildingRepository is the Postgres adapter of domain.BuildingRepository.
@@ -89,7 +95,13 @@ func (r *BuildingRepository) FindAll(ctx context.Context) ([]domain.Building, er
 	if err := r.ensureTable(ctx); err != nil {
 		return nil, fmt.Errorf("ensure buildings table: %w", err)
 	}
-	rows, err := r.conn.Query(ctx, "SELECT "+buildingColumns+" FROM buildings")
+	query := "SELECT " + buildingColumns + " FROM buildings WHERE deleted_at IS NULL"
+	var args []any
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		query += " AND headquarters_id = $1"
+		args = append(args, string(hqID))
+	}
+	rows, err := r.conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query buildings: %w", err)
 	}
@@ -110,7 +122,7 @@ func (r *BuildingRepository) FindByID(ctx context.Context, id domain.BuildingID)
 	if err := r.ensureTable(ctx); err != nil {
 		return domain.Building{}, fmt.Errorf("ensure buildings table: %w", err)
 	}
-	building, err := scanBuilding(r.conn.QueryRow(ctx, "SELECT "+buildingColumns+" FROM buildings WHERE id = $1", id))
+	building, err := scanBuilding(r.conn.QueryRow(ctx, "SELECT "+buildingColumns+" FROM buildings WHERE id = $1 AND deleted_at IS NULL", id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Building{}, domain.ErrBuildingNotFound
@@ -124,7 +136,7 @@ func (r *BuildingRepository) FindByNameAndHeadquarter(ctx context.Context, name 
 	if err := r.ensureTable(ctx); err != nil {
 		return domain.Building{}, fmt.Errorf("ensure buildings table: %w", err)
 	}
-	building, err := scanBuilding(r.conn.QueryRow(ctx, "SELECT "+buildingColumns+" FROM buildings WHERE name = $1 AND headquarters_id = $2", name, headquartersID))
+	building, err := scanBuilding(r.conn.QueryRow(ctx, "SELECT "+buildingColumns+" FROM buildings WHERE name = $1 AND headquarters_id = $2 AND deleted_at IS NULL", name, headquartersID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Building{}, domain.ErrBuildingNotFound
@@ -138,11 +150,18 @@ func (r *BuildingRepository) Save(ctx context.Context, building domain.Building)
 	if err := r.ensureTable(ctx); err != nil {
 		return fmt.Errorf("ensure buildings table: %w", err)
 	}
+	createdBy := domain.ActorAuditID(ctx, building.CreatedBy)
+	hqID := building.HeadquartersID
+	if hqID == "" {
+		if activeHQ, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+			hqID = activeHQ
+		}
+	}
 	_, err := r.conn.Exec(ctx,
 		"INSERT INTO buildings (id, name, floor_number, headquarters_id, sub_headquarters_id, status, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())",
-		building.ID, building.Name, building.FloorNumber, building.HeadquartersID,
+		building.ID, building.Name, building.FloorNumber, hqID,
 		nullableSubHeadquarterForBuilding(building.SubHeadquartersID),
-		building.Status, building.CreatedBy,
+		building.Status, createdBy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -157,11 +176,12 @@ func (r *BuildingRepository) Update(ctx context.Context, building domain.Buildin
 	if err := r.ensureTable(ctx); err != nil {
 		return fmt.Errorf("ensure buildings table: %w", err)
 	}
+	updatedBy := domain.ActorAuditID(ctx, "")
 	tag, err := r.conn.Exec(ctx,
-		"UPDATE buildings SET name = $2, floor_number = $3, headquarters_id = $4, sub_headquarters_id = $5, status = $6, updated_at = now() WHERE id = $1",
+		"UPDATE buildings SET name = $2, floor_number = $3, headquarters_id = $4, sub_headquarters_id = $5, status = $6, updated_by = $7, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
 		building.ID, building.Name, building.FloorNumber, building.HeadquartersID,
 		nullableSubHeadquarterForBuilding(building.SubHeadquartersID),
-		building.Status,
+		building.Status, updatedBy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -179,7 +199,11 @@ func (r *BuildingRepository) Delete(ctx context.Context, id domain.BuildingID) e
 	if err := r.ensureTable(ctx); err != nil {
 		return fmt.Errorf("ensure buildings table: %w", err)
 	}
-	tag, err := r.conn.Exec(ctx, "DELETE FROM buildings WHERE id = $1", id)
+	deletedBy := domain.ActorAuditID(ctx, "")
+	tag, err := r.conn.Exec(ctx,
+		"UPDATE buildings SET deleted_at = now(), deleted_by = $2, status = 'inactive' WHERE id = $1 AND deleted_at IS NULL",
+		id, deletedBy,
+	)
 	if err != nil {
 		return fmt.Errorf("delete building: %w", err)
 	}

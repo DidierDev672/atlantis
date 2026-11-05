@@ -34,7 +34,13 @@ func scanRoomType(row pgx.Row) (domain.RoomType, error) {
 }
 
 func (r *RoomTypeRepository) FindAll(ctx context.Context) ([]domain.RoomType, error) {
-	rows, err := r.conn.Query(ctx, "SELECT "+roomTypeColumns+" FROM room_types")
+	query := "SELECT " + roomTypeColumns + " FROM room_types WHERE deleted_at IS NULL"
+	var args []any
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		query += " AND (headquarters_id = $1 OR headquarters_id IS NULL)"
+		args = append(args, string(hqID))
+	}
+	rows, err := r.conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query room types: %w", err)
 	}
@@ -52,7 +58,7 @@ func (r *RoomTypeRepository) FindAll(ctx context.Context) ([]domain.RoomType, er
 }
 
 func (r *RoomTypeRepository) FindByID(ctx context.Context, id domain.RoomTypeID) (domain.RoomType, error) {
-	rt, err := scanRoomType(r.conn.QueryRow(ctx, "SELECT "+roomTypeColumns+" FROM room_types WHERE id = $1", id))
+	rt, err := scanRoomType(r.conn.QueryRow(ctx, "SELECT "+roomTypeColumns+" FROM room_types WHERE id = $1 AND deleted_at IS NULL", id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.RoomType{}, domain.ErrRoomTypeNotFound
@@ -63,7 +69,13 @@ func (r *RoomTypeRepository) FindByID(ctx context.Context, id domain.RoomTypeID)
 }
 
 func (r *RoomTypeRepository) FindByName(ctx context.Context, name string) (domain.RoomType, error) {
-	rt, err := scanRoomType(r.conn.QueryRow(ctx, "SELECT "+roomTypeColumns+" FROM room_types WHERE name = $1", name))
+	query := "SELECT " + roomTypeColumns + " FROM room_types WHERE name = $1 AND deleted_at IS NULL"
+	args := []any{name}
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		query += " AND headquarters_id = $2"
+		args = append(args, string(hqID))
+	}
+	rt, err := scanRoomType(r.conn.QueryRow(ctx, query, args...))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.RoomType{}, domain.ErrRoomTypeNotFound
@@ -74,9 +86,15 @@ func (r *RoomTypeRepository) FindByName(ctx context.Context, name string) (domai
 }
 
 func (r *RoomTypeRepository) Save(ctx context.Context, rt domain.RoomType) error {
+	createdBy := domain.ActorAuditID(ctx, rt.CreatedBy)
+	var hqPtr *string
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		s := string(hqID)
+		hqPtr = &s
+	}
 	_, err := r.conn.Exec(ctx,
-		"INSERT INTO room_types (id, name, capacity, base_price, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, now(), now())",
-		rt.ID, rt.Name, rt.Capacity, rt.BasePrice, rt.CreatedBy,
+		"INSERT INTO room_types (id, name, capacity, base_price, headquarters_id, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, now(), now())",
+		rt.ID, rt.Name, rt.Capacity, rt.BasePrice, hqPtr, createdBy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -88,9 +106,10 @@ func (r *RoomTypeRepository) Save(ctx context.Context, rt domain.RoomType) error
 }
 
 func (r *RoomTypeRepository) Update(ctx context.Context, rt domain.RoomType) error {
+	updatedBy := domain.ActorAuditID(ctx, "")
 	tag, err := r.conn.Exec(ctx,
-		"UPDATE room_types SET name = $2, capacity = $3, base_price = $4, updated_at = now() WHERE id = $1",
-		rt.ID, rt.Name, rt.Capacity, rt.BasePrice,
+		"UPDATE room_types SET name = $2, capacity = $3, base_price = $4, updated_by = $5, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
+		rt.ID, rt.Name, rt.Capacity, rt.BasePrice, updatedBy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -105,7 +124,11 @@ func (r *RoomTypeRepository) Update(ctx context.Context, rt domain.RoomType) err
 }
 
 func (r *RoomTypeRepository) Delete(ctx context.Context, id domain.RoomTypeID) error {
-	tag, err := r.conn.Exec(ctx, "DELETE FROM room_types WHERE id = $1", id)
+	deletedBy := domain.ActorAuditID(ctx, "")
+	tag, err := r.conn.Exec(ctx,
+		"UPDATE room_types SET deleted_at = now(), deleted_by = $2, status = 'inactive' WHERE id = $1 AND deleted_at IS NULL",
+		id, deletedBy,
+	)
 	if err != nil {
 		return fmt.Errorf("delete room type: %w", err)
 	}

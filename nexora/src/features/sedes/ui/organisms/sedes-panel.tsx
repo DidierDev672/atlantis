@@ -7,6 +7,10 @@ import {
 } from '../../../../shared/ui/InfiniteScroll';
 import { Input } from '../../../../shared/ui/Input';
 import { api } from '../../../../lib/api';
+import {
+  canManageHeadquarters,
+  readAuthUserEmail,
+} from '../../../../shared/auth-storage';
 import { Rocket } from '../../../../shared/rocket';
 import { validateStatusCode } from '../../../../shared/lib/status-code-validator';
 import type { Sede, SedeEstado, SedeInput, SubSede } from '../../domain/sede';
@@ -49,16 +53,13 @@ const ESTADO_TO_STATUS: Record<SedeEstado, string> = {
   inactiva: 'inactive',
 };
 
-const CREATED_BY = 'u-123';
-
-const SUB_SEDE_CREATED_BY = 'user_system';
-
 export function SedesPanel({
   viewMode: propViewMode,
   onViewModeChange,
 }: SedesPanelProps = {}) {
   const { sedes, isLoading, loadError, reload, create, remove, removeStatic } =
     useSedes();
+  const canCreateOrDeleteSedes = canManageHeadquarters();
   const [internalViewMode, setInternalViewMode] =
     useState<SedesViewMode>('cards');
   const viewMode = propViewMode ?? internalViewMode;
@@ -165,7 +166,7 @@ export function SedesPanel({
           city: values.city,
           phone: values.phone,
           status: ESTADO_TO_STATUS[values.estado],
-          created_by: CREATED_BY,
+          created_by: readAuthUserEmail(),
         }),
         // Pausa breve para apreciar el despegue del cohete sin cortes abruptos
         new Promise((resolve) => setTimeout(resolve, 1500)),
@@ -261,7 +262,7 @@ export function SedesPanel({
             address: values.address,
             phone: values.phone,
             status: ESTADO_TO_STATUS[values.estado],
-            created_by: SUB_SEDE_CREATED_BY,
+            created_by: readAuthUserEmail(),
           }),
           minDelay,
         ]);
@@ -402,23 +403,41 @@ export function SedesPanel({
             viewMode={viewMode}
             onChange={handleViewModeChange}
           />
-          <Button onClick={openCreate}>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              className="size-4"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="13" r="8" />
-              <path d="M12 9v8M8 13h8" />
-            </svg>
-            Nueva sede
-          </Button>
+          {canCreateOrDeleteSedes ? (
+            <Button onClick={openCreate}>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                className="size-4"
+                aria-hidden="true"
+              >
+                <circle cx="12" cy="13" r="8" />
+                <path d="M12 9v8M8 13h8" />
+              </svg>
+              Nueva sede
+            </Button>
+          ) : null}
         </div>
       </div>
+
+      {!canCreateOrDeleteSedes ? (
+        <div className="border-primary/20 bg-primary/5 flex items-start gap-3 rounded-2xl border px-4 py-3 text-xs sm:text-sm">
+          <span className="bg-primary/15 text-primary mt-0.5 grid size-6 shrink-0 place-items-center rounded-full font-bold">
+            i
+          </span>
+          <div className="text-ink-muted leading-relaxed">
+            <span className="text-ink font-semibold">
+              Licencia activa por sede:
+            </span>{' '}
+            La habilitación de nuevas sedes físicas adicionales se cotiza por
+            separado y es activada exclusivamente por el equipo de soporte
+            técnico de Nexora (<code>super_admin</code>).
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
         <TextField
@@ -571,8 +590,12 @@ export function SedesPanel({
       ) : sedes.length === 0 ? (
         <EmptyState
           title="Aún no hay sedes"
-          message="Registra la primera sede y empieza a expandir tu red hotelera."
-          action={<Button onClick={openCreate}>Registrar primera sede</Button>}
+          message="Tu sede principal aparecerá aquí en cuanto el soporte técnico la habilite."
+          action={
+            canCreateOrDeleteSedes ? (
+              <Button onClick={openCreate}>Registrar primera sede</Button>
+            ) : undefined
+          }
         />
       ) : filteredSedes.length === 0 ? (
         <EmptyState
@@ -613,7 +636,11 @@ export function SedesPanel({
                     key={`${sede.id}-${index}`}
                     sede={sede}
                     variants={STAGGER_ITEM_VARIANTS}
-                    onDelete={() => confirmDelete(sede)}
+                    onDelete={
+                      canCreateOrDeleteSedes
+                        ? () => confirmDelete(sede)
+                        : undefined
+                    }
                     onAddSubSede={() => openSubSedeModal(sede)}
                     onViewSubSedes={() => openSubSedeView(sede)}
                   />
@@ -629,7 +656,7 @@ export function SedesPanel({
               >
                 <SedesTable
                   sedes={visibleSedes}
-                  onDelete={confirmDelete}
+                  onDelete={canCreateOrDeleteSedes ? confirmDelete : undefined}
                   onAddSubSede={openSubSedeModal}
                   onViewSubSedes={openSubSedeView}
                 />

@@ -1,6 +1,9 @@
 package usecase
 
 import (
+	"errors"
+	"strings"
+
 	"nexora-api-rest/domain"
 )
 
@@ -17,29 +20,64 @@ func NewModuleService(repo domain.ModuleRepository) *ModuleService {
 
 // CreateModuleDTO es el contrato de entrada para crear un módulo.
 type CreateModuleDTO struct {
+	Code          string `json:"code"`
+	SortOrder     *int16 `json:"sort_order,omitempty"`
 	TypePath      string `json:"type_path"`
 	TypeComponent string `json:"type_component"`
 }
 
 // UpdateModuleDTO es el contrato de entrada para actualizar un módulo.
 type UpdateModuleDTO struct {
+	Code          string `json:"code"`
+	SortOrder     *int16 `json:"sort_order,omitempty"`
 	TypePath      string `json:"type_path"`
 	TypeComponent string `json:"type_component"`
 }
 
 // Create crea un módulo validando reglas de negocio.
 func (s *ModuleService) Create(dto CreateModuleDTO) (*domain.Module, error) {
-	tp, err := domain.NewTypePath(dto.TypePath)
+	code := strings.TrimSpace(dto.Code)
+	typePath := strings.TrimSpace(dto.TypePath)
+	typeComponent := strings.TrimSpace(dto.TypeComponent)
+
+	// Compatibilidad: si envían code, autocompleta typePath y typeComponent
+	if code != "" {
+		if typePath == "" {
+			typePath = code
+		}
+		if typeComponent == "" {
+			typeComponent = code
+		}
+	} else if typePath != "" || typeComponent != "" {
+		// Compatibilidad con payload legado
+		if typeComponent != "" {
+			code = typeComponent
+		} else {
+			code = typePath
+		}
+	} else {
+		return nil, errors.New("el campo 'code' es obligatorio")
+	}
+
+	tp, err := domain.NewTypePath(typePath)
 	if err != nil {
 		return nil, err
 	}
-	tc, err := domain.NewTypeComponent(dto.TypeComponent)
+	tc, err := domain.NewTypeComponent(typeComponent)
 	if err != nil {
 		return nil, err
 	}
-	// El ID se asigna en persistencia. Para in-memory usamos un placeholder.
-	// En repositorios reales el ID lo genera la base de datos.
-	mod, err := domain.NewModule(0, tp, tc)
+
+	var sortOrder int16 = 0
+	if dto.SortOrder != nil {
+		if *dto.SortOrder < 0 {
+			return nil, errors.New("el campo 'sort_order' debe ser mayor o igual a 0")
+		}
+		sortOrder = *dto.SortOrder
+	}
+
+	// El ID se asigna en persistencia (0 = placeholder)
+	mod, err := domain.NewModuleWithCode(0, code, sortOrder, tp, tc)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +91,7 @@ func (s *ModuleService) Save(m *domain.Module) (*domain.Module, error) {
 		return nil, err
 	}
 	if id != m.ID() {
-		saved, derr := domain.NewModule(id, m.TypePath(), m.TypeComponent())
+		saved, derr := domain.NewModuleWithCode(id, m.Code(), m.SortOrder(), m.TypePath(), m.TypeComponent())
 		if derr != nil {
 			return nil, derr
 		}

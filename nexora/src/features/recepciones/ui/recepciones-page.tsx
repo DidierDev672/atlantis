@@ -3,11 +3,14 @@ import { motion, AnimatePresence } from 'motion/react';
 import { RecepcionHeader } from './molecules/recepcion-header';
 import { RecepcionesListContainer } from './organisms/recepciones-list-container';
 import { RecepcionPanel } from './organisms/recepcion-panel';
+import { RecepcionRoomsDashboard } from './organisms/recepcion-rooms-dashboard';
 import { useStaysList } from '../application/use-stays-list';
 import { Loading, useDelayVisibility } from '../../../shared/loading';
 
 export function RecepcionesPage() {
-  const [activeTab, setActiveTab] = useState<'lista' | 'nuevo'>('lista');
+  const [activeTab, setActiveTab] = useState<
+    'habitaciones' | 'lista' | 'nuevo'
+  >('habitaciones');
   const staysList = useStaysList();
 
   // Control de permanencia y visibilidad con useDelayVisibility mientras se carga la información
@@ -21,25 +24,68 @@ export function RecepcionesPage() {
       <div className="mx-auto w-full max-w-7xl space-y-8">
         {/* Cabecera con animación slideIn y copywriting psicológico */}
         <RecepcionHeader
-          badgeText="Recepción · Estancias"
+          badgeText={
+            activeTab === 'habitaciones'
+              ? 'Recepción · Habitaciones'
+              : activeTab === 'lista'
+                ? 'Recepción · Estancias'
+                : 'Recepción · Check-in'
+          }
           title={
-            activeTab === 'lista'
-              ? 'Lista de recepciones y estancias'
-              : 'Nuevo registro'
+            activeTab === 'habitaciones'
+              ? 'Supervisión de habitaciones para recepcionista'
+              : activeTab === 'lista'
+                ? 'Lista de recepciones y estancias'
+                : 'Nuevo registro de estancia'
           }
           subtitle={
-            activeTab === 'lista'
-              ? 'Supervisa la ocupación activa, consulta habitaciones, huéspedes asignados y depósitos de garantía en tiempo real.'
-              : 'Registra el ingreso de un huésped asignando sede, edificio, habitación y cama en tu inventario hotelero.'
+            activeTab === 'habitaciones'
+              ? 'Supervisa en tiempo real el inventario hotelero, pisos, tipos, edificios, tarifas y recepción activa.'
+              : activeTab === 'lista'
+                ? 'Supervisa la ocupación activa, consulta habitaciones, huéspedes asignados y depósitos de garantía en tiempo real.'
+                : 'Registra el ingreso de un huésped asignando sede, edificio, habitación y cama en tu inventario hotelero.'
           }
           onNewCheckIn={
-            activeTab === 'lista' ? () => setActiveTab('nuevo') : undefined
+            activeTab !== 'nuevo' ? () => setActiveTab('nuevo') : undefined
           }
         />
 
-        {/* Barra de pestañas secundarias para alternar entre Listado y Registro */}
+        {/* Barra de pestañas secundarias para alternar entre Habitaciones, Estancias y Registro */}
         <div className="border-line flex items-center justify-between border-b pb-1">
           <div className="flex items-center gap-2">
+            {/* Pestaña 1: Habitaciones (Por defecto para recepcionista) */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('habitaciones')}
+              className={`relative flex cursor-pointer items-center gap-2 px-4 py-2.5 text-xs font-semibold transition ${
+                activeTab === 'habitaciones'
+                  ? 'text-primary'
+                  : 'text-ink-muted hover:text-ink'
+              }`}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="size-4"
+                aria-hidden="true"
+              >
+                <path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9" />
+              </svg>
+              <span>Habitaciones</span>
+              {activeTab === 'habitaciones' && (
+                <motion.div
+                  layoutId="activeRecepcionesTabIndicator"
+                  className="bg-primary absolute inset-x-0 bottom-0 h-0.5"
+                  transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                />
+              )}
+            </button>
+
+            {/* Pestaña 2: Listado de recepciones */}
             <button
               type="button"
               onClick={() => setActiveTab('lista')}
@@ -74,6 +120,7 @@ export function RecepcionesPage() {
               )}
             </button>
 
+            {/* Pestaña 3: Nuevo registro */}
             <button
               type="button"
               onClick={() => setActiveTab('nuevo')}
@@ -112,17 +159,28 @@ export function RecepcionesPage() {
           {activeTab === 'nuevo' && (
             <button
               type="button"
-              onClick={() => setActiveTab('lista')}
+              onClick={() => setActiveTab('habitaciones')}
               className="text-primary flex cursor-pointer items-center gap-1 text-xs font-semibold hover:underline"
             >
-              ← Volver al listado
+              ← Volver a habitaciones
             </button>
           )}
         </div>
 
         {/* Vista activa con animación fluida AnimatePresence */}
         <AnimatePresence mode="wait">
-          {activeTab === 'lista' ? (
+          {activeTab === 'habitaciones' ? (
+            <motion.div
+              key="recepciones-habitaciones-tab"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+              className="relative min-h-[360px]"
+            >
+              <RecepcionRoomsDashboard />
+            </motion.div>
+          ) : activeTab === 'lista' ? (
             <motion.div
               key="recepciones-stays-list-tab"
               initial={{ opacity: 0, y: 8 }}

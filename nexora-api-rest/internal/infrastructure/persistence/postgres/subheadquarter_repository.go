@@ -34,7 +34,13 @@ func scanSubHeadquarter(row pgx.Row) (domain.SubHeadquarter, error) {
 }
 
 func (r *SubHeadquarterRepository) FindAll(ctx context.Context) ([]domain.SubHeadquarter, error) {
-	rows, err := r.conn.Query(ctx, "SELECT "+subHeadquarterColumns+" FROM sub_headquarters")
+	query := "SELECT " + subHeadquarterColumns + " FROM sub_headquarters WHERE deleted_at IS NULL"
+	var args []any
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		query += " AND headquarter_id = $1"
+		args = append(args, string(hqID))
+	}
+	rows, err := r.conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query sub headquarters: %w", err)
 	}
@@ -52,7 +58,7 @@ func (r *SubHeadquarterRepository) FindAll(ctx context.Context) ([]domain.SubHea
 }
 
 func (r *SubHeadquarterRepository) FindByID(ctx context.Context, id domain.SubHeadquarterID) (domain.SubHeadquarter, error) {
-	sub, err := scanSubHeadquarter(r.conn.QueryRow(ctx, "SELECT "+subHeadquarterColumns+" FROM sub_headquarters WHERE id = $1", id))
+	sub, err := scanSubHeadquarter(r.conn.QueryRow(ctx, "SELECT "+subHeadquarterColumns+" FROM sub_headquarters WHERE id = $1 AND deleted_at IS NULL", id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.SubHeadquarter{}, domain.ErrSubHeadquarterNotFound
@@ -63,7 +69,7 @@ func (r *SubHeadquarterRepository) FindByID(ctx context.Context, id domain.SubHe
 }
 
 func (r *SubHeadquarterRepository) FindByHeadquarter(ctx context.Context, headquarterID domain.HeadquarterID) ([]domain.SubHeadquarter, error) {
-	rows, err := r.conn.Query(ctx, "SELECT "+subHeadquarterColumns+" FROM sub_headquarters WHERE headquarter_id = $1", headquarterID)
+	rows, err := r.conn.Query(ctx, "SELECT "+subHeadquarterColumns+" FROM sub_headquarters WHERE headquarter_id = $1 AND deleted_at IS NULL", headquarterID)
 	if err != nil {
 		return nil, fmt.Errorf("query sub headquarters by headquarter: %w", err)
 	}
@@ -82,7 +88,7 @@ func (r *SubHeadquarterRepository) FindByHeadquarter(ctx context.Context, headqu
 
 func (r *SubHeadquarterRepository) FindByHeadquarterAndName(ctx context.Context, headquarterID domain.HeadquarterID, name string) (domain.SubHeadquarter, error) {
 	sub, err := scanSubHeadquarter(r.conn.QueryRow(ctx,
-		"SELECT "+subHeadquarterColumns+" FROM sub_headquarters WHERE headquarter_id = $1 AND name = $2",
+		"SELECT "+subHeadquarterColumns+" FROM sub_headquarters WHERE headquarter_id = $1 AND name = $2 AND deleted_at IS NULL",
 		headquarterID, name,
 	))
 	if err != nil {
@@ -95,9 +101,10 @@ func (r *SubHeadquarterRepository) FindByHeadquarterAndName(ctx context.Context,
 }
 
 func (r *SubHeadquarterRepository) Save(ctx context.Context, sub domain.SubHeadquarter) error {
+	createdBy := domain.ActorAuditID(ctx, sub.CreatedBy)
 	_, err := r.conn.Exec(ctx,
 		"INSERT INTO sub_headquarters (id, headquarter_id, name, address, phone, status, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())",
-		sub.ID, sub.HeadquarterID, sub.Name, sub.Address, sub.Phone, sub.Status, sub.CreatedBy,
+		sub.ID, sub.HeadquarterID, sub.Name, sub.Address, sub.Phone, sub.Status, createdBy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -109,9 +116,10 @@ func (r *SubHeadquarterRepository) Save(ctx context.Context, sub domain.SubHeadq
 }
 
 func (r *SubHeadquarterRepository) Update(ctx context.Context, sub domain.SubHeadquarter) error {
+	updatedBy := domain.ActorAuditID(ctx, "")
 	tag, err := r.conn.Exec(ctx,
-		"UPDATE sub_headquarters SET headquarter_id = $2, name = $3, address = $4, phone = $5, status = $6, updated_at = now() WHERE id = $1",
-		sub.ID, sub.HeadquarterID, sub.Name, sub.Address, sub.Phone, sub.Status,
+		"UPDATE sub_headquarters SET headquarter_id = $2, name = $3, address = $4, phone = $5, status = $6, updated_by = $7, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
+		sub.ID, sub.HeadquarterID, sub.Name, sub.Address, sub.Phone, sub.Status, updatedBy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -126,7 +134,11 @@ func (r *SubHeadquarterRepository) Update(ctx context.Context, sub domain.SubHea
 }
 
 func (r *SubHeadquarterRepository) Delete(ctx context.Context, id domain.SubHeadquarterID) error {
-	tag, err := r.conn.Exec(ctx, "DELETE FROM sub_headquarters WHERE id = $1", id)
+	deletedBy := domain.ActorAuditID(ctx, "")
+	tag, err := r.conn.Exec(ctx,
+		"UPDATE sub_headquarters SET deleted_at = now(), deleted_by = $2, status = 'inactive' WHERE id = $1 AND deleted_at IS NULL",
+		id, deletedBy,
+	)
 	if err != nil {
 		return fmt.Errorf("delete sub headquarter: %w", err)
 	}

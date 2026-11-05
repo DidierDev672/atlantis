@@ -31,7 +31,7 @@ func (r *InMemoryModuleRepo) Save(m *domain.Module) (int, error) {
 	id := m.ID()
 	if id == 0 {
 		id = int(atomic.AddInt64(&r.seq, 1))
-		newMod, _ := domain.NewModule(id, m.TypePath(), m.TypeComponent())
+		newMod, _ := domain.NewModuleWithCode(id, m.Code(), m.SortOrder(), m.TypePath(), m.TypeComponent())
 		r.store[id] = newMod
 	} else {
 		r.store[id] = m

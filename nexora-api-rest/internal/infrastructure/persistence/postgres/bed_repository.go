@@ -61,7 +61,14 @@ func firstBedTypeID(typesBedID []domain.BedTypeID) domain.BedTypeID {
 }
 
 func (r *BedRepository) FindAll(ctx context.Context) ([]domain.Bed, error) {
-	rows, err := r.conn.Query(ctx, bedSelect+" "+bedGroupBy)
+	query := bedSelect + " WHERE b.deleted_at IS NULL"
+	var args []any
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		query += " AND (b.headquarters_id = $1 OR EXISTS (SELECT 1 FROM rooms rm WHERE rm.id = b.room_id AND rm.headquarters_id = $1))"
+		args = append(args, string(hqID))
+	}
+	query += " " + bedGroupBy
+	rows, err := r.conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query beds: %w", err)
 	}
@@ -79,7 +86,7 @@ func (r *BedRepository) FindAll(ctx context.Context) ([]domain.Bed, error) {
 }
 
 func (r *BedRepository) FindByID(ctx context.Context, id domain.BedID) (domain.Bed, error) {
-	bed, err := scanBed(r.conn.QueryRow(ctx, bedSelect+" WHERE b.id = $1 "+bedGroupBy, id))
+	bed, err := scanBed(r.conn.QueryRow(ctx, bedSelect+" WHERE b.id = $1 AND b.deleted_at IS NULL "+bedGroupBy, id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Bed{}, domain.ErrBedNotFound
@@ -90,7 +97,7 @@ func (r *BedRepository) FindByID(ctx context.Context, id domain.BedID) (domain.B
 }
 
 func (r *BedRepository) FindByEtiquetteAndRoom(ctx context.Context, etiquette string, roomID domain.RoomID) (domain.Bed, error) {
-	bed, err := scanBed(r.conn.QueryRow(ctx, bedSelect+" WHERE b.etiquette = $1 AND b.room_id = $2 "+bedGroupBy, etiquette, roomID))
+	bed, err := scanBed(r.conn.QueryRow(ctx, bedSelect+" WHERE b.etiquette = $1 AND b.room_id = $2 AND b.deleted_at IS NULL "+bedGroupBy, etiquette, roomID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Bed{}, domain.ErrBedNotFound
@@ -107,9 +114,19 @@ func (r *BedRepository) Save(ctx context.Context, bed domain.Bed) error {
 	}
 	defer tx.Rollback(ctx)
 
+	createdBy := domain.ActorAuditID(ctx, bed.CreatedBy)
+	var hqPtr *string
+	var roomHQ string
+	if err := tx.QueryRow(ctx, "SELECT headquarters_id FROM rooms WHERE id = $1", bed.RoomID).Scan(&roomHQ); err == nil && roomHQ != "" {
+		hqPtr = &roomHQ
+	} else if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		s := string(hqID)
+		hqPtr = &s
+	}
+
 	if _, err := tx.Exec(ctx,
-		"INSERT INTO beds (id, room_id, types_bed_id, etiquette, status, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, now(), now())",
-		bed.ID, bed.RoomID, firstBedTypeID(bed.TypesBedID), bed.Etiquette, bed.Status, bed.CreatedBy,
+		"INSERT INTO beds (id, room_id, types_bed_id, etiquette, status, headquarters_id, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, now(), now())",
+		bed.ID, bed.RoomID, firstBedTypeID(bed.TypesBedID), bed.Etiquette, bed.Status, hqPtr, createdBy,
 	); err != nil {
 		if isUniqueViolation(err) {
 			return domain.ErrBedDuplicated
@@ -131,9 +148,10 @@ func (r *BedRepository) Update(ctx context.Context, bed domain.Bed) error {
 	}
 	defer tx.Rollback(ctx)
 
+	updatedBy := domain.ActorAuditID(ctx, "")
 	tag, err := tx.Exec(ctx,
-		"UPDATE beds SET room_id = $2, types_bed_id = $3, etiquette = $4, status = $5, updated_at = now() WHERE id = $1",
-		bed.ID, bed.RoomID, firstBedTypeID(bed.TypesBedID), bed.Etiquette, bed.Status,
+		"UPDATE beds SET room_id = $2, types_bed_id = $3, etiquette = $4, status = $5, updated_by = $6, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
+		bed.ID, bed.RoomID, firstBedTypeID(bed.TypesBedID), bed.Etiquette, bed.Status, updatedBy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -170,7 +188,11 @@ func (r *BedRepository) upsertBedTypes(ctx context.Context, tx pgx.Tx, bedID dom
 }
 
 func (r *BedRepository) Delete(ctx context.Context, id domain.BedID) error {
-	tag, err := r.conn.Exec(ctx, "DELETE FROM beds WHERE id = $1", id)
+	deletedBy := domain.ActorAuditID(ctx, "")
+	tag, err := r.conn.Exec(ctx,
+		"UPDATE beds SET deleted_at = now(), deleted_by = $2, status = 'inactive' WHERE id = $1 AND deleted_at IS NULL",
+		id, deletedBy,
+	)
 	if err != nil {
 		return fmt.Errorf("delete bed: %w", err)
 	}

@@ -50,7 +50,13 @@ function UserTableRow({
   const { data: subHqData } = useCatalogSubHeadquarter(user.sub_headquarters_id)
 
   const roleDisplayName = roleData?.name || formatFriendlyRoleName(user.role_id)
-  const headquarterName = hqData?.name || formatFriendlyHeadquarterName(user.headquarters_id)
+  const headquarterName = user.all_headquarters
+    ? 'Todas las sedes'
+    : hqData?.name || formatFriendlyHeadquarterName(user.headquarters_id)
+  const extraSedesCount =
+    !user.all_headquarters && Array.isArray(user.headquarters_ids) && user.headquarters_ids.length > 1
+      ? user.headquarters_ids.length - 1
+      : 0
   const subHeadquarterName = subHqData?.name || formatFriendlySubHeadquarterName(user.sub_headquarters_id)
   const initials = getInitials(user.name)
 
@@ -154,6 +160,11 @@ function UserTableRow({
             <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16" />
           </svg>
           <span>{headquarterName}</span>
+          {extraSedesCount > 0 && (
+            <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+              +{extraSedesCount}
+            </span>
+          )}
           <svg
             viewBox="0 0 24 24"
             fill="none"

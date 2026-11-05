@@ -29,13 +29,19 @@ CREATE TABLE IF NOT EXISTS rates (
     days_of_week       VARCHAR(50) NOT NULL DEFAULT 'all',
     status             VARCHAR(30) NOT NULL DEFAULT 'active',
     created_by         VARCHAR(100) NOT NULL DEFAULT '',
+    updated_by         VARCHAR(100),
+    deleted_by         VARCHAR(100),
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at         TIMESTAMPTZ,
     CHECK (modality IN ('morning', 'afternoon', 'night', 'daily', 'weekly', 'hourly')),
     CHECK (status IN ('active', 'inactive')),
     CHECK (price > 0),
     CHECK (duration_units >= 1)
 );
+ALTER TABLE rates ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE rates ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE rates ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_rates_headquarter_id ON rates(headquarter_id);
 CREATE INDEX IF NOT EXISTS idx_rates_subheadquarter_id ON rates(subheadquarter_id);
 CREATE INDEX IF NOT EXISTS idx_rates_room_type_id ON rates(room_type_id);
@@ -127,7 +133,7 @@ func (r *RateRepository) FindAll(ctx context.Context, filter domain.RateFilter) 
 	}
 
 	query := "SELECT " + rateColumns + " FROM rates"
-	var conditions []string
+	conditions := []string{"deleted_at IS NULL"}
 	var args []any
 
 	appendCondition := func(column string, value any) {
@@ -137,6 +143,8 @@ func (r *RateRepository) FindAll(ctx context.Context, filter domain.RateFilter) 
 
 	if filter.HeadquarterID != nil {
 		appendCondition("headquarter_id", string(*filter.HeadquarterID))
+	} else if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		appendCondition("headquarter_id", string(hqID))
 	}
 	if filter.SubHeadquarterID != nil {
 		appendCondition("subheadquarter_id", string(*filter.SubHeadquarterID))
@@ -180,7 +188,7 @@ func (r *RateRepository) FindByID(ctx context.Context, id domain.RateID) (domain
 		return domain.Rate{}, fmt.Errorf("ensure rates table: %w", err)
 	}
 
-	res, err := scanRate(r.conn.QueryRow(ctx, "SELECT "+rateColumns+" FROM rates WHERE id = $1", id))
+	res, err := scanRate(r.conn.QueryRow(ctx, "SELECT "+rateColumns+" FROM rates WHERE id = $1 AND deleted_at IS NULL", id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Rate{}, domain.ErrRateNotFound
@@ -198,7 +206,17 @@ func (r *RateRepository) Save(ctx context.Context, rate domain.Rate) (domain.Rat
 		return domain.Rate{}, fmt.Errorf("ensure rates table: %w", err)
 	}
 
+	createdBy := domain.ActorAuditID(ctx, rate.CreatedBy)
+	hqID := rate.HeadquarterID
+	if hqID == "" {
+		if activeHQ, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+			hqID = activeHQ
+		}
+	}
+
 	saved := rate
+	saved.CreatedBy = createdBy
+	saved.HeadquarterID = hqID
 	query := `
 		INSERT INTO rates (
 			id, name, headquarter_id, subheadquarter_id, room_type_id,
@@ -217,7 +235,7 @@ func (r *RateRepository) Save(ctx context.Context, rate domain.Rate) (domain.Rat
 		query,
 		rate.ID,
 		rate.Name,
-		rate.HeadquarterID,
+		hqID,
 		nullableID(rate.SubHeadquarterID),
 		nullableID(rate.RoomTypeID),
 		string(rate.Modality),
@@ -227,7 +245,7 @@ func (r *RateRepository) Save(ctx context.Context, rate domain.Rate) (domain.Rat
 		rate.EndTime,
 		rate.DaysOfWeek,
 		string(rate.Status),
-		rate.CreatedBy,
+		createdBy,
 	).Scan(&saved.CreatedAt, &saved.UpdatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -245,6 +263,7 @@ func (r *RateRepository) Update(ctx context.Context, rate domain.Rate) (domain.R
 		return domain.Rate{}, fmt.Errorf("ensure rates table: %w", err)
 	}
 
+	updatedBy := domain.ActorAuditID(ctx, "")
 	query := `
 		UPDATE rates
 		SET name = $2,
@@ -258,8 +277,9 @@ func (r *RateRepository) Update(ctx context.Context, rate domain.Rate) (domain.R
 		    end_time = $10,
 		    days_of_week = $11,
 		    status = $12,
+		    updated_by = $13,
 		    updated_at = now()
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL
 		RETURNING created_at, updated_at
 	`
 
@@ -279,6 +299,7 @@ func (r *RateRepository) Update(ctx context.Context, rate domain.Rate) (domain.R
 		rate.EndTime,
 		rate.DaysOfWeek,
 		string(rate.Status),
+		updatedBy,
 	).Scan(&updated.CreatedAt, &updated.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -299,7 +320,11 @@ func (r *RateRepository) Delete(ctx context.Context, id domain.RateID) error {
 		return fmt.Errorf("ensure rates table: %w", err)
 	}
 
-	cmdTag, err := r.conn.Exec(ctx, "DELETE FROM rates WHERE id = $1", id)
+	deletedBy := domain.ActorAuditID(ctx, "")
+	cmdTag, err := r.conn.Exec(ctx,
+		"UPDATE rates SET deleted_at = now(), deleted_by = $2, status = 'inactive' WHERE id = $1 AND deleted_at IS NULL",
+		id, deletedBy,
+	)
 	if err != nil {
 		return fmt.Errorf("delete rate: %w", err)
 	}

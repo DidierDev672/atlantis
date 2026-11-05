@@ -40,19 +40,26 @@ var (
 
 // User is the core domain entity. It has no dependencies on other layers.
 // HeadquartersID and SubHeadquartersID are optional references, hence pointers
-// (nil means "not assigned"). PasswordHash must never contain the raw password.
+// (nil means "not assigned"). AllHeadquarters flags whether the user can access
+// all headquarters in the hotel; HeadquartersIDs holds the explicit list of
+// assigned sedes from users_headquarters. PasswordHash must never contain the raw password.
 type User struct {
 	ID                UserID
 	Name              string
 	Email             string
 	PasswordHash      string
 	RoleID            RoleID
+	AllHeadquarters   bool
 	HeadquartersID    *HeadquarterID
+	HeadquartersIDs   []HeadquarterID
 	SubHeadquartersID *SubHeadquarterID
 	Status            UserStatus
 	CreatedBy         string
 	CreatedAt         time.Time
+	UpdatedBy         *string
 	UpdatedAt         time.Time
+	DeletedBy         *string
+	DeletedAt         *time.Time
 }
 
 // Validate enforces the business invariants of a user.

@@ -21,10 +21,12 @@ func NewModuleHTTP(svc *usecase.ModuleService) *ModuleHTTP {
 	return &ModuleHTTP{service: svc}
 }
 
-// Register registra las rutas del módulo en el mux.
+// Register registra las rutas del módulo en el mux (soporta singular y plural).
 func (h *ModuleHTTP) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/module", h.handleModule)
 	mux.HandleFunc("/module/", h.handleModuleByID)
+	mux.HandleFunc("/modules", h.handleModule)
+	mux.HandleFunc("/modules/", h.handleModuleByID)
 }
 
 // handleModule enruta GET (listar) y POST (crear).
@@ -41,7 +43,9 @@ func (h *ModuleHTTP) handleModule(w http.ResponseWriter, r *http.Request) {
 
 // handleModuleByID enruta GET/PUT/DELETE por ID.
 func (h *ModuleHTTP) handleModuleByID(w http.ResponseWriter, r *http.Request) {
-	idStr := strings.TrimPrefix(r.URL.Path, "/module/")
+	path := strings.TrimPrefix(r.URL.Path, "/modules/")
+	path = strings.TrimPrefix(path, "/module/")
+	idStr := strings.TrimSpace(path)
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ID inválido"})
@@ -93,7 +97,9 @@ func (h *ModuleHTTP) create(w http.ResponseWriter, r *http.Request) {
 		status := http.StatusBadRequest
 		if errors.Is(err, domain.ErrIDRequired) ||
 			errors.Is(err, domain.ErrTypePathRequired) ||
-			errors.Is(err, domain.ErrTypeComponentRequire) {
+			errors.Is(err, domain.ErrTypeComponentRequire) ||
+			strings.Contains(err.Error(), "obligatorio") ||
+			strings.Contains(err.Error(), "mayor o igual") {
 			status = http.StatusUnprocessableEntity
 		}
 		writeJSON(w, status, map[string]string{"error": err.Error()})
@@ -123,6 +129,12 @@ func (h *ModuleHTTP) update(w http.ResponseWriter, r *http.Request, id int) {
 		return
 	}
 
+	if dto.Code != "" {
+		existing.SetCode(dto.Code)
+	}
+	if dto.SortOrder != nil {
+		existing.SetSortOrder(*dto.SortOrder)
+	}
 	if dto.TypePath != "" {
 		tp, err := domain.NewTypePath(dto.TypePath)
 		if err != nil {

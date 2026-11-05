@@ -2,39 +2,61 @@ import { useState, useMemo } from 'react'
 import {
   type ModuloCategoria,
   type PreferenciasHotel,
+  type GrupoModulosFiltrado,
   PREFERENCIAS_HOTEL_DEFAULT,
-  MODULO_A_CATEGORIA,
+  GRUPOS_CONFIGURACION,
 } from '../domain/configuracion'
 import { DASHBOARD_CARDS, type DashboardCardDefinition } from '../../dashboard/domain/dashboard-card'
+import type { NavId } from '../../dashboard/ui/navigation'
 
 export function useConfiguraciones() {
   const [categoriaActiva, setCategoriaActiva] = useState<ModuloCategoria>('todas')
   const [busqueda, setBusqueda] = useState('')
   const [preferencias, setPreferencias] = useState<PreferenciasHotel>(PREFERENCIAS_HOTEL_DEFAULT)
 
-  const modulosFiltrados = useMemo(() => {
-    return DASHBOARD_CARDS.filter((card: DashboardCardDefinition) => {
-      // Filtro por categoría
-      if (categoriaActiva !== 'todas') {
-        const categoriaModulo = MODULO_A_CATEGORIA[card.id]
-        if (categoriaModulo !== categoriaActiva) {
-          return false
-        }
+  // Mapa de tarjetas indexado por NavId para acceso O(1) y orden exacto por grupo
+  const cardMap = useMemo(() => {
+    const map = new Map<NavId, DashboardCardDefinition>()
+    DASHBOARD_CARDS.forEach((card) => map.set(card.id, card))
+    return map
+  }, [])
+
+  // Grupos organizados y filtrados según categoría activa y término de búsqueda
+  const gruposFiltrados = useMemo((): GrupoModulosFiltrado[] => {
+    const query = busqueda.toLowerCase().trim()
+
+    return GRUPOS_CONFIGURACION.map((grupo) => {
+      // Si hay una categoría específica seleccionada y no coincide con el grupo, se excluye
+      if (categoriaActiva !== 'todas' && categoriaActiva !== grupo.categoria) {
+        return { ...grupo, cards: [] }
       }
 
-      // Filtro por texto de búsqueda
-      if (busqueda.trim() !== '') {
-        const query = busqueda.toLowerCase().trim()
+      // Obtener las tarjetas pertenecientes al grupo respetando su orden exacto
+      const groupCards = grupo.modulosIds
+        .map((id) => cardMap.get(id))
+        .filter((card): card is DashboardCardDefinition => Boolean(card))
+
+      // Aplicar filtro de búsqueda si el usuario ingresó texto
+      const filteredCards = groupCards.filter((card) => {
+        if (!query) return true
         const matchesTitle = card.title.toLowerCase().includes(query)
         const matchesSubtitle = card.subtitle.toLowerCase().includes(query)
         const matchesDescription = card.description.toLowerCase().includes(query)
         const matchesBadge = card.badgeText.toLowerCase().includes(query)
         return matchesTitle || matchesSubtitle || matchesDescription || matchesBadge
-      }
+      })
 
-      return true
-    })
-  }, [categoriaActiva, busqueda])
+      return {
+        ...grupo,
+        cards: filteredCards,
+      }
+    }).filter((grupo) => grupo.cards.length > 0)
+  }, [categoriaActiva, busqueda, cardMap])
+
+  // Lista plana de módulos filtrados en el orden estricto de las 4 categorías
+  const modulosFiltrados = useMemo(() => {
+    return gruposFiltrados.flatMap((g) => g.cards)
+  }, [gruposFiltrados])
 
   const togglePreferencia = (clave: keyof PreferenciasHotel) => {
     setPreferencias((prev) => {
@@ -55,6 +77,7 @@ export function useConfiguraciones() {
     busqueda,
     setBusqueda,
     modulosFiltrados,
+    gruposFiltrados,
     totalModulos: DASHBOARD_CARDS.length,
     preferencias,
     togglePreferencia,

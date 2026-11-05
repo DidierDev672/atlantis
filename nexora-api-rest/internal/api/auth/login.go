@@ -7,11 +7,13 @@ import (
 
 	"nexora-api-rest/internal/api/httpjson"
 	authapp "nexora-api-rest/internal/application/auth"
+	"nexora-api-rest/internal/domain"
 )
 
 // Handler composes the narrow ports expected by the HTTP layer.
 type Handler struct {
-	Authenticator authapp.Authenticator
+	Authenticator   authapp.Authenticator
+	SessionResolver authapp.SessionResolver
 }
 
 // credentialsRequest is the payload accepted by POST /login. Validation is
@@ -22,10 +24,11 @@ type credentialsRequest struct {
 	Password string `json:"password"`
 }
 
-// loginResponse is the success projection: the signed token plus its lifetime
-// hint so clients can schedule a silent refresh.
+// loginResponse is the success projection: the signed token plus optional
+// session profile when SessionResolver is configured.
 type loginResponse struct {
-	Token string `json:"token"`
+	Token string               `json:"token"`
+	User  *authapp.SessionUser `json:"user,omitempty"`
 }
 
 // Login is the HTTP entry point of the "login" slice.
@@ -57,5 +60,37 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	httpjson.WriteJSON(w, http.StatusOK, loginResponse{Token: token})
+	resp := loginResponse{Token: token}
+	if h.SessionResolver != nil {
+		if sessionUser, sErr := h.SessionResolver.ResolveByEmail(r.Context(), req.Email); sErr == nil {
+			resp.User = &sessionUser
+		}
+	}
+
+	httpjson.WriteJSON(w, http.StatusOK, resp)
+}
+
+// Me returns the authenticated user's session profile and allowed headquarters.
+func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
+	actor, ok := domain.ActorFromContext(r.Context())
+	if !ok || actor.UserID == "" {
+		httpjson.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if h.SessionResolver == nil {
+		httpjson.WriteError(w, http.StatusNotImplemented, "session resolver not configured")
+		return
+	}
+
+	sessionUser, err := h.SessionResolver.ResolveByUserID(r.Context(), actor.UserID)
+	if err != nil {
+		if errors.Is(err, domain.ErrUserNotFound) {
+			httpjson.WriteError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		httpjson.WriteInternalError(w, err)
+		return
+	}
+
+	httpjson.WriteJSON(w, http.StatusOK, sessionUser)
 }

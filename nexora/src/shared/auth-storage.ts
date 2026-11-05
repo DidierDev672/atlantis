@@ -1,6 +1,13 @@
 const AUTH_USER_KEY = 'auth_user'
 const AUTH_TOKEN_KEY = 'nexora.auth.token'
+const ACTIVE_HEADQUARTER_KEY = 'nexora.active.headquarter_id'
 const FALLBACK_CREATED_BY = 'user_system'
+
+export interface AllowedHeadquarterItem {
+  id: string
+  name: string
+  city?: string
+}
 
 function decodeJwtPayload(token: string): unknown {
   const parts = token.split('.')
@@ -290,6 +297,8 @@ export function updateAuthUserFromLoginResponse(
 
   const resolvedRole =
     extractStringProp(extracted, [
+      'role_name',
+      'roleName',
       'role',
       'Role',
       'rol',
@@ -406,6 +415,18 @@ export function updateAuthUserFromLoginResponse(
         window.localStorage.setItem('auth_token', detectedToken)
       }
 
+      const primaryHqId =
+        extractStringProp(extracted, ['headquarters_id', 'headquarter_id']) ||
+        (Array.isArray(extracted.allowed_headquarters) &&
+        extracted.allowed_headquarters.length > 0 &&
+        typeof (extracted.allowed_headquarters[0] as Record<string, unknown>)?.id === 'string'
+          ? String((extracted.allowed_headquarters[0] as Record<string, unknown>).id)
+          : null)
+
+      if (primaryHqId) {
+        window.localStorage.setItem(ACTIVE_HEADQUARTER_KEY, primaryHqId)
+      }
+
       window.dispatchEvent(new Event('nexora:auth-change'))
     } catch {
       // Manejar posibles excepciones de acceso a localStorage
@@ -425,11 +446,98 @@ export function clearAuthSession(): void {
       window.localStorage.removeItem(AUTH_USER_KEY)
       window.localStorage.removeItem('auth_token')
       window.localStorage.removeItem(AUTH_TOKEN_KEY)
+      window.localStorage.removeItem(ACTIVE_HEADQUARTER_KEY)
       window.dispatchEvent(new Event('nexora:auth-change'))
     }
   } catch {
     // Si localStorage no estuviera accesible
   }
+}
+
+export function getActiveHeadquarterId(): string | null {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return null
+    const stored = window.localStorage.getItem(ACTIVE_HEADQUARTER_KEY)?.trim()
+    if (stored) return stored
+
+    const user = readAuthUser()
+    if (user) {
+      if (typeof user.headquarters_id === 'string' && user.headquarters_id.trim()) {
+        return user.headquarters_id.trim()
+      }
+      if (Array.isArray(user.headquarters_ids) && typeof user.headquarters_ids[0] === 'string') {
+        return user.headquarters_ids[0].trim()
+      }
+      if (Array.isArray(user.allowed_headquarters) && user.allowed_headquarters.length > 0) {
+        const first = user.allowed_headquarters[0] as Record<string, unknown>
+        if (typeof first?.id === 'string' && first.id.trim()) {
+          return first.id.trim()
+        }
+      }
+    }
+  } catch {
+    // Ignorar errores de acceso a localStorage
+  }
+  return null
+}
+
+export function setActiveHeadquarterId(headquarterId: string): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return
+    const clean = headquarterId.trim()
+    if (!clean) {
+      window.localStorage.removeItem(ACTIVE_HEADQUARTER_KEY)
+    } else {
+      window.localStorage.setItem(ACTIVE_HEADQUARTER_KEY, clean)
+    }
+    window.dispatchEvent(new Event('nexora:headquarter-change'))
+    window.dispatchEvent(new Event('nexora:auth-change'))
+  } catch {
+    // Ignorar errores de acceso a localStorage
+  }
+}
+
+export function getAllowedHeadquarters(): AllowedHeadquarterItem[] {
+  const user = readAuthUser()
+  if (!user || !Array.isArray(user.allowed_headquarters)) return []
+  return user.allowed_headquarters
+    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object'))
+    .map((item) => ({
+      id: typeof item.id === 'string' ? item.id : '',
+      name: typeof item.name === 'string' ? item.name : 'Sede',
+      city: typeof item.city === 'string' ? item.city : undefined,
+    }))
+    .filter((item) => item.id.length > 0)
+}
+
+export function getCurrentUserRoleName(): string {
+  const user = readAuthUser()
+  if (!user) return 'admin'
+  const raw =
+    (typeof user.role_name === 'string' && user.role_name) ||
+    (typeof user.role === 'string' && user.role) ||
+    ''
+  return raw.trim().toLowerCase().replace(/[\s-]+/g, '_')
+}
+
+export function isSuperAdminUser(): boolean {
+  const role = getCurrentUserRoleName()
+  if (role === 'super_admin' || role === 'superadmin' || role === 'soporte') {
+    return true
+  }
+  const user = readAuthUser()
+  const email = typeof user?.email === 'string' ? user.email.trim().toLowerCase() : ''
+  return email === 'soporte@nexora.com'
+}
+
+export function isAdminUser(): boolean {
+  if (isSuperAdminUser()) return true
+  const role = getCurrentUserRoleName()
+  return role === 'admin' || role === 'administrador' || role === ''
+}
+
+export function canManageHeadquarters(): boolean {
+  return isSuperAdminUser()
 }
 
 /**

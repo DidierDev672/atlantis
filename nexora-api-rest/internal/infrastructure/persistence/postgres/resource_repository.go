@@ -27,8 +27,8 @@ func (r *ResourceRepository) Save(res *externaldomain.Resource) (int, error) {
 	if res.ID() <= 0 {
 		var id int
 		err := r.conn.QueryRow(ctx,
-			"INSERT INTO resources (component, name, module_id) VALUES ($1, $2, $3) RETURNING id",
-			res.Component().String(), res.Name().String(), res.ModuleID(),
+			"INSERT INTO resources (code, name, sort_order, show_in_menu, component, module_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+			res.Code(), res.Name().String(), res.SortOrder(), res.ShowInMenu(), res.Component().String(), res.ModuleID(),
 		).Scan(&id)
 		if err != nil {
 			return 0, fmt.Errorf("insert resource: %w", err)
@@ -36,9 +36,9 @@ func (r *ResourceRepository) Save(res *externaldomain.Resource) (int, error) {
 		return id, nil
 	}
 	_, err := r.conn.Exec(ctx,
-		`INSERT INTO resources (id, component, name, module_id) VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (id) DO UPDATE SET component = EXCLUDED.component, name = EXCLUDED.name, module_id = EXCLUDED.module_id`,
-		res.ID(), res.Component().String(), res.Name().String(), res.ModuleID(),
+		`INSERT INTO resources (id, code, name, sort_order, show_in_menu, component, module_id) VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 ON CONFLICT (id) DO UPDATE SET code = EXCLUDED.code, name = EXCLUDED.name, sort_order = EXCLUDED.sort_order, show_in_menu = EXCLUDED.show_in_menu, component = EXCLUDED.component, module_id = EXCLUDED.module_id`,
+		res.ID(), res.Code(), res.Name().String(), res.SortOrder(), res.ShowInMenu(), res.Component().String(), res.ModuleID(),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("upsert resource: %w", err)
@@ -48,23 +48,25 @@ func (r *ResourceRepository) Save(res *externaldomain.Resource) (int, error) {
 
 func (r *ResourceRepository) FindByID(id int) (*externaldomain.Resource, error) {
 	var dbID, moduleID int
-	var component, name string
+	var code, component, name string
+	var sortOrder int16
+	var showInMenu bool
 	err := r.conn.QueryRow(context.Background(),
-		"SELECT id, component, name, module_id FROM resources WHERE id = $1", id,
-	).Scan(&dbID, &component, &name, &moduleID)
+		"SELECT id, COALESCE(code, ''), name, COALESCE(sort_order, 0), COALESCE(show_in_menu, true), COALESCE(component, ''), module_id FROM resources WHERE id = $1", id,
+	).Scan(&dbID, &code, &name, &sortOrder, &showInMenu, &component, &moduleID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("recurso con ID %d no encontrado", id)
 		}
 		return nil, fmt.Errorf("query resource by id: %w", err)
 	}
-	res, _ := externaldomain.NewResource(dbID, externaldomain.Component(component), externaldomain.ResourceName(name), moduleID)
+	res, _ := externaldomain.NewResourceWithDetails(dbID, code, externaldomain.ResourceName(name), sortOrder, showInMenu, externaldomain.Component(component), moduleID)
 	return res, nil
 }
 
 func (r *ResourceRepository) FindByModuleID(moduleID int) ([]*externaldomain.Resource, error) {
 	rows, err := r.conn.Query(context.Background(),
-		"SELECT id, component, name, module_id FROM resources WHERE module_id = $1 ORDER BY id", moduleID)
+		"SELECT id, COALESCE(code, ''), name, COALESCE(sort_order, 0), COALESCE(show_in_menu, true), COALESCE(component, ''), module_id FROM resources WHERE module_id = $1 ORDER BY sort_order ASC, id ASC", moduleID)
 	if err != nil {
 		return nil, fmt.Errorf("query resources by module: %w", err)
 	}
@@ -73,18 +75,20 @@ func (r *ResourceRepository) FindByModuleID(moduleID int) ([]*externaldomain.Res
 	var resources []*externaldomain.Resource
 	for rows.Next() {
 		var dbID int
-		var component, name string
-		if err := rows.Scan(&dbID, &component, &name, &moduleID); err != nil {
+		var code, component, name string
+		var sortOrder int16
+		var showInMenu bool
+		if err := rows.Scan(&dbID, &code, &name, &sortOrder, &showInMenu, &component, &moduleID); err != nil {
 			return nil, fmt.Errorf("scan resource: %w", err)
 		}
-		res, _ := externaldomain.NewResource(dbID, externaldomain.Component(component), externaldomain.ResourceName(name), moduleID)
+		res, _ := externaldomain.NewResourceWithDetails(dbID, code, externaldomain.ResourceName(name), sortOrder, showInMenu, externaldomain.Component(component), moduleID)
 		resources = append(resources, res)
 	}
 	return resources, rows.Err()
 }
 
 func (r *ResourceRepository) FindAll() ([]*externaldomain.Resource, error) {
-	rows, err := r.conn.Query(context.Background(), "SELECT id, component, name, module_id FROM resources ORDER BY id")
+	rows, err := r.conn.Query(context.Background(), "SELECT id, COALESCE(code, ''), name, COALESCE(sort_order, 0), COALESCE(show_in_menu, true), COALESCE(component, ''), module_id FROM resources ORDER BY sort_order ASC, id ASC")
 	if err != nil {
 		return nil, fmt.Errorf("query resources: %w", err)
 	}
@@ -93,11 +97,13 @@ func (r *ResourceRepository) FindAll() ([]*externaldomain.Resource, error) {
 	var resources []*externaldomain.Resource
 	for rows.Next() {
 		var dbID, moduleID int
-		var component, name string
-		if err := rows.Scan(&dbID, &component, &name, &moduleID); err != nil {
+		var code, component, name string
+		var sortOrder int16
+		var showInMenu bool
+		if err := rows.Scan(&dbID, &code, &name, &sortOrder, &showInMenu, &component, &moduleID); err != nil {
 			return nil, fmt.Errorf("scan resource: %w", err)
 		}
-		res, _ := externaldomain.NewResource(dbID, externaldomain.Component(component), externaldomain.ResourceName(name), moduleID)
+		res, _ := externaldomain.NewResourceWithDetails(dbID, code, externaldomain.ResourceName(name), sortOrder, showInMenu, externaldomain.Component(component), moduleID)
 		resources = append(resources, res)
 	}
 	return resources, rows.Err()

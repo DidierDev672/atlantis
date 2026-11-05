@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { PAGE_META, BACK_TO_CONFIG_PAGES, type NavId } from './ui/navigation'
 import { Sidebar } from './ui/organisms/sidebar'
 import { Header } from './ui/organisms/header'
+import { useRoleRouter } from '../../features/roles/application/use-role-router'
 import { HomeOverview } from './ui/organisms/home-overview'
 import { PaletteView } from './ui/organisms/palette-view'
 import { SedesView } from './ui/organisms/sedes-view'
@@ -21,16 +22,22 @@ import { SectionSoon } from './ui/molecules/section-soon'
 
 export interface DashboardPageProps {
   onLogout?: () => void
+  initialNavId?: NavId
 }
 
-export function DashboardPage({ onLogout }: DashboardPageProps = {}) {
-  const [activeId, setActiveId] = useState<NavId>('home')
+export function DashboardPage({ onLogout, initialNavId }: DashboardPageProps = {}) {
+  const { decision } = useRoleRouter()
+  const [userNavId, setUserNavId] = useState<NavId | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  // Si el usuario navegó explícitamente, se respeta su selección;
+  // de lo contrario, se usa initialNavId o la redirección automática del switch por rol (ej. 'recepcion')
+  const activeId: NavId = userNavId ?? initialNavId ?? (decision.isReception ? 'recepcion' : 'home')
 
   const meta = PAGE_META[activeId]
 
   const navigate = (id: NavId) => {
-    setActiveId(id)
+    setUserNavId(id)
     setSidebarOpen(false)
   }
 
@@ -124,7 +131,7 @@ export function DashboardPage({ onLogout }: DashboardPageProps = {}) {
               title={meta.title}
               message={meta.soonMessage}
               actionLabel="Volver al resumen"
-              onAction={() => setActiveId('home')}
+              onAction={() => navigate('home')}
             />
           )}
         </main>
