@@ -17,8 +17,10 @@ import (
 	"nexora-api-rest/internal/guestattendant"
 	"nexora-api-rest/internal/itemmenu"
 	"nexora-api-rest/internal/menucategory"
+	"nexora-api-rest/internal/rolelimit"
 	"nexora-api-rest/internal/serviceassignment"
 	"nexora-api-rest/internal/servicerequest"
+	"nexora-api-rest/internal/userlimit"
 )
 
 // ensureDatabaseExists valida si la base de datos destino existe.
@@ -123,6 +125,8 @@ func Run() error {
 	resourceRepo := postgres.NewResourceRepository(conn)
 	permissionResourceRepo := postgres.NewPermissionResourceRepository(conn)
 	rolePermissionRepo := postgres.NewRolePermissionRepository(conn)
+	roleLimitRepo := rolelimit.NewPostgresRepository(conn)
+	userLimitRepo := userlimit.NewPostgresRepository(conn)
 	menuCategoryRepo := menucategory.NewPostgresRepository(conn)
 	itemMenuRepo := itemmenu.NewPostgresRepository(conn)
 	serviceRequestRepo := servicerequest.NewPostgresRepository(conn)
@@ -156,6 +160,8 @@ func Run() error {
 		serviceAssignmentRepo,
 		guestAttendantRepo,
 		rolePermissionRepo,
+		roleLimitRepo,
+		userLimitRepo,
 		jwtSecret,
 	)
 

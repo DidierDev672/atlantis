@@ -50,8 +50,10 @@ import (
 	"nexora-api-rest/internal/guestattendant"
 	"nexora-api-rest/internal/itemmenu"
 	"nexora-api-rest/internal/menucategory"
+	"nexora-api-rest/internal/rolelimit"
 	"nexora-api-rest/internal/serviceassignment"
 	"nexora-api-rest/internal/servicerequest"
+	"nexora-api-rest/internal/userlimit"
 	"nexora-api-rest/usecase"
 )
 
@@ -59,7 +61,7 @@ import (
 // /headquarters, /sub-headquarters, /users, /permission-assignment, /login,
 // /room-types, /rooms, /building, /reserve, /stays, /rates, /room_tariffs,
 // /menu-category, /item-menu, /service-request, /service-assignments and /guest-attendant vertical slices.
-func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.HeadquarterRepository, subHeadquarterRepo domain.SubHeadquarterRepository, paletteRepo domain.PaletteRepository, userRepo domain.UserRepository, permissionAssignmentRepo domain.PermissionAssignmentRepository, roomTypeRepo domain.RoomTypeRepository, roomRepo domain.RoomRepository, buildingRepo domain.BuildingRepository, bedTypeRepo domain.BedTypeRepository, bedRepo domain.BedRepository, personRepo domain.PersonRepository, reserveRepo domain.ReserveRepository, stayRepo domain.StayRepository, rateRepo domain.RateRepository, roomTariffRepo domain.RoomTariffRepository, auditRepo domain.AuditRepository, moduleRepo externaldomain.ModuleRepository, resourceRepo externaldomain.ResourceRepository, permissionResourceRepo externaldomain.PermissionResourceRepository, menuCategoryRepo menucategory.Repository, itemMenuRepo itemmenu.Repository, serviceRequestRepo servicerequest.Repository, serviceAssignmentRepo serviceassignment.Repository, guestAttendantRepo guestattendant.Repository, rolePermissionRepo externaldomain.RolePermissionRepository, jwtSecret string) http.Handler {
+func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.HeadquarterRepository, subHeadquarterRepo domain.SubHeadquarterRepository, paletteRepo domain.PaletteRepository, userRepo domain.UserRepository, permissionAssignmentRepo domain.PermissionAssignmentRepository, roomTypeRepo domain.RoomTypeRepository, roomRepo domain.RoomRepository, buildingRepo domain.BuildingRepository, bedTypeRepo domain.BedTypeRepository, bedRepo domain.BedRepository, personRepo domain.PersonRepository, reserveRepo domain.ReserveRepository, stayRepo domain.StayRepository, rateRepo domain.RateRepository, roomTariffRepo domain.RoomTariffRepository, auditRepo domain.AuditRepository, moduleRepo externaldomain.ModuleRepository, resourceRepo externaldomain.ResourceRepository, permissionResourceRepo externaldomain.PermissionResourceRepository, menuCategoryRepo menucategory.Repository, itemMenuRepo itemmenu.Repository, serviceRequestRepo servicerequest.Repository, serviceAssignmentRepo serviceassignment.Repository, guestAttendantRepo guestattendant.Repository, rolePermissionRepo externaldomain.RolePermissionRepository, roleLimitRepo rolelimit.Repository, userLimitRepo userlimit.Repository, jwtSecret string) http.Handler {
 	roleHandler := &rolehttp.Handler{
 		Creator: roleapp.NewCreateRoleUseCase(roleRepo, ids.RandomID{}),
 		Lister:  roleapp.NewListRolesUseCase(roleRepo),
@@ -219,6 +221,8 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 	resourceHTTP := handler.NewResourceHTTP(usecase.NewResourceService(resourceRepo))
 	permissionResourceHTTP := handler.NewPermissionResourceHTTP(usecase.NewPermissionResourceService(permissionResourceRepo))
 	rolePermissionHTTP := handler.NewRolePermissionHTTP(usecase.NewRolePermissionService(rolePermissionRepo))
+	roleLimitHTTP := rolelimit.NewHandler(rolelimit.NewUseCase(roleLimitRepo, nil))
+	userLimitHTTP := userlimit.NewHandler(userlimit.NewUseCase(userLimitRepo, nil))
 	menuCategoryHTTP := menucategory.NewHandler(menucategory.NewUseCase(menuCategoryRepo, nil, nil))
 	itemMenuHTTP := itemmenu.NewHandler(itemmenu.NewUseCase(itemMenuRepo, nil, nil))
 	serviceRequestHTTP := servicerequest.NewHandler(servicerequest.NewUseCase(serviceRequestRepo, nil, nil))
@@ -391,6 +395,8 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 	resourceHTTP.Register(mux)
 	permissionResourceHTTP.Register(mux)
 	rolePermissionHTTP.Register(mux)
+	roleLimitHTTP.Register(mux)
+	userLimitHTTP.Register(mux)
 	menuCategoryHTTP.Register(mux)
 	itemMenuHTTP.Register(mux)
 	serviceRequestHTTP.Register(mux)
