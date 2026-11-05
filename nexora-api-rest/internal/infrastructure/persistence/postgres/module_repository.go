@@ -27,8 +27,8 @@ func (r *ModuleRepository) Save(m *externaldomain.Module) (int, error) {
 	if m.ID() <= 0 {
 		var id int
 		err := r.conn.QueryRow(ctx,
-			"INSERT INTO modules (type_path, type_component) VALUES ($1, $2) RETURNING id",
-			m.TypePath().String(), m.TypeComponent().String(),
+			"INSERT INTO modules (code, sort_order, type_path, type_component) VALUES ($1, $2, $3, $4) RETURNING id",
+			m.Code(), m.SortOrder(), m.TypePath().String(), m.TypeComponent().String(),
 		).Scan(&id)
 		if err != nil {
 			return 0, fmt.Errorf("insert module: %w", err)
@@ -36,9 +36,9 @@ func (r *ModuleRepository) Save(m *externaldomain.Module) (int, error) {
 		return id, nil
 	}
 	_, err := r.conn.Exec(ctx,
-		`INSERT INTO modules (id, type_path, type_component) VALUES ($1, $2, $3)
-		 ON CONFLICT (id) DO UPDATE SET type_path = EXCLUDED.type_path, type_component = EXCLUDED.type_component`,
-		m.ID(), m.TypePath().String(), m.TypeComponent().String(),
+		`INSERT INTO modules (id, code, sort_order, type_path, type_component) VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (id) DO UPDATE SET code = EXCLUDED.code, sort_order = EXCLUDED.sort_order, type_path = EXCLUDED.type_path, type_component = EXCLUDED.type_component`,
+		m.ID(), m.Code(), m.SortOrder(), m.TypePath().String(), m.TypeComponent().String(),
 	)
 	if err != nil {
 		return 0, fmt.Errorf("upsert module: %w", err)
@@ -48,22 +48,23 @@ func (r *ModuleRepository) Save(m *externaldomain.Module) (int, error) {
 
 func (r *ModuleRepository) FindByID(id int) (*externaldomain.Module, error) {
 	var dbID int
-	var typePath, typeComponent string
+	var code, typePath, typeComponent string
+	var sortOrder int16
 	err := r.conn.QueryRow(context.Background(),
-		"SELECT id, type_path, type_component FROM modules WHERE id = $1", id,
-	).Scan(&dbID, &typePath, &typeComponent)
+		"SELECT id, COALESCE(code, ''), COALESCE(sort_order, 0), COALESCE(type_path, ''), COALESCE(type_component, '') FROM modules WHERE id = $1", id,
+	).Scan(&dbID, &code, &sortOrder, &typePath, &typeComponent)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("módulo con ID %d no encontrado", id)
 		}
 		return nil, fmt.Errorf("query module by id: %w", err)
 	}
-	mod, _ := externaldomain.NewModule(dbID, externaldomain.TypePath(typePath), externaldomain.TypeComponent(typeComponent))
+	mod, _ := externaldomain.NewModuleWithCode(dbID, code, sortOrder, externaldomain.TypePath(typePath), externaldomain.TypeComponent(typeComponent))
 	return mod, nil
 }
 
 func (r *ModuleRepository) FindAll() ([]*externaldomain.Module, error) {
-	rows, err := r.conn.Query(context.Background(), "SELECT id, type_path, type_component FROM modules ORDER BY id")
+	rows, err := r.conn.Query(context.Background(), "SELECT id, COALESCE(code, ''), COALESCE(sort_order, 0), COALESCE(type_path, ''), COALESCE(type_component, '') FROM modules ORDER BY sort_order ASC, id ASC")
 	if err != nil {
 		return nil, fmt.Errorf("query modules: %w", err)
 	}
@@ -72,11 +73,12 @@ func (r *ModuleRepository) FindAll() ([]*externaldomain.Module, error) {
 	var modules []*externaldomain.Module
 	for rows.Next() {
 		var dbID int
-		var typePath, typeComponent string
-		if err := rows.Scan(&dbID, &typePath, &typeComponent); err != nil {
+		var code, typePath, typeComponent string
+		var sortOrder int16
+		if err := rows.Scan(&dbID, &code, &sortOrder, &typePath, &typeComponent); err != nil {
 			return nil, fmt.Errorf("scan module: %w", err)
 		}
-		mod, _ := externaldomain.NewModule(dbID, externaldomain.TypePath(typePath), externaldomain.TypeComponent(typeComponent))
+		mod, _ := externaldomain.NewModuleWithCode(dbID, code, sortOrder, externaldomain.TypePath(typePath), externaldomain.TypeComponent(typeComponent))
 		modules = append(modules, mod)
 	}
 	return modules, rows.Err()

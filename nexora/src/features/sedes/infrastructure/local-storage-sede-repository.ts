@@ -133,7 +133,13 @@ export class LocalStorageSedeRepository implements SedeRepository {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY)
       const parsed = raw ? (JSON.parse(raw) as Sede[]) : []
-      return Array.isArray(parsed) ? parsed : []
+      if (!Array.isArray(parsed)) return []
+      const seen = new Set<string>()
+      return parsed.filter((item) => {
+        if (!item || !item.id || seen.has(item.id)) return false
+        seen.add(item.id)
+        return true
+      })
     } catch {
       return []
     }

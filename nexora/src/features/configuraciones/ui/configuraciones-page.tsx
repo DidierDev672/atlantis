@@ -1,4 +1,5 @@
 import { motion } from 'motion/react'
+import { fadeIn } from '../../../design-tokens/motion'
 import type { NavId } from '../../dashboard/ui/navigation'
 import { useConfiguraciones } from '../application/use-configuraciones'
 import { ConfiguracionesHeader } from './molecules/configuraciones-header'
@@ -15,27 +16,32 @@ export function ConfiguracionesPage({ onNavigate }: ConfiguracionesPageProps) {
     busqueda,
     setBusqueda,
     modulosFiltrados,
+    gruposFiltrados,
     totalModulos,
   } = useConfiguraciones()
 
   return (
-    <div className="space-y-8 pb-10">
-      {/* 1. Encabezado principal con animación slide-in (dirección y duración personalizables) */}
+    <main
+      aria-label="Panel de configuraciones y módulos"
+      className="space-y-8 pb-10"
+    >
+      {/* 1. Encabezado principal con animación slide-in */}
       <ConfiguracionesHeader
         totalModulos={totalModulos}
         direction="izq"
         duration={0.6}
       />
 
-      {/* 2. Sección principal: Módulos del hotel incorporada */}
+      {/* 2. Sección principal: Módulos del hotel organizados por categorías temáticas */}
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.5, ease: 'easeOut' }}
+        variants={fadeIn}
+        initial="hidden"
+        animate="visible"
       >
         <ModulosHotelSection
           onNavigate={onNavigate}
           modulos={modulosFiltrados}
+          grupos={gruposFiltrados}
           busqueda={busqueda}
           onBusquedaChange={setBusqueda}
           categoriaActiva={categoriaActiva}
@@ -43,6 +49,6 @@ export function ConfiguracionesPage({ onNavigate }: ConfiguracionesPageProps) {
           totalModulos={totalModulos}
         />
       </motion.div>
-    </div>
+    </main>
   )
 }

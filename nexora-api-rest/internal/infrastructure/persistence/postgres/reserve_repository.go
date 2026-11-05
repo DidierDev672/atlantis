@@ -23,14 +23,22 @@ CREATE TABLE IF NOT EXISTS reserves (
     number_of_guests INT NOT NULL,
     state            VARCHAR(30) NOT NULL DEFAULT 'pending',
     total_price      NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    headquarters_id  VARCHAR(36),
     created_by       VARCHAR(100) NOT NULL DEFAULT '',
+    updated_by       VARCHAR(100),
+    deleted_by       VARCHAR(100),
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at       TIMESTAMPTZ,
     CHECK (state IN ('pending', 'confirmed', 'in progress', 'completed', 'canceled', 'no show')),
     CHECK (number_of_guests > 0),
     CHECK (total_price >= 0),
     CHECK (check_out_date > check_in_date)
 );
+ALTER TABLE reserves ADD COLUMN IF NOT EXISTS headquarters_id VARCHAR(36);
+ALTER TABLE reserves ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE reserves ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE reserves ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_reserves_room_id ON reserves(room_id);
 CREATE INDEX IF NOT EXISTS idx_reserves_person_id ON reserves(person_id);
 CREATE INDEX IF NOT EXISTS idx_reserves_dates ON reserves(check_in_date, check_out_date);
@@ -92,7 +100,15 @@ func (r *ReserveRepository) FindAll(ctx context.Context) ([]domain.Reserve, erro
 		return nil, fmt.Errorf("ensure reserves table: %w", err)
 	}
 
-	rows, err := r.conn.Query(ctx, "SELECT "+reserveColumns+" FROM reserves ORDER BY created_at DESC")
+	query := "SELECT " + reserveColumns + " FROM reserves WHERE deleted_at IS NULL"
+	var args []any
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		query += " AND (headquarters_id = $1 OR EXISTS (SELECT 1 FROM rooms rm WHERE rm.id = reserves.room_id AND rm.headquarters_id = $1))"
+		args = append(args, string(hqID))
+	}
+	query += " ORDER BY created_at DESC"
+
+	rows, err := r.conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query reserves: %w", err)
 	}
@@ -116,7 +132,7 @@ func (r *ReserveRepository) FindByID(ctx context.Context, id domain.ReserveID) (
 		return domain.Reserve{}, fmt.Errorf("ensure reserves table: %w", err)
 	}
 
-	res, err := scanReserve(r.conn.QueryRow(ctx, "SELECT "+reserveColumns+" FROM reserves WHERE id = $1", id))
+	res, err := scanReserve(r.conn.QueryRow(ctx, "SELECT "+reserveColumns+" FROM reserves WHERE id = $1 AND deleted_at IS NULL", id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Reserve{}, domain.ErrReserveNotFound
@@ -134,12 +150,23 @@ func (r *ReserveRepository) Save(ctx context.Context, reserve domain.Reserve) (d
 		return domain.Reserve{}, fmt.Errorf("ensure reserves table: %w", err)
 	}
 
+	createdBy := domain.ActorAuditID(ctx, reserve.CreatedBy)
+	var hqPtr *string
+	var roomHQ string
+	if err := r.conn.QueryRow(ctx, "SELECT headquarters_id FROM rooms WHERE id = $1", reserve.RoomID).Scan(&roomHQ); err == nil && roomHQ != "" {
+		hqPtr = &roomHQ
+	} else if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		s := string(hqID)
+		hqPtr = &s
+	}
+
 	saved := reserve
+	saved.CreatedBy = createdBy
 	query := `
 		INSERT INTO reserves (
 			id, room_id, person_id, check_in_date, check_out_date,
-			number_of_guests, state, total_price, created_by, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), now())
+			number_of_guests, state, total_price, headquarters_id, created_by, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())
 		RETURNING created_at, updated_at
 	`
 
@@ -154,7 +181,8 @@ func (r *ReserveRepository) Save(ctx context.Context, reserve domain.Reserve) (d
 		reserve.NumberOfGuests,
 		string(reserve.State),
 		reserve.TotalPrice,
-		reserve.CreatedBy,
+		hqPtr,
+		createdBy,
 	).Scan(&saved.CreatedAt, &saved.UpdatedAt)
 	if err != nil {
 		return domain.Reserve{}, fmt.Errorf("insert reserve: %w", err)
@@ -169,6 +197,7 @@ func (r *ReserveRepository) Update(ctx context.Context, reserve domain.Reserve) 
 		return domain.Reserve{}, fmt.Errorf("ensure reserves table: %w", err)
 	}
 
+	updatedBy := domain.ActorAuditID(ctx, "")
 	saved := reserve
 	query := `
 		UPDATE reserves
@@ -179,8 +208,9 @@ func (r *ReserveRepository) Update(ctx context.Context, reserve domain.Reserve) 
 		    number_of_guests = $6,
 		    state = $7,
 		    total_price = $8,
+		    updated_by = $9,
 		    updated_at = now()
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL
 		RETURNING created_at, updated_at
 	`
 
@@ -195,6 +225,7 @@ func (r *ReserveRepository) Update(ctx context.Context, reserve domain.Reserve) 
 		reserve.NumberOfGuests,
 		string(reserve.State),
 		reserve.TotalPrice,
+		updatedBy,
 	).Scan(&saved.CreatedAt, &saved.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -212,7 +243,11 @@ func (r *ReserveRepository) Delete(ctx context.Context, id domain.ReserveID) err
 		return fmt.Errorf("ensure reserves table: %w", err)
 	}
 
-	tag, err := r.conn.Exec(ctx, "DELETE FROM reserves WHERE id = $1", id)
+	deletedBy := domain.ActorAuditID(ctx, "")
+	tag, err := r.conn.Exec(ctx,
+		"UPDATE reserves SET deleted_at = now(), deleted_by = $2, state = 'canceled' WHERE id = $1 AND deleted_at IS NULL",
+		id, deletedBy,
+	)
 	if err != nil {
 		return fmt.Errorf("delete reserve: %w", err)
 	}

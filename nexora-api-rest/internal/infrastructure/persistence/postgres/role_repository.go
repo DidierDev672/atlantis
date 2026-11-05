@@ -23,7 +23,7 @@ func NewRoleRepository(conn *pgxpool.Pool) *RoleRepository {
 var _ domain.RoleRepository = (*RoleRepository)(nil)
 
 func (r *RoleRepository) FindAll(ctx context.Context) ([]domain.Role, error) {
-	rows, err := r.conn.Query(ctx, "SELECT id, name, description FROM roles")
+	rows, err := r.conn.Query(ctx, "SELECT id, name, description FROM roles WHERE deleted_at IS NULL ORDER BY created_at ASC")
 	if err != nil {
 		return nil, fmt.Errorf("query roles: %w", err)
 	}
@@ -42,7 +42,7 @@ func (r *RoleRepository) FindAll(ctx context.Context) ([]domain.Role, error) {
 
 func (r *RoleRepository) FindByID(ctx context.Context, id domain.RoleID) (domain.Role, error) {
 	var role domain.Role
-	err := r.conn.QueryRow(ctx, "SELECT id, name, description FROM roles WHERE id = $1", id).
+	err := r.conn.QueryRow(ctx, "SELECT id, name, description FROM roles WHERE id = $1 AND deleted_at IS NULL", id).
 		Scan(&role.ID, &role.Name, &role.Description)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -55,7 +55,7 @@ func (r *RoleRepository) FindByID(ctx context.Context, id domain.RoleID) (domain
 
 func (r *RoleRepository) FindByName(ctx context.Context, name string) (domain.Role, error) {
 	var role domain.Role
-	err := r.conn.QueryRow(ctx, "SELECT id, name, description FROM roles WHERE name = $1", name).
+	err := r.conn.QueryRow(ctx, "SELECT id, name, description FROM roles WHERE name = $1 AND deleted_at IS NULL", name).
 		Scan(&role.ID, &role.Name, &role.Description)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -67,9 +67,10 @@ func (r *RoleRepository) FindByName(ctx context.Context, name string) (domain.Ro
 }
 
 func (r *RoleRepository) Save(ctx context.Context, role domain.Role) error {
+	createdBy := domain.ActorAuditID(ctx, "")
 	_, err := r.conn.Exec(ctx,
-		"INSERT INTO roles (id, name, description) VALUES ($1, $2, $3)",
-		role.ID, role.Name, role.Description,
+		"INSERT INTO roles (id, name, description, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, now(), now())",
+		role.ID, role.Name, role.Description, createdBy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -81,9 +82,10 @@ func (r *RoleRepository) Save(ctx context.Context, role domain.Role) error {
 }
 
 func (r *RoleRepository) Update(ctx context.Context, role domain.Role) error {
+	updatedBy := domain.ActorAuditID(ctx, "")
 	tag, err := r.conn.Exec(ctx,
-		"UPDATE roles SET name = $2, description = $3 WHERE id = $1",
-		role.ID, role.Name, role.Description,
+		"UPDATE roles SET name = $2, description = $3, updated_by = $4, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
+		role.ID, role.Name, role.Description, updatedBy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -98,7 +100,11 @@ func (r *RoleRepository) Update(ctx context.Context, role domain.Role) error {
 }
 
 func (r *RoleRepository) Delete(ctx context.Context, id domain.RoleID) error {
-	tag, err := r.conn.Exec(ctx, "DELETE FROM roles WHERE id = $1", id)
+	deletedBy := domain.ActorAuditID(ctx, "")
+	tag, err := r.conn.Exec(ctx,
+		"UPDATE roles SET deleted_at = now(), deleted_by = $2, status = 'inactive' WHERE id = $1 AND deleted_at IS NULL",
+		id, deletedBy,
+	)
 	if err != nil {
 		return fmt.Errorf("delete role: %w", err)
 	}

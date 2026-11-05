@@ -12,6 +12,17 @@ export interface SedesProviderProps {
   children: ReactNode
 }
 
+function deduplicateSedes(items: Sede[]): Sede[] {
+  const seen = new Set<string>()
+  return items.filter((item) => {
+    if (!item.id || seen.has(item.id)) {
+      return false
+    }
+    seen.add(item.id)
+    return true
+  })
+}
+
 export function SedesProvider({ repository, children }: SedesProviderProps) {
   const [sedes, setSedes] = useState<Sede[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -26,9 +37,10 @@ export function SedesProvider({ repository, children }: SedesProviderProps) {
 
   useEffect(() => {
     let active = true
-    GetSedes(repository)()
-      .then((list) => {
-        if (active) setSedes(list)
+    const minDelay = new Promise((resolve) => setTimeout(resolve, 700))
+    Promise.all([GetSedes(repository)(), minDelay])
+      .then(([list]) => {
+        if (active) setSedes(deduplicateSedes(list))
       })
       .catch((error: unknown) => {
         if (active) {
@@ -47,7 +59,7 @@ export function SedesProvider({ repository, children }: SedesProviderProps) {
   const create = useCallback(
     (input: SedeInput): Sede => {
       const sede = CreateSede(repository)(input)
-      setSedes((prev) => [sede, ...prev])
+      setSedes((prev) => deduplicateSedes([sede, ...prev.filter((s) => s.id !== sede.id)]))
       return sede
     },
     [repository],

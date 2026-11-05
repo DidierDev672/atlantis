@@ -12,8 +12,12 @@ export interface Usuario {
   nombre: string
   email: string
   rol: string
+  rolesIds?: string[]
   sedeId: string
+  sedesIds?: string[]
+  todasLasSedes?: boolean
   subSedeId?: string
+  subSedesIds?: string[]
   estado: UsuarioEstado
 }
 
@@ -22,8 +26,12 @@ export interface UsuarioInput {
   email: string
   password: string
   rol: string
+  rolesIds?: string[]
   sedeId: string
+  sedesIds?: string[]
+  todasLasSedes?: boolean
   subSedeId?: string
+  subSedesIds?: string[]
   estado: UsuarioEstado
 }
 
@@ -55,8 +63,12 @@ export function newUsuario(input: UsuarioInput): Usuario {
     nombre: input.nombre.trim(),
     email: input.email.trim(),
     rol: input.rol,
+    rolesIds: input.rolesIds,
     sedeId: input.sedeId,
+    sedesIds: input.sedesIds,
+    todasLasSedes: input.todasLasSedes,
     subSedeId: input.subSedeId,
+    subSedesIds: input.subSedesIds,
     estado: input.estado,
   }
 }
@@ -86,12 +98,12 @@ export function validateUsuarioInput(input: UsuarioInput): UsuarioValidationErro
     errors.password = `La contraseña debe tener al menos ${PASSWORD_MIN} caracteres.`
   }
 
-  if (!input.rol) {
+  if (!input.rol && (!input.rolesIds || input.rolesIds.length === 0)) {
     errors.rol = 'Elige un rol para este usuario.'
   }
 
-  if (!input.sedeId) {
-    errors.sedeId = 'Elige la sede donde trabajará.'
+  if (!input.todasLasSedes && !input.sedeId && (!input.sedesIds || input.sedesIds.length === 0)) {
+    errors.sedeId = 'Elige al menos una sede.'
   }
 
   if (!USUARIO_ESTADOS.includes(input.estado)) {

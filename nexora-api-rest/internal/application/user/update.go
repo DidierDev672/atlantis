@@ -17,6 +17,8 @@ type UpdateInput struct {
 	Password          string
 	RoleID            domain.RoleID
 	HeadquartersID    *domain.HeadquarterID
+	HeadquartersIDs   []domain.HeadquarterID
+	AllHeadquarters   bool
 	SubHeadquartersID *domain.SubHeadquarterID
 	Status            string
 }
@@ -42,10 +44,18 @@ func (uc *UpdateUserUseCase) Update(ctx context.Context, in UpdateInput) (domain
 		return domain.User{}, err
 	}
 
+	hqID := in.HeadquartersID
+	if hqID == nil && len(in.HeadquartersIDs) > 0 {
+		first := in.HeadquartersIDs[0]
+		hqID = &first
+	}
+
 	user.Name = strings.TrimSpace(in.Name)
 	user.Email = strings.ToLower(strings.TrimSpace(in.Email))
 	user.RoleID = in.RoleID
-	user.HeadquartersID = in.HeadquartersID
+	user.HeadquartersID = hqID
+	user.HeadquartersIDs = in.HeadquartersIDs
+	user.AllHeadquarters = in.AllHeadquarters
 	user.SubHeadquartersID = in.SubHeadquartersID
 	user.Status = status
 

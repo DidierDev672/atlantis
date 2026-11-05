@@ -21,10 +21,12 @@ func NewResourceHTTP(svc *usecase.ResourceService) *ResourceHTTP {
 	return &ResourceHTTP{service: svc}
 }
 
-// Register registra las rutas del recurso en el mux.
+// Register registra las rutas del recurso en el mux (soporta singular y plural).
 func (h *ResourceHTTP) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/resource", h.handleResource)
 	mux.HandleFunc("/resource/", h.handleResourceByID)
+	mux.HandleFunc("/resources", h.handleResource)
+	mux.HandleFunc("/resources/", h.handleResourceByID)
 }
 
 // handleResource enruta GET (listar) y POST (crear).
@@ -41,7 +43,9 @@ func (h *ResourceHTTP) handleResource(w http.ResponseWriter, r *http.Request) {
 
 // handleResourceByID enruta GET/PUT/DELETE por ID.
 func (h *ResourceHTTP) handleResourceByID(w http.ResponseWriter, r *http.Request) {
-	idStr := strings.TrimPrefix(r.URL.Path, "/resource/")
+	path := strings.TrimPrefix(r.URL.Path, "/resources/")
+	path = strings.TrimPrefix(path, "/resource/")
+	idStr := strings.TrimSpace(path)
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ID inválido"})
@@ -94,7 +98,10 @@ func (h *ResourceHTTP) create(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, domain.ErrResourceIDRequired) ||
 			errors.Is(err, domain.ErrComponentRequired) ||
 			errors.Is(err, domain.ErrResourceNameRequired) ||
-			errors.Is(err, domain.ErrModuleIDRequired) {
+			errors.Is(err, domain.ErrModuleIDRequired) ||
+			strings.Contains(err.Error(), "obligatorio") ||
+			strings.Contains(err.Error(), "válido") ||
+			strings.Contains(err.Error(), "mayor o igual") {
 			status = http.StatusUnprocessableEntity
 		}
 		writeJSON(w, status, map[string]string{"error": err.Error()})
@@ -124,6 +131,15 @@ func (h *ResourceHTTP) update(w http.ResponseWriter, r *http.Request, id int) {
 		return
 	}
 
+	if dto.Code != "" {
+		existing.SetCode(dto.Code)
+	}
+	if dto.SortOrder != nil {
+		existing.SetSortOrder(*dto.SortOrder)
+	}
+	if dto.ShowInMenu != nil {
+		existing.SetShowInMenu(*dto.ShowInMenu)
+	}
 	if dto.Name != "" {
 		name, err := domain.NewResourceName(dto.Name)
 		if err != nil {
@@ -140,10 +156,13 @@ func (h *ResourceHTTP) update(w http.ResponseWriter, r *http.Request, id int) {
 		}
 		existing.ChangeComponent(comp)
 	}
-	if dto.ModuleID > 0 {
-		if err := existing.ReassignModule(dto.ModuleID); err != nil {
-			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
-			return
+	if dto.ModuleID != nil {
+		modID, err := usecase.ParseModuleID(dto.ModuleID)
+		if err == nil && modID > 0 {
+			if err := existing.ReassignModule(modID); err != nil {
+				writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+				return
+			}
 		}
 	}
 

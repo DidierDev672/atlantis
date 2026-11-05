@@ -34,7 +34,13 @@ func scanBedType(row pgx.Row) (domain.BedType, error) {
 }
 
 func (r *BedTypeRepository) FindAll(ctx context.Context) ([]domain.BedType, error) {
-	rows, err := r.conn.Query(ctx, "SELECT "+bedTypeColumns+" FROM bed_types")
+	query := "SELECT " + bedTypeColumns + " FROM bed_types WHERE deleted_at IS NULL"
+	var args []any
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		query += " AND (headquarters_id = $1 OR headquarters_id IS NULL)"
+		args = append(args, string(hqID))
+	}
+	rows, err := r.conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query bed types: %w", err)
 	}
@@ -52,7 +58,7 @@ func (r *BedTypeRepository) FindAll(ctx context.Context) ([]domain.BedType, erro
 }
 
 func (r *BedTypeRepository) FindByID(ctx context.Context, id domain.BedTypeID) (domain.BedType, error) {
-	bt, err := scanBedType(r.conn.QueryRow(ctx, "SELECT "+bedTypeColumns+" FROM bed_types WHERE id = $1", id))
+	bt, err := scanBedType(r.conn.QueryRow(ctx, "SELECT "+bedTypeColumns+" FROM bed_types WHERE id = $1 AND deleted_at IS NULL", id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.BedType{}, domain.ErrBedTypeNotFound
@@ -63,7 +69,13 @@ func (r *BedTypeRepository) FindByID(ctx context.Context, id domain.BedTypeID) (
 }
 
 func (r *BedTypeRepository) FindByName(ctx context.Context, name string) (domain.BedType, error) {
-	bt, err := scanBedType(r.conn.QueryRow(ctx, "SELECT "+bedTypeColumns+" FROM bed_types WHERE name = $1", name))
+	query := "SELECT " + bedTypeColumns + " FROM bed_types WHERE name = $1 AND deleted_at IS NULL"
+	args := []any{name}
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		query += " AND headquarters_id = $2"
+		args = append(args, string(hqID))
+	}
+	bt, err := scanBedType(r.conn.QueryRow(ctx, query, args...))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.BedType{}, domain.ErrBedTypeNotFound
@@ -74,9 +86,15 @@ func (r *BedTypeRepository) FindByName(ctx context.Context, name string) (domain
 }
 
 func (r *BedTypeRepository) Save(ctx context.Context, bt domain.BedType) error {
+	createdBy := domain.ActorAuditID(ctx, bt.CreatedBy)
+	var hqPtr *string
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		s := string(hqID)
+		hqPtr = &s
+	}
 	_, err := r.conn.Exec(ctx,
-		"INSERT INTO bed_types (id, name, capacity_people, description, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, now(), now())",
-		bt.ID, bt.Name, bt.CapacityPeople, bt.Description, bt.CreatedBy,
+		"INSERT INTO bed_types (id, name, capacity_people, description, headquarters_id, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, now(), now())",
+		bt.ID, bt.Name, bt.CapacityPeople, bt.Description, hqPtr, createdBy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -88,9 +106,10 @@ func (r *BedTypeRepository) Save(ctx context.Context, bt domain.BedType) error {
 }
 
 func (r *BedTypeRepository) Update(ctx context.Context, bt domain.BedType) error {
+	updatedBy := domain.ActorAuditID(ctx, "")
 	tag, err := r.conn.Exec(ctx,
-		"UPDATE bed_types SET name = $2, capacity_people = $3, description = $4, updated_at = now() WHERE id = $1",
-		bt.ID, bt.Name, bt.CapacityPeople, bt.Description,
+		"UPDATE bed_types SET name = $2, capacity_people = $3, description = $4, updated_by = $5, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
+		bt.ID, bt.Name, bt.CapacityPeople, bt.Description, updatedBy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -105,7 +124,11 @@ func (r *BedTypeRepository) Update(ctx context.Context, bt domain.BedType) error
 }
 
 func (r *BedTypeRepository) Delete(ctx context.Context, id domain.BedTypeID) error {
-	tag, err := r.conn.Exec(ctx, "DELETE FROM bed_types WHERE id = $1", id)
+	deletedBy := domain.ActorAuditID(ctx, "")
+	tag, err := r.conn.Exec(ctx,
+		"UPDATE bed_types SET deleted_at = now(), deleted_by = $2, status = 'inactive' WHERE id = $1 AND deleted_at IS NULL",
+		id, deletedBy,
+	)
 	if err != nil {
 		return fmt.Errorf("delete bed type: %w", err)
 	}

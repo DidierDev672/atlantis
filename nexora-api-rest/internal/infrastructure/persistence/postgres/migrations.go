@@ -117,6 +117,88 @@ CREATE TABLE IF NOT EXISTS permission_resources (
 );
 `
 
+const migrationAlterModulesAddCodeAndSortOrder = `
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'modules' AND column_name = 'code'
+    ) THEN
+        ALTER TABLE modules ADD COLUMN code TEXT NOT NULL DEFAULT '';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'modules' AND column_name = 'sort_order'
+    ) THEN
+        ALTER TABLE modules ADD COLUMN sort_order SMALLINT NOT NULL DEFAULT 0;
+    END IF;
+    ALTER TABLE modules ALTER COLUMN type_path DROP NOT NULL;
+    ALTER TABLE modules ALTER COLUMN type_component DROP NOT NULL;
+END $$;
+`
+
+const migrationAlterResourcesAddCodeSortOrderShowInMenu = `
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'resources' AND column_name = 'code'
+    ) THEN
+        ALTER TABLE resources ADD COLUMN code TEXT NOT NULL DEFAULT '';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'resources' AND column_name = 'sort_order'
+    ) THEN
+        ALTER TABLE resources ADD COLUMN sort_order SMALLINT NOT NULL DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'resources' AND column_name = 'show_in_menu'
+    ) THEN
+        ALTER TABLE resources ADD COLUMN show_in_menu BOOLEAN NOT NULL DEFAULT true;
+    END IF;
+    ALTER TABLE resources ALTER COLUMN component DROP NOT NULL;
+END $$;
+`
+
+const migrationAlterPermissionResourcesAddActionAndDescription = `
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'permission_resources' AND column_name = 'action'
+    ) THEN
+        ALTER TABLE permission_resources ADD COLUMN action VARCHAR(50) NOT NULL DEFAULT '';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'permission_resources' AND column_name = 'description'
+    ) THEN
+        ALTER TABLE permission_resources ADD COLUMN description TEXT NOT NULL DEFAULT '';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'uq_permission_resources_resource_action'
+    ) THEN
+        ALTER TABLE permission_resources ADD CONSTRAINT uq_permission_resources_resource_action UNIQUE (resource_id, action);
+    END IF;
+END $$;
+`
+
+const migrationCreateRolePermissions = `
+CREATE TABLE IF NOT EXISTS role_permissions (
+    id            VARCHAR(36) NOT NULL,
+    role_id       VARCHAR(36) NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    permission_id VARCHAR(36) NOT NULL,
+    granted_by    VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+    granted_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (role_id, permission_id)
+);
+CREATE INDEX IF NOT EXISTS idx_role_permissions_role_id ON role_permissions(role_id);
+CREATE INDEX IF NOT EXISTS idx_role_permissions_permission_id ON role_permissions(permission_id);
+`
+
 // migrationCreateRoomTypes is derived 1:1 from domain.RoomType:
 // ID -> VARCHAR(36), Name -> VARCHAR(100) UNIQUE, Capacity -> INTEGER > 0,
 // BasePrice -> NUMERIC(12,2) >= 0, CreatedBy -> VARCHAR(100),
@@ -394,6 +476,161 @@ const migrationDropStayPersonID = `
 ALTER TABLE stays DROP COLUMN IF EXISTS person_id;
 `
 
+// migrationMultiSedeAndAudit upgrades all core tables idempotently to support:
+// 1. Multi-sede user assignment (users.all_headquarters + users_headquarters pivot).
+// 2. Full forensic audit trail (created_by, created_at, updated_by, updated_at, deleted_by, deleted_at).
+// 3. Per-sede isolation (headquarters_id) on persons, palettes, room_types, bed_types, beds, room_tariffs, reserves, stays.
+const migrationMultiSedeAndAudit = `
+-- 1. Roles audit columns
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'active';
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS created_by VARCHAR(100) NOT NULL DEFAULT 'system_bootstrap';
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE roles ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+-- 2. Headquarters & SubHeadquarters audit columns
+ALTER TABLE headquarters ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE headquarters ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE headquarters ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+ALTER TABLE sub_headquarters ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE sub_headquarters ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE sub_headquarters ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+-- 3. Users multi-headquarters & audit columns
+ALTER TABLE users ADD COLUMN IF NOT EXISTS all_headquarters BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'users_headquarters' AND column_name = 'headquarter_id'
+    ) THEN
+        ALTER TABLE users_headquarters RENAME COLUMN headquarter_id TO headquarters_id;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'users_headquarters' AND column_name = 'assigned_by'
+    ) THEN
+        ALTER TABLE users_headquarters RENAME COLUMN assigned_by TO created_by;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'users_headquarters' AND column_name = 'assigned_at'
+    ) THEN
+        ALTER TABLE users_headquarters RENAME COLUMN assigned_at TO created_at;
+    END IF;
+END $$;
+
+CREATE TABLE IF NOT EXISTS users_headquarters (
+    user_id         VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    headquarters_id VARCHAR(36) NOT NULL REFERENCES headquarters(id) ON DELETE CASCADE,
+    created_by      VARCHAR(100) NOT NULL DEFAULT 'system_bootstrap',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, headquarters_id)
+);
+CREATE INDEX IF NOT EXISTS idx_users_headquarters_hq_id ON users_headquarters(headquarters_id);
+
+-- Backfill users_headquarters from legacy users.headquarters_id
+INSERT INTO users_headquarters (user_id, headquarters_id, created_by)
+SELECT id, headquarters_id, COALESCE(NULLIF(created_by, ''), 'system_bootstrap')
+FROM users
+WHERE headquarters_id IS NOT NULL
+ON CONFLICT (user_id, headquarters_id) DO NOTHING;
+
+-- 4. Permission assignments audit columns
+ALTER TABLE permission_assignments ADD COLUMN IF NOT EXISTS created_by VARCHAR(100) NOT NULL DEFAULT 'system_bootstrap';
+ALTER TABLE permission_assignments ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE permission_assignments ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE permission_assignments ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+-- 5. Palettes per-sede & audit columns
+ALTER TABLE palettes ADD COLUMN IF NOT EXISTS headquarters_id VARCHAR(36) REFERENCES headquarters(id) ON DELETE CASCADE;
+ALTER TABLE palettes ADD COLUMN IF NOT EXISTS created_by VARCHAR(100) NOT NULL DEFAULT 'system_bootstrap';
+ALTER TABLE palettes ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE palettes ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+ALTER TABLE palettes ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE palettes ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE palettes DROP CONSTRAINT IF EXISTS palettes_name_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_palettes_hq_name_active
+    ON palettes (COALESCE(headquarters_id, ''), LOWER(name))
+    WHERE deleted_at IS NULL;
+
+-- 6. Buildings, RoomTypes, BedTypes, Rooms, Beds per-sede & audit columns
+ALTER TABLE buildings ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE buildings ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE buildings ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+ALTER TABLE room_types ADD COLUMN IF NOT EXISTS headquarters_id VARCHAR(36) REFERENCES headquarters(id) ON DELETE CASCADE;
+ALTER TABLE room_types ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE room_types ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE room_types ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE room_types DROP CONSTRAINT IF EXISTS room_types_name_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_room_types_hq_name_active
+    ON room_types (COALESCE(headquarters_id, ''), LOWER(name))
+    WHERE deleted_at IS NULL;
+
+ALTER TABLE bed_types ADD COLUMN IF NOT EXISTS headquarters_id VARCHAR(36) REFERENCES headquarters(id) ON DELETE CASCADE;
+ALTER TABLE bed_types ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE bed_types ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE bed_types ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE bed_types DROP CONSTRAINT IF EXISTS bed_types_name_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bed_types_hq_name_active
+    ON bed_types (COALESCE(headquarters_id, ''), LOWER(name))
+    WHERE deleted_at IS NULL;
+
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE rooms ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+ALTER TABLE beds ADD COLUMN IF NOT EXISTS headquarters_id VARCHAR(36) REFERENCES headquarters(id) ON DELETE CASCADE;
+ALTER TABLE beds ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE beds ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE beds ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+UPDATE beds b SET headquarters_id = r.headquarters_id FROM rooms r WHERE r.id = b.room_id AND b.headquarters_id IS NULL;
+
+-- 7. Persons (Clients / Guests / Staff) per-sede & audit columns
+ALTER TABLE persons ADD COLUMN IF NOT EXISTS headquarters_id VARCHAR(36) REFERENCES headquarters(id) ON DELETE CASCADE;
+ALTER TABLE persons ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE persons ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE persons ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE persons DROP CONSTRAINT IF EXISTS persons_document_type_document_number_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_persons_hq_doc_active
+    ON persons (COALESCE(headquarters_id, ''), document_type, document_number)
+    WHERE deleted_at IS NULL;
+
+-- 8. Reserves, Stays, Rates, RoomTariffs per-sede & audit columns
+ALTER TABLE reserves ADD COLUMN IF NOT EXISTS headquarters_id VARCHAR(36) REFERENCES headquarters(id) ON DELETE CASCADE;
+ALTER TABLE reserves ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE reserves ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE reserves ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+UPDATE reserves res SET headquarters_id = rm.headquarters_id FROM rooms rm WHERE rm.id = res.room_id AND res.headquarters_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_reserves_hq_id ON reserves(headquarters_id);
+
+ALTER TABLE stays ADD COLUMN IF NOT EXISTS headquarters_id VARCHAR(36) REFERENCES headquarters(id) ON DELETE CASCADE;
+ALTER TABLE stays ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE stays ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE stays ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+UPDATE stays st SET headquarters_id = rm.headquarters_id FROM rooms rm WHERE rm.id = st.room_id AND st.headquarters_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_stays_hq_id ON stays(headquarters_id);
+
+ALTER TABLE rates ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE rates ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE rates ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+
+ALTER TABLE room_tariffs ADD COLUMN IF NOT EXISTS headquarters_id VARCHAR(36) REFERENCES headquarters(id) ON DELETE CASCADE;
+ALTER TABLE room_tariffs ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE room_tariffs ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE room_tariffs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+UPDATE room_tariffs rt SET headquarters_id = rm.headquarters_id FROM rooms rm WHERE rm.id = rt.room_id AND rt.headquarters_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_room_tariffs_hq_id ON room_tariffs(headquarters_id);
+`
+
 func Migrate(ctx context.Context, conn *pgxpool.Pool) error {
 	if err := migrateLegacyUsers(ctx, conn); err != nil {
 		return err
@@ -409,6 +646,10 @@ func Migrate(ctx context.Context, conn *pgxpool.Pool) error {
 		migrationCreateModules,
 		migrationCreateResources,
 		migrationCreatePermissionResources,
+		migrationAlterModulesAddCodeAndSortOrder,
+		migrationAlterResourcesAddCodeSortOrderShowInMenu,
+		migrationAlterPermissionResourcesAddActionAndDescription,
+		migrationCreateRolePermissions,
 		migrationCreateRoomTypes,
 		buildingSchema,
 		migrationCreateRooms,
@@ -428,6 +669,7 @@ func Migrate(ctx context.Context, conn *pgxpool.Pool) error {
 		migrationDropStayPersonID,
 		RateSchemaDDL,
 		RoomTariffSchemaDDL,
+		migrationMultiSedeAndAudit,
 	} {
 		if _, err := conn.Exec(ctx, ddl); err != nil {
 			return fmt.Errorf("run migration: %w", err)

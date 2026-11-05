@@ -50,6 +50,8 @@ func (tc TypeComponent) String() string {
 // Module es la entidad principal del dominio.
 type Module struct {
 	id            int
+	code          string
+	sortOrder     int16
 	typePath      TypePath
 	typeComponent TypeComponent
 }
@@ -60,8 +62,28 @@ func NewModule(id int, typePath TypePath, typeComponent TypeComponent) (*Module,
 	if id < 0 {
 		return nil, ErrIDRequired
 	}
+	code := typeComponent.String()
+	if code == "" {
+		code = typePath.String()
+	}
 	return &Module{
 		id:            id,
+		code:          code,
+		sortOrder:     0,
+		typePath:      typePath,
+		typeComponent: typeComponent,
+	}, nil
+}
+
+// NewModuleWithCode crea un Module con código y orden explícitos.
+func NewModuleWithCode(id int, code string, sortOrder int16, typePath TypePath, typeComponent TypeComponent) (*Module, error) {
+	if id < 0 {
+		return nil, ErrIDRequired
+	}
+	return &Module{
+		id:            id,
+		code:          code,
+		sortOrder:     sortOrder,
 		typePath:      typePath,
 		typeComponent: typeComponent,
 	}, nil
@@ -70,6 +92,16 @@ func NewModule(id int, typePath TypePath, typeComponent TypeComponent) (*Module,
 // ID retorna el identificador del módulo.
 func (m *Module) ID() int {
 	return m.id
+}
+
+// Code retorna el código del módulo.
+func (m *Module) Code() string {
+	return m.code
+}
+
+// SortOrder retorna el orden del módulo.
+func (m *Module) SortOrder() int16 {
+	return m.sortOrder
 }
 
 // TypePath retorna la ruta del módulo.
@@ -92,9 +124,21 @@ func (m *Module) ChangeTypeComponent(newComp TypeComponent) {
 	m.typeComponent = newComp
 }
 
+// SetCode actualiza el código del módulo.
+func (m *Module) SetCode(code string) {
+	m.code = strings.TrimSpace(code)
+}
+
+// SetSortOrder actualiza el orden del módulo.
+func (m *Module) SetSortOrder(sortOrder int16) {
+	m.sortOrder = sortOrder
+}
+
 // moduleJSON es la representación JSON del módulo.
 type moduleJSON struct {
 	ID            int    `json:"id"`
+	Code          string `json:"code"`
+	SortOrder     int16  `json:"sort_order"`
 	TypePath      string `json:"type_path"`
 	TypeComponent string `json:"type_component"`
 }
@@ -103,6 +147,8 @@ type moduleJSON struct {
 func (m *Module) MarshalJSON() ([]byte, error) {
 	return json.Marshal(moduleJSON{
 		ID:            m.id,
+		Code:          m.code,
+		SortOrder:     m.sortOrder,
 		TypePath:      m.typePath.String(),
 		TypeComponent: m.typeComponent.String(),
 	})

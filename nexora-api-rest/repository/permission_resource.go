@@ -2,6 +2,7 @@ package repository
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -22,15 +23,26 @@ func NewInMemoryPermissionResourceRepo() *InMemoryPermissionResourceRepo {
 	}
 }
 
-// Save almacena una entidad. Si ID es 0 asigna uno nuevo y devuelve el ID final.
+// Save almacena una entidad garantizando UNIQUE (resource_id, action).
 func (r *InMemoryPermissionResourceRepo) Save(pr *domain.PermissionResource) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// Valida restricción UNIQUE (resource_id, action)
+	if pr.Action() != "" {
+		for _, existing := range r.store {
+			if existing.ID() != pr.ID() &&
+				existing.ResourceID() == pr.ResourceID() &&
+				strings.EqualFold(existing.Action(), pr.Action()) {
+				return 0, domain.ErrDuplicatePermission
+			}
+		}
+	}
+
 	id := pr.ID()
 	if id == 0 {
 		id = int(atomic.AddInt64(&r.seq, 1))
-		newPr, _ := domain.NewPermissionResource(id, pr.ResourceID(), pr.Permission())
+		newPr, _ := domain.NewPermissionResourceWithAction(id, pr.ResourceID(), pr.Action(), pr.Description(), pr.Permission())
 		r.store[id] = newPr
 	} else {
 		r.store[id] = pr

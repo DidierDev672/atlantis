@@ -26,6 +26,8 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   required?: boolean;
   /** Estado deshabilitado del campo (alias de `disabled`). */
   isDisabled?: boolean;
+  /** Habilita/deshabilita el botón de alternar mostrar u ocultar contraseña cuando type="password". Por defecto true. */
+  showPasswordToggle?: boolean;
 }
 
 /** Variantes de Framer Motion para el anillo de foco animado y suave */
@@ -67,6 +69,7 @@ export function Input({
   onFocus,
   onBlur,
   type = 'text',
+  showPasswordToggle = true,
   ...props
 }: InputProps) {
   const [showPassword, setShowPassword] = useState(false);
@@ -81,9 +84,9 @@ export function Input({
   const isPassword = type === 'password';
   const resolvedType = isPassword && showPassword ? 'text' : type;
 
-  // El toggle solo aparece si es password y el consumidor no paso su propio `action`
+  // El toggle aparece si es password, showPasswordToggle está activo y el consumidor no pasó su propio `action`
   const passwordToggle =
-    isPassword && !action ? (
+    isPassword && showPasswordToggle && !action ? (
       <button
         type="button"
         onClick={() => setShowPassword((prev) => !prev)}
@@ -92,13 +95,13 @@ export function Input({
         aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
         aria-pressed={showPassword}
         aria-controls={fieldId}
-        className="text-ink-soft hover:text-ink focus-visible:ring-primary/40 flex h-8 w-8 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        className="text-ink-soft hover:text-ink focus-visible:ring-primary/40 flex size-8 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
       >
-        {showPassword ? (
-          <FontAwesomeIcon icon={faEye} />
-        ) : (
-          <FontAwesomeIcon icon={faEyeSlash} />
-        )}
+        <FontAwesomeIcon
+          icon={showPassword ? faEyeSlash : faEye}
+          className="size-4"
+          aria-hidden="true"
+        />
       </button>
     ) : null;
 
@@ -180,9 +183,9 @@ export function Input({
           )}
         </AnimatePresence>
 
-        {action && (
+        {actionNode && (
           <span className="pointer-events-none absolute inset-y-0 right-1.5 z-10 flex items-center [&_button]:pointer-events-auto">
-            {action}
+            {actionNode}
           </span>
         )}
       </div>

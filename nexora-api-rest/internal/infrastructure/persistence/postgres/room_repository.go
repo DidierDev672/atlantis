@@ -53,7 +53,13 @@ func nullablePrice(price *domain.BasePrice) *float64 {
 }
 
 func (r *RoomRepository) FindAll(ctx context.Context) ([]domain.Room, error) {
-	rows, err := r.conn.Query(ctx, "SELECT "+roomColumns+" FROM rooms")
+	query := "SELECT " + roomColumns + " FROM rooms WHERE deleted_at IS NULL"
+	var args []any
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		query += " AND headquarters_id = $1"
+		args = append(args, string(hqID))
+	}
+	rows, err := r.conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query rooms: %w", err)
 	}
@@ -71,7 +77,7 @@ func (r *RoomRepository) FindAll(ctx context.Context) ([]domain.Room, error) {
 }
 
 func (r *RoomRepository) FindByID(ctx context.Context, id domain.RoomID) (domain.Room, error) {
-	room, err := scanRoom(r.conn.QueryRow(ctx, "SELECT "+roomColumns+" FROM rooms WHERE id = $1", id))
+	room, err := scanRoom(r.conn.QueryRow(ctx, "SELECT "+roomColumns+" FROM rooms WHERE id = $1 AND deleted_at IS NULL", id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Room{}, domain.ErrRoomNotFound
@@ -82,7 +88,7 @@ func (r *RoomRepository) FindByID(ctx context.Context, id domain.RoomID) (domain
 }
 
 func (r *RoomRepository) FindByNumberAndBuilding(ctx context.Context, number string, buildingID domain.BuildingID) (domain.Room, error) {
-	room, err := scanRoom(r.conn.QueryRow(ctx, "SELECT "+roomColumns+" FROM rooms WHERE number = $1 AND building_id = $2", number, buildingID))
+	room, err := scanRoom(r.conn.QueryRow(ctx, "SELECT "+roomColumns+" FROM rooms WHERE number = $1 AND building_id = $2 AND deleted_at IS NULL", number, buildingID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Room{}, domain.ErrRoomNotFound
@@ -98,7 +104,7 @@ func (r *RoomRepository) FindByNumberAndBuilding(ctx context.Context, number str
 // the client, keeping the API contract anchored on building_id.
 func (r *RoomRepository) resolveBuildingHeadquarter(ctx context.Context, buildingID domain.BuildingID) (domain.HeadquarterID, error) {
 	var headquarterID domain.HeadquarterID
-	err := r.conn.QueryRow(ctx, "SELECT headquarters_id FROM buildings WHERE id = $1", buildingID).Scan(&headquarterID)
+	err := r.conn.QueryRow(ctx, "SELECT headquarters_id FROM buildings WHERE id = $1 AND deleted_at IS NULL", buildingID).Scan(&headquarterID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", domain.ErrInvalidBuildingID
@@ -116,11 +122,13 @@ func (r *RoomRepository) Save(ctx context.Context, room domain.Room) (domain.Roo
 		return domain.Room{}, err
 	}
 
+	createdBy := domain.ActorAuditID(ctx, room.CreatedBy)
 	saved := room
+	saved.CreatedBy = createdBy
 	err = r.conn.QueryRow(ctx,
 		"INSERT INTO rooms (id, number, floor, room_types_id, building_id, headquarters_id, price_override, status, has_reception, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now()) RETURNING created_at, updated_at",
 		room.ID, room.Number, room.Floor, room.RoomTypeID, room.BuildingID, headquarterID,
-		nullablePrice(room.PriceOverride), room.Status, room.HasReception, room.CreatedBy,
+		nullablePrice(room.PriceOverride), room.Status, room.HasReception, createdBy,
 	).Scan(&saved.CreatedAt, &saved.UpdatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -139,11 +147,12 @@ func (r *RoomRepository) Update(ctx context.Context, room domain.Room) (domain.R
 		return domain.Room{}, err
 	}
 
+	updatedBy := domain.ActorAuditID(ctx, "")
 	saved := room
 	err = r.conn.QueryRow(ctx,
-		"UPDATE rooms SET number = $2, floor = $3, room_types_id = $4, building_id = $5, headquarters_id = $6, price_override = $7, status = $8, has_reception = $9, updated_at = now() WHERE id = $1 RETURNING created_at, updated_at",
+		"UPDATE rooms SET number = $2, floor = $3, room_types_id = $4, building_id = $5, headquarters_id = $6, price_override = $7, status = $8, has_reception = $9, updated_by = $10, updated_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING created_at, updated_at",
 		room.ID, room.Number, room.Floor, room.RoomTypeID, room.BuildingID, headquarterID,
-		nullablePrice(room.PriceOverride), room.Status, room.HasReception,
+		nullablePrice(room.PriceOverride), room.Status, room.HasReception, updatedBy,
 	).Scan(&saved.CreatedAt, &saved.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -158,7 +167,11 @@ func (r *RoomRepository) Update(ctx context.Context, room domain.Room) (domain.R
 }
 
 func (r *RoomRepository) Delete(ctx context.Context, id domain.RoomID) error {
-	tag, err := r.conn.Exec(ctx, "DELETE FROM rooms WHERE id = $1", id)
+	deletedBy := domain.ActorAuditID(ctx, "")
+	tag, err := r.conn.Exec(ctx,
+		"UPDATE rooms SET deleted_at = now(), deleted_by = $2, status = 'inactive' WHERE id = $1 AND deleted_at IS NULL",
+		id, deletedBy,
+	)
 	if err != nil {
 		return fmt.Errorf("delete room: %w", err)
 	}

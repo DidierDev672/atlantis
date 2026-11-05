@@ -15,16 +15,24 @@ import (
 // RoomTariffSchemaDDL is the schema definition derived 1:1 from domain.RoomTariff.
 const RoomTariffSchemaDDL = `
 CREATE TABLE IF NOT EXISTS room_tariffs (
-    id          VARCHAR(36) PRIMARY KEY,
-    room_id     VARCHAR(36) NOT NULL,
-    rate_id     VARCHAR(36) NOT NULL,
-    is_default  BOOLEAN NOT NULL DEFAULT false,
-    status      VARCHAR(30) NOT NULL DEFAULT 'active',
-    created_by  VARCHAR(100) NOT NULL DEFAULT '',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    id              VARCHAR(36) PRIMARY KEY,
+    room_id         VARCHAR(36) NOT NULL,
+    rate_id         VARCHAR(36) NOT NULL,
+    is_default      BOOLEAN NOT NULL DEFAULT false,
+    status          VARCHAR(30) NOT NULL DEFAULT 'active',
+    headquarters_id VARCHAR(36),
+    created_by      VARCHAR(100) NOT NULL DEFAULT '',
+    updated_by      VARCHAR(100),
+    deleted_by      VARCHAR(100),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at      TIMESTAMPTZ,
     CHECK (status IN ('active', 'inactive'))
 );
+ALTER TABLE room_tariffs ADD COLUMN IF NOT EXISTS headquarters_id VARCHAR(36);
+ALTER TABLE room_tariffs ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
+ALTER TABLE room_tariffs ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
+ALTER TABLE room_tariffs ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_room_tariffs_room_id ON room_tariffs(room_id);
 CREATE INDEX IF NOT EXISTS idx_room_tariffs_rate_id ON room_tariffs(rate_id);
 CREATE INDEX IF NOT EXISTS idx_room_tariffs_status ON room_tariffs(status);
@@ -83,7 +91,15 @@ func (r *RoomTariffRepository) FindAll(ctx context.Context) ([]domain.RoomTariff
 		return nil, fmt.Errorf("ensure room_tariffs table: %w", err)
 	}
 
-	rows, err := r.conn.Query(ctx, "SELECT "+roomTariffColumns+" FROM room_tariffs ORDER BY created_at DESC")
+	query := "SELECT " + roomTariffColumns + " FROM room_tariffs WHERE deleted_at IS NULL"
+	var args []any
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		query += " AND (headquarters_id = $1 OR EXISTS (SELECT 1 FROM rooms rm WHERE rm.id = room_tariffs.room_id AND rm.headquarters_id = $1))"
+		args = append(args, string(hqID))
+	}
+	query += " ORDER BY created_at DESC"
+
+	rows, err := r.conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query room_tariffs: %w", err)
 	}
@@ -107,7 +123,7 @@ func (r *RoomTariffRepository) FindByID(ctx context.Context, id domain.RoomTarif
 		return domain.RoomTariff{}, fmt.Errorf("ensure room_tariffs table: %w", err)
 	}
 
-	res, err := scanRoomTariff(r.conn.QueryRow(ctx, "SELECT "+roomTariffColumns+" FROM room_tariffs WHERE id = $1", id))
+	res, err := scanRoomTariff(r.conn.QueryRow(ctx, "SELECT "+roomTariffColumns+" FROM room_tariffs WHERE id = $1 AND deleted_at IS NULL", id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.RoomTariff{}, domain.ErrRoomTariffNotFound
@@ -126,7 +142,7 @@ func (r *RoomTariffRepository) FindByRoom(ctx context.Context, roomID domain.Roo
 	}
 
 	rows, err := r.conn.Query(ctx,
-		"SELECT "+roomTariffColumns+" FROM room_tariffs WHERE room_id = $1 ORDER BY is_default DESC, created_at DESC",
+		"SELECT "+roomTariffColumns+" FROM room_tariffs WHERE room_id = $1 AND deleted_at IS NULL ORDER BY is_default DESC, created_at DESC",
 		roomID)
 	if err != nil {
 		return nil, fmt.Errorf("query room_tariffs by room: %w", err)
@@ -152,12 +168,23 @@ func (r *RoomTariffRepository) Save(ctx context.Context, tariff domain.RoomTarif
 		return domain.RoomTariff{}, fmt.Errorf("ensure room_tariffs table: %w", err)
 	}
 
+	createdBy := domain.ActorAuditID(ctx, tariff.CreatedBy)
+	var hqPtr *string
+	var roomHQ string
+	if err := r.conn.QueryRow(ctx, "SELECT headquarters_id FROM rooms WHERE id = $1", tariff.RoomID).Scan(&roomHQ); err == nil && roomHQ != "" {
+		hqPtr = &roomHQ
+	} else if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		s := string(hqID)
+		hqPtr = &s
+	}
+
 	saved := tariff
+	saved.CreatedBy = createdBy
 	query := `
 		INSERT INTO room_tariffs (
-			id, room_id, rate_id, is_default, status, created_by
+			id, room_id, rate_id, is_default, status, headquarters_id, created_by
 		) VALUES (
-			$1, $2, $3, $4, $5, $6
+			$1, $2, $3, $4, $5, $6, $7
 		)
 		RETURNING created_at, updated_at
 	`
@@ -170,7 +197,8 @@ func (r *RoomTariffRepository) Save(ctx context.Context, tariff domain.RoomTarif
 		tariff.RateID,
 		tariff.IsDefault,
 		string(tariff.Status),
-		tariff.CreatedBy,
+		hqPtr,
+		createdBy,
 	).Scan(&saved.CreatedAt, &saved.UpdatedAt)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -188,14 +216,16 @@ func (r *RoomTariffRepository) Update(ctx context.Context, tariff domain.RoomTar
 		return domain.RoomTariff{}, fmt.Errorf("ensure room_tariffs table: %w", err)
 	}
 
+	updatedBy := domain.ActorAuditID(ctx, "")
 	query := `
 		UPDATE room_tariffs
 		SET room_id = $2,
 		    rate_id = $3,
 		    is_default = $4,
 		    status = $5,
+		    updated_by = $6,
 		    updated_at = now()
-		WHERE id = $1
+		WHERE id = $1 AND deleted_at IS NULL
 		RETURNING created_at, updated_at
 	`
 
@@ -208,6 +238,7 @@ func (r *RoomTariffRepository) Update(ctx context.Context, tariff domain.RoomTar
 		tariff.RateID,
 		tariff.IsDefault,
 		string(tariff.Status),
+		updatedBy,
 	).Scan(&updated.CreatedAt, &updated.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -228,7 +259,11 @@ func (r *RoomTariffRepository) Delete(ctx context.Context, id domain.RoomTariffI
 		return fmt.Errorf("ensure room_tariffs table: %w", err)
 	}
 
-	cmdTag, err := r.conn.Exec(ctx, "DELETE FROM room_tariffs WHERE id = $1", id)
+	deletedBy := domain.ActorAuditID(ctx, "")
+	cmdTag, err := r.conn.Exec(ctx,
+		"UPDATE room_tariffs SET deleted_at = now(), deleted_by = $2, status = 'inactive' WHERE id = $1 AND deleted_at IS NULL",
+		id, deletedBy,
+	)
 	if err != nil {
 		return fmt.Errorf("delete room tariff: %w", err)
 	}

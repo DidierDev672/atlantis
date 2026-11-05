@@ -61,7 +61,14 @@ func scanPerson(row pgx.Row) (domain.Person, error) {
 }
 
 func (r *PersonRepository) FindAll(ctx context.Context) ([]domain.Person, error) {
-	rows, err := r.conn.Query(ctx, personSelect+" "+personGroupBy)
+	query := personSelect + " WHERE p.deleted_at IS NULL"
+	var args []any
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		query += " AND (p.headquarters_id = $1 OR p.headquarters_id IS NULL)"
+		args = append(args, string(hqID))
+	}
+	query += " " + personGroupBy
+	rows, err := r.conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query persons: %w", err)
 	}
@@ -79,7 +86,7 @@ func (r *PersonRepository) FindAll(ctx context.Context) ([]domain.Person, error)
 }
 
 func (r *PersonRepository) FindByID(ctx context.Context, id domain.PersonID) (domain.Person, error) {
-	person, err := scanPerson(r.conn.QueryRow(ctx, personSelect+" WHERE p.id = $1 "+personGroupBy, id))
+	person, err := scanPerson(r.conn.QueryRow(ctx, personSelect+" WHERE p.id = $1 AND p.deleted_at IS NULL "+personGroupBy, id))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Person{}, domain.ErrPersonNotFound
@@ -90,7 +97,15 @@ func (r *PersonRepository) FindByID(ctx context.Context, id domain.PersonID) (do
 }
 
 func (r *PersonRepository) FindByDocumentTypeAndDocumentNumber(ctx context.Context, documentType domain.DocumentType, documentNumber string) (domain.Person, error) {
-	person, err := scanPerson(r.conn.QueryRow(ctx, personSelect+" WHERE p.document_type = $1 AND p.document_number = $2 "+personGroupBy, documentType, documentNumber))
+	query := personSelect + " WHERE p.document_type = $1 AND p.document_number = $2 AND p.deleted_at IS NULL"
+	args := []any{documentType, documentNumber}
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		query += " AND p.headquarters_id = $3"
+		args = append(args, string(hqID))
+	}
+	query += " " + personGroupBy
+
+	person, err := scanPerson(r.conn.QueryRow(ctx, query, args...))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.Person{}, domain.ErrPersonNotFound
@@ -107,9 +122,16 @@ func (r *PersonRepository) Save(ctx context.Context, person domain.Person) error
 	}
 	defer tx.Rollback(ctx)
 
+	createdBy := domain.ActorAuditID(ctx, person.CreatedBy)
+	var hqPtr *string
+	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+		s := string(hqID)
+		hqPtr = &s
+	}
+
 	if _, err := tx.Exec(ctx,
-		"INSERT INTO persons (id, document_type, document_number, name, phone_number, email, date_of_birth, gender, nationality, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now(), now())",
-		person.ID, person.DocumentType, person.DocumentNumber, person.Name, person.PhoneNumber, person.Email, person.DateOfBirth, person.Gender, person.Nationality, person.CreatedBy,
+		"INSERT INTO persons (id, document_type, document_number, name, phone_number, email, date_of_birth, gender, nationality, headquarters_id, created_by, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now(), now())",
+		person.ID, person.DocumentType, person.DocumentNumber, person.Name, person.PhoneNumber, person.Email, person.DateOfBirth, person.Gender, person.Nationality, hqPtr, createdBy,
 	); err != nil {
 		if isUniqueViolation(err) {
 			return domain.ErrPersonDuplicated
@@ -131,9 +153,10 @@ func (r *PersonRepository) Update(ctx context.Context, person domain.Person) err
 	}
 	defer tx.Rollback(ctx)
 
+	updatedBy := domain.ActorAuditID(ctx, "")
 	tag, err := tx.Exec(ctx,
-		"UPDATE persons SET document_type = $2, document_number = $3, name = $4, phone_number = $5, email = $6, date_of_birth = $7, gender = $8, nationality = $9, updated_at = now() WHERE id = $1",
-		person.ID, person.DocumentType, person.DocumentNumber, person.Name, person.PhoneNumber, person.Email, person.DateOfBirth, person.Gender, person.Nationality,
+		"UPDATE persons SET document_type = $2, document_number = $3, name = $4, phone_number = $5, email = $6, date_of_birth = $7, gender = $8, nationality = $9, updated_by = $10, updated_at = now() WHERE id = $1 AND deleted_at IS NULL",
+		person.ID, person.DocumentType, person.DocumentNumber, person.Name, person.PhoneNumber, person.Email, person.DateOfBirth, person.Gender, person.Nationality, updatedBy,
 	)
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -168,7 +191,11 @@ func (r *PersonRepository) upsertPersonRoles(ctx context.Context, tx pgx.Tx, per
 }
 
 func (r *PersonRepository) Delete(ctx context.Context, id domain.PersonID) error {
-	tag, err := r.conn.Exec(ctx, "DELETE FROM persons WHERE id = $1", id)
+	deletedBy := domain.ActorAuditID(ctx, "")
+	tag, err := r.conn.Exec(ctx,
+		"UPDATE persons SET deleted_at = now(), deleted_by = $2 WHERE id = $1 AND deleted_at IS NULL",
+		id, deletedBy,
+	)
 	if err != nil {
 		return fmt.Errorf("delete person: %w", err)
 	}

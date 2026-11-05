@@ -48,13 +48,16 @@ func (rn ResourceName) String() string {
 
 // Resource es la entidad principal del dominio.
 type Resource struct {
-	id        int
-	component Component
-	name      ResourceName
-	moduleID  int
+	id         int
+	code       string
+	name       ResourceName
+	sortOrder  int16
+	showInMenu bool
+	component  Component
+	moduleID   int
 }
 
-// NewResource crea un Resource validando invariantes.
+// NewResource crea un Resource validando invariantes (soporte retrocompatible).
 // id 0 se usa como placeholder: la persistencia asigna el ID final.
 func NewResource(id int, component Component, name ResourceName, moduleID int) (*Resource, error) {
 	if id < 0 {
@@ -64,10 +67,32 @@ func NewResource(id int, component Component, name ResourceName, moduleID int) (
 		return nil, ErrModuleIDRequired
 	}
 	return &Resource{
-		id:        id,
-		component: component,
-		name:      name,
-		moduleID:  moduleID,
+		id:         id,
+		code:       component.String(),
+		name:       name,
+		sortOrder:  0,
+		showInMenu: true,
+		component:  component,
+		moduleID:   moduleID,
+	}, nil
+}
+
+// NewResourceWithDetails crea un Resource con todos sus atributos explícitos.
+func NewResourceWithDetails(id int, code string, name ResourceName, sortOrder int16, showInMenu bool, component Component, moduleID int) (*Resource, error) {
+	if id < 0 {
+		return nil, ErrResourceIDRequired
+	}
+	if moduleID <= 0 {
+		return nil, ErrModuleIDRequired
+	}
+	return &Resource{
+		id:         id,
+		code:       code,
+		name:       name,
+		sortOrder:  sortOrder,
+		showInMenu: showInMenu,
+		component:  component,
+		moduleID:   moduleID,
 	}, nil
 }
 
@@ -76,9 +101,9 @@ func (r *Resource) ID() int {
 	return r.id
 }
 
-// Component retorna el tipo de componente.
-func (r *Resource) Component() Component {
-	return r.component
+// Code retorna el código del recurso.
+func (r *Resource) Code() string {
+	return r.code
 }
 
 // Name retorna el nombre del recurso.
@@ -86,9 +111,39 @@ func (r *Resource) Name() ResourceName {
 	return r.name
 }
 
+// SortOrder retorna el orden del recurso.
+func (r *Resource) SortOrder() int16 {
+	return r.sortOrder
+}
+
+// ShowInMenu retorna si el recurso se muestra en el menú.
+func (r *Resource) ShowInMenu() bool {
+	return r.showInMenu
+}
+
+// Component retorna el tipo de componente.
+func (r *Resource) Component() Component {
+	return r.component
+}
+
 // ModuleID retorna el ID del módulo al que pertenece.
 func (r *Resource) ModuleID() int {
 	return r.moduleID
+}
+
+// SetCode actualiza el código del recurso.
+func (r *Resource) SetCode(code string) {
+	r.code = strings.TrimSpace(code)
+}
+
+// SetSortOrder actualiza el orden del recurso.
+func (r *Resource) SetSortOrder(sortOrder int16) {
+	r.sortOrder = sortOrder
+}
+
+// SetShowInMenu actualiza la visibilidad en menú.
+func (r *Resource) SetShowInMenu(show bool) {
+	r.showInMenu = show
 }
 
 // Rename cambia el nombre del recurso.
@@ -112,19 +167,25 @@ func (r *Resource) ReassignModule(newModuleID int) error {
 
 // resourceJSON es la representación JSON del recurso.
 type resourceJSON struct {
-	ID        int    `json:"id"`
-	Component string `json:"component"`
-	Name      string `json:"name"`
-	ModuleID  int    `json:"module_id"`
+	ID         int    `json:"id"`
+	ModuleID   int    `json:"module_id"`
+	Code       string `json:"code"`
+	Name       string `json:"name"`
+	SortOrder  int16  `json:"sort_order"`
+	ShowInMenu bool   `json:"show_in_menu"`
+	Component  string `json:"component"`
 }
 
 // MarshalJSON expone el recurso como JSON.
 func (r *Resource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(resourceJSON{
-		ID:        r.id,
-		Component: r.component.String(),
-		Name:      r.name.String(),
-		ModuleID:  r.moduleID,
+		ID:         r.id,
+		ModuleID:   r.moduleID,
+		Code:       r.code,
+		Name:       r.name.String(),
+		SortOrder:  r.sortOrder,
+		ShowInMenu: r.showInMenu,
+		Component:  r.component.String(),
 	})
 }
 

@@ -8,6 +8,8 @@ import (
 // Erros de dominio para PermissionResource
 var (
 	ErrPermissionResourceIDRequired = errors.New("el ID es requerido")
+	ErrDuplicatePermission          = errors.New("ya existe un permiso registrado para ese recurso y acción")
+	ErrActionRequired               = errors.New("el campo 'action' es requerido")
 )
 
 // Permission representa si un recurso tiene permiso. Value Object.
@@ -38,14 +40,16 @@ func (p *Permission) Revoke() {
 	*p = false
 }
 
-// PermissionResource es la entidad que asocia un recurso con su permiso.
+// PermissionResource es la entidad que asocia un recurso con su permiso y acción.
 type PermissionResource struct {
-	id         int
-	resourceID int
-	permission Permission
+	id          int
+	resourceID  int
+	action      string
+	description string
+	permission  Permission
 }
 
-// NewPermissionResource crea validando invariantes.
+// NewPermissionResource crea validando invariantes (soporte legado).
 // id 0 se usa como placeholder: la persistencia asigna el ID final.
 func NewPermissionResource(id int, resourceID int, permission Permission) (*PermissionResource, error) {
 	if id < 0 {
@@ -55,9 +59,28 @@ func NewPermissionResource(id int, resourceID int, permission Permission) (*Perm
 		return nil, ErrResourceIDRequired
 	}
 	return &PermissionResource{
-		id:         id,
-		resourceID: resourceID,
-		permission: permission,
+		id:          id,
+		resourceID:  resourceID,
+		action:      "",
+		description: "",
+		permission:  permission,
+	}, nil
+}
+
+// NewPermissionResourceWithAction crea una entidad completa con acción y descripción.
+func NewPermissionResourceWithAction(id int, resourceID int, action string, description string, permission Permission) (*PermissionResource, error) {
+	if id < 0 {
+		return nil, ErrPermissionResourceIDRequired
+	}
+	if resourceID <= 0 {
+		return nil, ErrResourceIDRequired
+	}
+	return &PermissionResource{
+		id:          id,
+		resourceID:  resourceID,
+		action:      action,
+		description: description,
+		permission:  permission,
 	}, nil
 }
 
@@ -69,6 +92,26 @@ func (pr *PermissionResource) ID() int {
 // ResourceID retorna el ID del recurso asociado.
 func (pr *PermissionResource) ResourceID() int {
 	return pr.resourceID
+}
+
+// Action retorna la acción del permiso.
+func (pr *PermissionResource) Action() string {
+	return pr.action
+}
+
+// Description retorna la descripción del permiso.
+func (pr *PermissionResource) Description() string {
+	return pr.description
+}
+
+// SetAction actualiza la acción del permiso.
+func (pr *PermissionResource) SetAction(action string) {
+	pr.action = action
+}
+
+// SetDescription actualiza la descripción del permiso.
+func (pr *PermissionResource) SetDescription(desc string) {
+	pr.description = desc
 }
 
 // Permission retorna el permiso actual.
@@ -98,17 +141,21 @@ func (pr *PermissionResource) IsAllowed() bool {
 
 // permissionResourceJSON es la representación JSON del permiso-recurso.
 type permissionResourceJSON struct {
-	ID         int  `json:"id"`
-	ResourceID int  `json:"resource_id"`
-	Permission bool `json:"permission"`
+	ID          int    `json:"id"`
+	ResourceID  int    `json:"resource_id"`
+	Action      string `json:"action"`
+	Description string `json:"description"`
+	Permission  bool   `json:"permission"`
 }
 
 // MarshalJSON expone el permiso-recurso como JSON.
 func (pr *PermissionResource) MarshalJSON() ([]byte, error) {
 	return json.Marshal(permissionResourceJSON{
-		ID:         pr.id,
-		ResourceID: pr.resourceID,
-		Permission: pr.permission.IsAllowed(),
+		ID:          pr.id,
+		ResourceID:  pr.resourceID,
+		Action:      pr.action,
+		Description: pr.description,
+		Permission:  pr.permission.IsAllowed(),
 	})
 }
 

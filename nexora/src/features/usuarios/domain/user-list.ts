@@ -14,9 +14,12 @@ export interface UserItem {
   email: string
   role_id: string
   headquarters_id: string
+  headquarters_ids?: string[]
+  all_headquarters?: boolean
   sub_headquarters_id: string | null
   status: string
   created_by?: string
+  updated_by?: string
   created_at?: string
   updated_at?: string
 }

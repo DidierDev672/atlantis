@@ -13,57 +13,19 @@ export interface DashboardCardDefinition {
 }
 
 export const DASHBOARD_CARDS: readonly DashboardCardDefinition[] = [
+  // ─── 1. Operación (Recepción, Reservas, Habitaciones, Servicios de habitaciones) ───
   {
-    id: 'sedes',
-    title: 'Sedes',
-    subtitle: 'Red hotelera y ubicaciones',
+    id: 'recepcion',
+    title: 'Recepción',
+    subtitle: 'Recepción y entrega de llaves',
     description:
-      'Administra sedes principales, sucursales y torres de habitaciones.',
-    badgeText: 'Activas',
-    badgeVariant: 'success',
-    iconName: 'BuildingIcon',
-    accentColor:
-      'from-blue-500/10 to-indigo-500/10 text-blue-600 dark:text-blue-400',
-    highlightMetric: 'Hoteles conectados',
-  },
-  {
-    id: 'habitacion',
-    title: 'Habitaciones',
-    subtitle: 'Inventario y disponibilidad',
-    description:
-      'Control de estados: disponibles, ocupadas, limpieza o mantenimiento.',
-    badgeText: 'En tiempo real',
+      'Atención en mostrador, asignación de cuartos y depósitos de garantía.',
+    badgeText: 'Front desk',
     badgeVariant: 'accent',
-    iconName: 'BedIcon',
+    iconName: 'ConciergeBellIcon',
     accentColor:
-      'from-emerald-500/10 to-teal-500/10 text-emerald-600 dark:text-emerald-400',
-    highlightMetric: 'Catálogo de estancias',
-  },
-  {
-    id: 'tarifas',
-    title: 'Tarifas',
-    subtitle: 'Precios, vigencias y turnos',
-    description:
-      'Configura esquemas de cobro por noche, horas, días y fin de semana.',
-    badgeText: 'Vigentes',
-    badgeVariant: 'accent',
-    iconName: 'TagIcon',
-    accentColor:
-      'from-amber-500/10 to-orange-500/10 text-amber-600 dark:text-amber-400',
-    highlightMetric: 'Planes comerciales',
-  },
-  {
-    id: 'cama',
-    title: 'Camas en 3D',
-    subtitle: 'Mobiliario tridimensional',
-    description:
-      'Explora modelos 3D interactivos, rotación 360° y capacidades de camas.',
-    badgeText: '3D Interactivo',
-    badgeVariant: 'neutral',
-    iconName: 'CubeIcon',
-    accentColor:
-      'from-violet-500/10 to-purple-500/10 text-violet-600 dark:text-violet-400',
-    highlightMetric: 'Visualizador espacial',
+      'from-rose-500/10 to-pink-500/10 text-rose-600 dark:text-rose-400',
+    highlightMetric: 'Atención ágil',
   },
   {
     id: 'reservas',
@@ -79,30 +41,86 @@ export const DASHBOARD_CARDS: readonly DashboardCardDefinition[] = [
     highlightMetric: 'Gestor de ocupación',
   },
   {
-    id: 'recepcion',
-    title: 'Recepción',
-    subtitle: 'Recepción y entrega de llaves',
+    id: 'habitacion',
+    title: 'Habitaciones',
+    subtitle: 'Inventario y disponibilidad',
     description:
-      'Atención en mostrador, asignación de cuartos y depósitos de garantía.',
-    badgeText: 'Front desk',
+      'Control de estados: disponibles, ocupadas, limpieza o mantenimiento.',
+    badgeText: 'En tiempo real',
     badgeVariant: 'accent',
-    iconName: 'ConciergeBellIcon',
+    iconName: 'BedIcon',
     accentColor:
-      'from-rose-500/10 to-pink-500/10 text-rose-600 dark:text-rose-400',
-    highlightMetric: 'Atención ágil',
+      'from-emerald-500/10 to-teal-500/10 text-emerald-600 dark:text-emerald-400',
+    highlightMetric: 'Catálogo de estancias',
   },
   {
-    id: 'auditoria',
-    title: 'Auditoría',
-    subtitle: 'Control físico y tarifario',
+    id: 'servicios',
+    title: 'Servicios de habitaciones',
+    subtitle: 'Servicio a la habitación',
     description:
-      'Conciliación de habitaciones, verificación de invariantes R14 y resolución de brechas.',
-    badgeText: 'Control de Calidad',
+      'Registro de pedidos de gastronomía y amenidades con cargo directo a la estancia.',
+    badgeText: 'Cocina & Bar',
     badgeVariant: 'accent',
-    iconName: 'ClipboardCheckIcon',
+    iconName: 'UtensilsIcon',
     accentColor:
-      'from-amber-500/10 to-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-    highlightMetric: 'Matriz de conformidad',
+      'from-amber-600/10 to-orange-600/10 text-[#5a311f] dark:text-amber-400',
+    highlightMetric: 'Órdenes y delivery',
+  },
+
+  // ─── 2. Configuración hotelera (Sedes · Tipos de camas · Tarifas) ───
+  {
+    id: 'sedes',
+    title: 'Sedes',
+    subtitle: 'Red hotelera y ubicaciones',
+    description:
+      'Administra sedes principales, sucursales y torres de habitaciones.',
+    badgeText: 'Activas',
+    badgeVariant: 'success',
+    iconName: 'BuildingIcon',
+    accentColor:
+      'from-blue-500/10 to-indigo-500/10 text-blue-600 dark:text-blue-400',
+    highlightMetric: 'Hoteles conectados',
+  },
+  {
+    id: 'cama',
+    title: 'Tipos de camas',
+    subtitle: 'Mobiliario tridimensional en 3D',
+    description:
+      'Explora modelos 3D interactivos, rotación 360° y capacidades de camas.',
+    badgeText: '3D Interactivo',
+    badgeVariant: 'neutral',
+    iconName: 'CubeIcon',
+    accentColor:
+      'from-violet-500/10 to-purple-500/10 text-violet-600 dark:text-violet-400',
+    highlightMetric: 'Visualizador espacial',
+  },
+  {
+    id: 'tarifas',
+    title: 'Tarifas',
+    subtitle: 'Precios, vigencias y turnos',
+    description:
+      'Configura esquemas de cobro por noche, horas, días y fin de semana.',
+    badgeText: 'Vigentes',
+    badgeVariant: 'accent',
+    iconName: 'TagIcon',
+    accentColor:
+      'from-amber-500/10 to-orange-500/10 text-amber-600 dark:text-amber-400',
+    highlightMetric: 'Planes comerciales',
+  },
+
+  // ─── 3. Accesos (Personas · Usuarios · Asignación de permisos) ───
+  {
+    id: 'personas',
+    title: 'Personas',
+    subtitle: 'Directorio de huéspedes',
+    description:
+      'Registro civil, documentos de identidad, canales de contacto y proveedores.',
+    badgeText: 'Directorio',
+    badgeVariant: 'neutral',
+    iconName: 'UsersIcon',
+    accentColor:
+      'from-fuchsia-500/10 to-pink-500/10 text-fuchsia-600 dark:text-fuchsia-400',
+    highlightMetric: 'Fichas de clientes',
   },
   {
     id: 'usuarios',
@@ -118,19 +136,6 @@ export const DASHBOARD_CARDS: readonly DashboardCardDefinition[] = [
     highlightMetric: 'Cuentas seguras',
   },
   {
-    id: 'personas',
-    title: 'Personas',
-    subtitle: 'Directorio de huéspedes',
-    description:
-      'Registro civil, documentos de identidad, canales de contacto y proveedores.',
-    badgeText: 'Directorio',
-    badgeVariant: 'neutral',
-    iconName: 'UsersIcon',
-    accentColor:
-      'from-fuchsia-500/10 to-pink-500/10 text-fuchsia-600 dark:text-fuchsia-400',
-    highlightMetric: 'Fichas de clientes',
-  },
-  {
     id: 'recursos',
     title: 'Asignación de permisos',
     subtitle: 'Control de acceso granular',
@@ -143,6 +148,21 @@ export const DASHBOARD_CARDS: readonly DashboardCardDefinition[] = [
       'from-amber-500/10 to-red-500/10 text-amber-600 dark:text-amber-400',
     highlightMetric: 'Políticas RBAC',
   },
+
+  // ─── 4. Sistema (Auditoría · Personalización) ───
+  {
+    id: 'auditoria',
+    title: 'Auditoría',
+    subtitle: 'Control físico y tarifario',
+    description:
+      'Conciliación de habitaciones, verificación de invariantes R14 y resolución de brechas.',
+    badgeText: 'Control de Calidad',
+    badgeVariant: 'accent',
+    iconName: 'ClipboardCheckIcon',
+    accentColor:
+      'from-amber-500/10 to-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    highlightMetric: 'Matriz de conformidad',
+  },
   {
     id: 'paletas',
     title: 'Personalización',
@@ -154,18 +174,5 @@ export const DASHBOARD_CARDS: readonly DashboardCardDefinition[] = [
     iconName: 'PaletteIcon',
     accentColor: 'from-emerald-500/10 to-cyan-500/10 text-primary',
     highlightMetric: 'Atmósfera Nexora',
-  },
-  {
-    id: 'servicios',
-    title: 'Servicio de habitaciones',
-    subtitle: 'Servicio a la habitación',
-    description:
-      'Registro de pedidos de gastronomía y amenidades con cargo directo a la estancia.',
-    badgeText: 'Cocina & Bar',
-    badgeVariant: 'accent',
-    iconName: 'UtensilsIcon',
-    accentColor:
-      'from-amber-600/10 to-orange-600/10 text-[#5a311f] dark:text-amber-400',
-    highlightMetric: 'Órdenes y delivery',
   },
 ] as const;

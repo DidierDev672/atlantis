@@ -16,6 +16,8 @@ type CreateInput struct {
 	Password          string
 	RoleID            domain.RoleID
 	HeadquartersID    *domain.HeadquarterID
+	HeadquartersIDs   []domain.HeadquarterID
+	AllHeadquarters   bool
 	SubHeadquartersID *domain.SubHeadquarterID
 	Status            string
 	CreatedBy         string
@@ -49,9 +51,20 @@ func (uc *CreateUserUseCase) Create(ctx context.Context, in CreateInput) (domain
 		status = domain.UserStatusActive
 	}
 
-	createdBy := in.CreatedBy
+	createdBy := domain.ActorAuditID(ctx, in.CreatedBy)
 	if createdBy == "" {
 		createdBy = domain.DefaultUserCreatedBy
+	}
+
+	hqID := in.HeadquartersID
+	if hqID == nil && len(in.HeadquartersIDs) > 0 {
+		first := in.HeadquartersIDs[0]
+		hqID = &first
+	}
+	if hqID == nil && !in.AllHeadquarters {
+		if activeHQ, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
+			hqID = &activeHQ
+		}
 	}
 
 	user := domain.User{
@@ -60,7 +73,9 @@ func (uc *CreateUserUseCase) Create(ctx context.Context, in CreateInput) (domain
 		Email:             strings.ToLower(strings.TrimSpace(in.Email)),
 		PasswordHash:      hash,
 		RoleID:            in.RoleID,
-		HeadquartersID:    in.HeadquartersID,
+		HeadquartersID:    hqID,
+		HeadquartersIDs:   in.HeadquartersIDs,
+		AllHeadquarters:   in.AllHeadquarters,
 		SubHeadquartersID: in.SubHeadquartersID,
 		Status:            status,
 		CreatedBy:         createdBy,

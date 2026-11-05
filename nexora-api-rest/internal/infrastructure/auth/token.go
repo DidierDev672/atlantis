@@ -1,6 +1,9 @@
 package auth
 
 import (
+	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -11,6 +14,9 @@ import (
 // defaultIssuer labels tokens produced by this service so another service can
 // never validate/accept them.
 const defaultIssuer = "nexora-api-rest"
+
+// ErrInvalidToken indicates the JWT signature, issuer, or expiry check failed.
+var ErrInvalidToken = errors.New("invalid or expired token")
 
 // JWTTokenGenerator signs short-lived JWT access tokens with HS256. It is the
 // security adapter of the TokenGenerator port (DIP: the signing algorithm and
@@ -32,7 +38,7 @@ func NewJWTTokenGenerator(secret string, ttl time.Duration) *JWTTokenGenerator {
 }
 
 // GenerateForUser signs a token whose claims carry the user id as Subject and
-// a short expiry (15 minutes). No personal data is embedded: the id is enough
+// a short expiry. No personal data is embedded: the id is enough
 // for the protected endpoints to reload the user.
 func (g *JWTTokenGenerator) GenerateForUser(id domain.UserID) (string, error) {
 	now := time.Now()
@@ -49,4 +55,30 @@ func (g *JWTTokenGenerator) GenerateForUser(id domain.UserID) (string, error) {
 		return "", err
 	}
 	return signed, nil
+}
+
+// ParseUserID validates a JWT token signed by this generator and returns the
+// subject UserID.
+func (g *JWTTokenGenerator) ParseUserID(tokenStr string) (domain.UserID, error) {
+	tokenStr = strings.TrimSpace(tokenStr)
+	if tokenStr == "" {
+		return "", ErrInvalidToken
+	}
+
+	var claims jwt.RegisteredClaims
+	parsed, err := jwt.ParseWithClaims(tokenStr, &claims, func(t *jwt.Token) (any, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return g.secret, nil
+	}, jwt.WithIssuer(g.issuer))
+	if err != nil || !parsed.Valid {
+		return "", ErrInvalidToken
+	}
+
+	sub := strings.TrimSpace(claims.Subject)
+	if sub == "" {
+		return "", ErrInvalidToken
+	}
+	return domain.UserID(sub), nil
 }

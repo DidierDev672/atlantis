@@ -1,6 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
 import { slideIn } from '../../../../design-tokens/motion'
+import { api } from '../../../../lib/api'
+import {
+  getActiveHeadquarterId,
+  getAllowedHeadquarters,
+  setActiveHeadquarterId,
+  type AllowedHeadquarterItem,
+} from '../../../../shared/auth-storage'
 import { MenuIcon } from '../icons'
 import { ThemeToggle } from '../atoms/theme-toggle'
 import { SearchField } from '../molecules/search-field'
@@ -29,6 +36,55 @@ export function Header({
   onBack,
 }: HeaderProps) {
   const [query, setQuery] = useState('')
+  const [headquarters, setHeadquarters] = useState<AllowedHeadquarterItem[]>(() =>
+    getAllowedHeadquarters(),
+  )
+  const [activeHqId, setActiveHqIdState] = useState<string>(
+    () => getActiveHeadquarterId() ?? '',
+  )
+
+  useEffect(() => {
+    let mounted = true
+    const syncFromStorage = () => {
+      if (!mounted) return
+      const allowed = getAllowedHeadquarters()
+      if (allowed.length > 0) {
+        setHeadquarters(allowed)
+      }
+      setActiveHqIdState(getActiveHeadquarterId() ?? allowed[0]?.id ?? '')
+    }
+
+    syncFromStorage()
+    api
+      .get<AllowedHeadquarterItem[]>('/headquarters')
+      .then((res) => {
+        if (!mounted || res.status !== 200 || !Array.isArray(res.data)) return
+        if (res.data.length > 0) {
+          setHeadquarters(res.data)
+          const current = getActiveHeadquarterId()
+          if (!current || !res.data.some((h) => h.id === current)) {
+            setActiveHeadquarterId(res.data[0].id)
+            setActiveHqIdState(res.data[0].id)
+          }
+        }
+      })
+      .catch(() => {
+        // Fallback silencioso a las sedes en sesión
+      })
+
+    window.addEventListener('nexora:auth-change', syncFromStorage)
+    window.addEventListener('nexora:headquarter-change', syncFromStorage)
+    return () => {
+      mounted = false
+      window.removeEventListener('nexora:auth-change', syncFromStorage)
+      window.removeEventListener('nexora:headquarter-change', syncFromStorage)
+    }
+  }, [])
+
+  const handleHeadquarterSwitch = (nextId: string) => {
+    setActiveHqIdState(nextId)
+    setActiveHeadquarterId(nextId)
+  }
 
   return (
     <motion.header className="sticky top-0 z-30 border-b border-line bg-canvas/85 backdrop-blur-md">
@@ -80,6 +136,29 @@ export function Header({
         </motion.div>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          {headquarters.length > 0 && (
+            <div className="hidden sm:flex items-center gap-1.5 rounded-xl border border-line bg-panel px-2.5 py-1.5 text-xs">
+              <span className="size-2 rounded-full bg-emerald-500" aria-hidden="true" />
+              {headquarters.length > 1 ? (
+                <select
+                  aria-label="Cambiar sede activa"
+                  value={activeHqId}
+                  onChange={(event) => handleHeadquarterSwitch(event.target.value)}
+                  className="bg-transparent font-semibold text-ink outline-none cursor-pointer max-w-[160px] truncate"
+                >
+                  {headquarters.map((hq) => (
+                    <option key={hq.id} value={hq.id}>
+                      {hq.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <span className="font-semibold text-ink max-w-[160px] truncate">
+                  {headquarters[0]?.name}
+                </span>
+              )}
+            </div>
+          )}
           <div className="hidden md:block">
             <SearchField value={query} onChange={setQuery} className="w-56 lg:w-72" />
           </div>
