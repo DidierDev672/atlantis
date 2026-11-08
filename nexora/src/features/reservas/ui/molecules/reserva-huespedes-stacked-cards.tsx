@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   motion,
   AnimatePresence,
@@ -226,10 +226,16 @@ function SingleCard({
 
       {/* Pie de la tarjeta */}
       <div className="mt-3 flex items-center justify-between border-t border-line/50 pt-2 text-[10px] text-ink-muted">
-        <span className="inline-flex items-center gap-1.5 truncate">
-          <FontAwesomeIcon icon={faBed} className="size-2.5 text-primary/70 shrink-0" />
-          <span className="truncate">{card.roomName || 'Habitación asignada'}</span>
-        </span>
+        {card.roomName ? (
+          <span className="inline-flex items-center gap-1.5 truncate">
+            <FontAwesomeIcon icon={faBed} className="size-2.5 text-primary/70 shrink-0" />
+            <span className="truncate">{card.roomName}</span>
+          </span>
+        ) : (
+          <span className="text-[10px] text-ink-muted font-medium">
+            Huésped #{card.index ?? 1}
+          </span>
+        )}
 
         {isFront ? (
           <span className="inline-flex items-center gap-1 text-[10px] font-medium text-primary">
@@ -259,10 +265,12 @@ export function ReservaHuespedesStackedCards({
   const [deck, setDeck] = useState<StackedGuestCardItem[]>(cards)
   const [dismissDirection, setDismissDirection] = useState<'left' | 'right' | null>(null)
 
-  // Sincronizar deck cuando cambian las cards entrantes
-  useEffect(() => {
+  // Sincronizar deck cuando cambian las cards entrantes (en fase de render según React)
+  const [prevCards, setPrevCards] = useState<StackedGuestCardItem[]>(cards)
+  if (cards !== prevCards) {
+    setPrevCards(cards)
     setDeck(cards)
-  }, [cards])
+  }
 
   const handleDismiss = (card: StackedGuestCardItem, direction: 'left' | 'right') => {
     setDismissDirection(direction)

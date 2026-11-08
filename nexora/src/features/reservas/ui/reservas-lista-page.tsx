@@ -95,7 +95,7 @@ export function ReservasListaPage({ onNuevaReserva }: ReservasListaPageProps) {
               variant="block"
               size="md"
               label="Cargando reservas balanceadas…"
-              description="Conectando con el catálogo de estadías mediante balanceo preventivo de carga."
+              description="Consultando el endpoint /reserve mediante balanceo preventivo de carga."
               delay={0}
               minDuration={500}
             />
@@ -118,7 +118,7 @@ export function ReservasListaPage({ onNuevaReserva }: ReservasListaPageProps) {
                 variant="overlay"
                 size="md"
                 label="Actualizando reservas…"
-                description="Sincronizando el catálogo con balanceo de carga."
+                description="Sincronizando el catálogo de reservas desde /reserve con balanceo de carga."
                 delay={0}
                 minDuration={400}
               />
@@ -127,7 +127,7 @@ export function ReservasListaPage({ onNuevaReserva }: ReservasListaPageProps) {
         )}
       </div>
 
-      {/* Modal para visualizar el detalle completo de la reserva/estadía (GET /stay/{id}) */}
+      {/* Modal para visualizar el detalle completo de la reserva (GET /reserve/{id}) */}
       <ReservaDetalleModal
         isOpen={isDetailModalOpen}
         reservaId={selectedReservaId}

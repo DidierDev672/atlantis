@@ -11,11 +11,12 @@ import (
 
 // Handler composes the narrow use-case ports expected by the HTTP layer.
 type Handler struct {
-	Creator personapp.PersonCreator
-	Lister  personapp.PersonLister
-	Getter  personapp.PersonGetter
-	Updater personapp.PersonUpdater
-	Deleter personapp.PersonDeleter
+	Creator          personapp.PersonCreator
+	Lister           personapp.PersonLister
+	Getter           personapp.PersonGetter
+	ByDocumentGetter personapp.PersonByDocumentGetter
+	Updater          personapp.PersonUpdater
+	Deleter          personapp.PersonDeleter
 }
 
 // personResponse is the HTTP projection of the domain entity.

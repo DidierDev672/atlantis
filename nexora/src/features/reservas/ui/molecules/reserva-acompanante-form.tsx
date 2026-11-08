@@ -1,24 +1,54 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import {
+  useState,
+  useEffect,
+  useMemo,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faCheck,
   faUserPlus,
   faCircleNotch,
+  faMagnifyingGlass,
 } from '@fortawesome/free-solid-svg-icons';
 import { Input } from '../../../../shared/ui/Input';
+import {
+  DatePicker,
+  toISODate,
+  parseISODate,
+} from '../../../../shared/date-picker';
 import {
   RecursosDropdown,
   type DropdownOption,
 } from '../../../recursos/ui/molecules/recursos-dropdown';
 import { Loader } from '../../../tema/ui/atoms/loader';
+import { Loading } from '../../../../shared/loading';
 import { api } from '../../../../lib/api';
 import { validateStatusCode } from '../../../../shared/lib/status-code-validator';
+import { executeBalancedRequest } from '../../infrastructure/api-load-balancer';
 import {
   readTokenEmail,
   readAuthTokenEmail,
 } from '../../../../shared/auth-storage';
 import { useHuespedesRegistradosStore } from '../../application/use-huespedes-registrados-store';
 import type { PersonApiResponse } from '../../domain/reserva';
+
+export interface PersonByDocumentResponse {
+  id: string;
+  document_type: string;
+  document_number: string;
+  name: string;
+  phone_number?: string;
+  email?: string;
+  date_of_birth?: string;
+  gender?: string;
+  nationality?: string;
+  roles?: string[];
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
 
 export interface ReservaAcompananteFormProps {
   companionNumber: number;
@@ -121,6 +151,17 @@ export function ReservaAcompananteForm({
       : ''
   );
 
+  // Fecha parseada para el DatePicker reutilizable (/shared/date-picker)
+  const parsedDob = useMemo(() => {
+    if (!dateOfBirth) return null;
+    const cleanDate = dateOfBirth.includes('T')
+      ? dateOfBirth.slice(0, 10)
+      : dateOfBirth;
+    return parseISODate(cleanDate);
+  }, [dateOfBirth]);
+
+  const maxBirthDate = useMemo(() => new Date(), []);
+
   // 7. Género -> [Masculina, Femenino, Otro]
   const [genre, setGenre] = useState<string>(() => {
     if (existingCompanion?.gender === 'F') return 'Femenino';
@@ -154,6 +195,143 @@ export function ReservaAcompananteForm({
     name: string;
     message: string;
   } | null>(null);
+
+  // Estados para búsqueda balanceada de huésped por documento (/persons/by-document)
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchFeedback, setSearchFeedback] = useState<{
+    type: 'success' | 'info' | 'warning' | 'error';
+    message: string;
+  } | null>(null);
+  const [existingPersonId, setExistingPersonId] = useState<string | null>(
+    existingCompanion?.id || null
+  );
+
+  /**
+   * Consulta GET /persons/by-document con axios y api-load-balancer al presionar Enter o Esc.
+   * Valida el status code con status-code-validator y autocompleta los campos del acompañante.
+   */
+  const handleSearchByDocument = async () => {
+    const docNum = documentNumber.trim();
+    if (!docNum) {
+      setErrors((prev) => ({
+        ...prev,
+        documentNumber: 'Ingresa un número de documento para buscar.',
+      }));
+      return;
+    }
+
+    setIsSearching(true);
+    setSearchFeedback(null);
+    if (errors.documentNumber) {
+      setErrors((p) => ({ ...p, documentNumber: '' }));
+    }
+
+    const docTypeApi = normalizeDocType(documentType);
+
+    try {
+      const response = await executeBalancedRequest(
+        async () => {
+          try {
+            return await api.get<PersonByDocumentResponse>(
+              '/persons/by-document',
+              {
+                params: {
+                  document_type: docTypeApi,
+                  document_number: docNum,
+                },
+                validateStatus: () => true,
+              }
+            );
+          } catch {
+            return await api.get<PersonByDocumentResponse>(
+              '/person/by-document',
+              {
+                params: {
+                  document_type: docTypeApi,
+                  document_number: docNum,
+                },
+                validateStatus: () => true,
+              }
+            );
+          }
+        },
+        { maxRetries: 1 }
+      );
+
+      const status = response?.status ?? 0;
+      const validation = validateStatusCode(status);
+
+      if (validation.isValid && response?.data) {
+        const data = response.data;
+        setExistingPersonId(data.id);
+        if (data.name) setName(data.name);
+        if (data.email) setEmail(data.email);
+        if (data.phone_number) setPhoneNumber(data.phone_number);
+        if (data.date_of_birth) {
+          setDateOfBirth(data.date_of_birth.slice(0, 10));
+        }
+        if (data.gender) {
+          const g = data.gender.toUpperCase();
+          setGenre(g === 'F' ? 'Femenino' : g === 'O' ? 'Otro' : 'Masculina');
+        }
+        if (data.nationality) {
+          setNationality(data.nationality);
+        }
+        if (data.document_type) {
+          const dt = data.document_type.toLowerCase();
+          if (dt.includes('id_card')) {
+            setDocumentType('tarjeta de identidad');
+          } else if (dt.includes('foreign_id')) {
+            setDocumentType('Tarjeta de extranjería');
+          } else {
+            setDocumentType('Número de identificación');
+          }
+        }
+        if (data.roles && data.roles.length > 0 && data.roles[0]) {
+          setSelectedRoleId(data.roles[0]);
+        }
+
+        // Limpiar errores previos en campos autocompletados
+        setErrors({});
+
+        setSearchFeedback({
+          type: 'success',
+          message: `Huésped encontrado: ${data.name}. Datos autocompletados con éxito.`,
+        });
+      } else if (status === 404) {
+        setSearchFeedback({
+          type: 'info',
+          message:
+            'Documento no registrado previamente. Puedes completar los datos manualmente para registrarlo.',
+        });
+      } else {
+        setSearchFeedback({
+          type: validation.category,
+          message: validation.message || 'No se pudo verificar el documento.',
+        });
+      }
+    } catch {
+      const netValidation = validateStatusCode(0);
+      setSearchFeedback({
+        type: 'warning',
+        message:
+          netValidation.message ||
+          'Error al conectar con el servicio. Puedes ingresar los datos manualmente.',
+      });
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  /** Manejador de teclado para Enter y Esc en el campo Número de documento */
+  const handleDocumentKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      e.nativeEvent.stopImmediatePropagation();
+      void handleSearchByDocument();
+    }
+  };
 
   // Consumir el endpoint "/roles" con el método GET y validar status code con status-code-validator.ts
   useEffect(() => {
@@ -307,6 +485,7 @@ export function ReservaAcompananteForm({
         const newId =
           responseData?.id ||
           responseData?.data?.id ||
+          existingPersonId ||
           (existingCompanion?.id ?? `guest-${Date.now()}`);
 
         const cleanId = String(newId);
@@ -379,6 +558,17 @@ export function ReservaAcompananteForm({
 
   return (
     <form onSubmit={handleSubmit} className="relative space-y-4">
+      {/* Componente Loading reutilizable mientras se consume /persons/by-document mediante balanceo preventivo */}
+      <Loading
+        visible={isSearching}
+        variant="overlay"
+        size="md"
+        label="Buscando datos del acompañante…"
+        description="Consultando /persons/by-document mediante balanceo preventivo de carga…"
+        delay={0}
+        className="z-30 rounded-2xl"
+      />
+
       {/* Componente Loader reutilizable con overlay mientras se procesa la creación en segundo plano */}
       <Loader
         overlay
@@ -458,16 +648,56 @@ export function ReservaAcompananteForm({
         <Input
           id={`num-doc-comp-${companionNumber}`}
           label="Número de documento"
-          placeholder="Ej: 1038134311"
+          placeholder="Ej: 1038134311 (Enter o Esc para buscar)"
           value={documentNumber}
           onChange={(e) => {
             setDocumentNumber(e.target.value);
             if (errors.documentNumber)
               setErrors((p) => ({ ...p, documentNumber: '' }));
           }}
+          onKeyDown={handleDocumentKeyDown}
           error={errors.documentNumber}
-          disabled={submitting}
+          disabled={submitting || isSearching}
           required
+          action={
+            <button
+              type="button"
+              onClick={() => void handleSearchByDocument()}
+              disabled={submitting || isSearching || !documentNumber.trim()}
+              className="text-ink-muted hover:text-primary grid size-8 cursor-pointer place-items-center rounded-lg transition disabled:cursor-not-allowed disabled:opacity-40"
+              title="Buscar huésped por documento (o presiona Enter / Esc)"
+              aria-label="Buscar huésped por documento"
+            >
+              <FontAwesomeIcon icon={faMagnifyingGlass} className="size-3.5" />
+            </button>
+          }
+          hint={
+            searchFeedback ? (
+              <span
+                className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${
+                  searchFeedback.type === 'success'
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : searchFeedback.type === 'info'
+                      ? 'text-sky-600 dark:text-sky-400'
+                      : 'text-amber-600 dark:text-amber-400'
+                }`}
+              >
+                <span>{searchFeedback.message}</span>
+              </span>
+            ) : (
+              <span className="text-ink-muted text-[10px]">
+                Presiona{' '}
+                <kbd className="border-line bg-canvas/80 rounded border px-1 py-0.5 font-mono text-[9px]">
+                  Enter
+                </kbd>{' '}
+                o{' '}
+                <kbd className="border-line bg-canvas/80 rounded border px-1 py-0.5 font-mono text-[9px]">
+                  Esc
+                </kbd>{' '}
+                para buscar en el sistema
+              </span>
+            )
+          }
         />
       </div>
 
@@ -521,20 +751,24 @@ export function ReservaAcompananteForm({
           required
         />
 
-        <Input
+        <DatePicker
           id={`fecha-nac-comp-${companionNumber}`}
-          type="date"
           label="Fecha de nacimiento"
-          value={dateOfBirth}
-          max={new Date().toISOString().slice(0, 10)}
-          onChange={(e) => {
-            setDateOfBirth(e.target.value);
+          placeholder="Elegir fecha de nacimiento…"
+          value={parsedDob}
+          onChange={(date) => {
+            const iso = date ? toISODate(date) : '';
+            setDateOfBirth(iso);
             if (errors.dateOfBirth)
               setErrors((p) => ({ ...p, dateOfBirth: '' }));
           }}
+          maxDate={maxBirthDate}
+          minYear={1920}
+          maxYear={new Date().getFullYear()}
           error={errors.dateOfBirth}
-          disabled={submitting}
+          disabled={submitting || isSearching}
           required
+          clearable
         />
       </div>
 

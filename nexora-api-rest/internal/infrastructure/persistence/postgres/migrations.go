@@ -199,6 +199,28 @@ CREATE INDEX IF NOT EXISTS idx_role_permissions_role_id ON role_permissions(role
 CREATE INDEX IF NOT EXISTS idx_role_permissions_permission_id ON role_permissions(permission_id);
 `
 
+const migrationCreateRoleLimits = `
+CREATE TABLE IF NOT EXISTS role_limits (
+    id        VARCHAR(36) NOT NULL,
+    role_id   VARCHAR(36) NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    limit_key TEXT        NOT NULL CHECK (limit_key ~ '^[a-z_]+$'),
+    max_value INTEGER     NOT NULL CHECK (max_value >= 0),
+    PRIMARY KEY (role_id, limit_key)
+);
+CREATE INDEX IF NOT EXISTS idx_role_limits_role_id ON role_limits(role_id);
+`
+
+const migrationCreateUserLimits = `
+CREATE TABLE IF NOT EXISTS user_limits (
+    id        VARCHAR(36) NOT NULL,
+    user_id   VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    limit_key TEXT        NOT NULL CHECK (limit_key ~ '^[a-z_]+$'),
+    max_value INTEGER     NOT NULL CHECK (max_value >= 0),
+    PRIMARY KEY (user_id, limit_key)
+);
+CREATE INDEX IF NOT EXISTS idx_user_limits_user_id ON user_limits(user_id);
+`
+
 // migrationCreateRoomTypes is derived 1:1 from domain.RoomType:
 // ID -> VARCHAR(36), Name -> VARCHAR(100) UNIQUE, Capacity -> INTEGER > 0,
 // BasePrice -> NUMERIC(12,2) >= 0, CreatedBy -> VARCHAR(100),
@@ -650,6 +672,8 @@ func Migrate(ctx context.Context, conn *pgxpool.Pool) error {
 		migrationAlterResourcesAddCodeSortOrderShowInMenu,
 		migrationAlterPermissionResourcesAddActionAndDescription,
 		migrationCreateRolePermissions,
+		migrationCreateRoleLimits,
+		migrationCreateUserLimits,
 		migrationCreateRoomTypes,
 		buildingSchema,
 		migrationCreateRooms,

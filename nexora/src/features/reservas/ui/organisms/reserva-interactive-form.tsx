@@ -12,20 +12,21 @@ import {
   calculateNights,
   type PersonApiResponse,
 } from '../../domain/reserva';
-import type { StayPayload } from '../../domain/guest-attendant';
 import { ReservaStateBadge } from '../atoms/reserva-state-badge';
 import { NuevoHuespedModal } from '../molecules/nuevo-huesped-modal';
 import { ReservaAcompanantesModal } from '../molecules/reserva-acompanantes-modal';
 import { useHuespedesRegistradosStore } from '../../application/use-huespedes-registrados-store';
-import { coordinateBalancedStaySubmission } from '../../infrastructure/api-guest-attendant-service';
+import { executeBalancedRequest } from '../../infrastructure/api-load-balancer';
+import { Rocket } from '../../../../shared/rocket/organisms/Rocket';
+import {
+  DatePicker,
+  toISODate,
+  parseISODate,
+} from '../../../../shared/date-picker';
 import {
   RecursosDropdown,
   type DropdownOption,
 } from '../../../recursos/ui/molecules/recursos-dropdown';
-import { resolveRoomsLocationBatch } from '../../infrastructure/api-room-location-service';
-import type { RoomLocationHierarchy } from '../../domain/room-location-types';
-import { RoomDropdownItem } from '../molecules/room-dropdown-item';
-import { RoomSelectedHierarchyCard } from '../molecules/room-selected-hierarchy-card';
 import { Input } from '../../../../shared/ui/Input';
 import { Loader } from '../../../tema/ui/atoms/loader';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -141,6 +142,13 @@ export interface PersonApiResponseItem {
 
 const ESTADOS_RESERVA = [
   {
+    value: 'pending',
+    label: 'Pendiente',
+    dotColor: 'bg-amber-500',
+    badgeClass:
+      'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
+  },
+  {
     value: 'progress',
     label: 'Progreso',
     dotColor: 'bg-blue-500',
@@ -201,13 +209,12 @@ function getCreatedByEmail(): string {
   } catch {
     // Si localStorage no está disponible o el JSON es inválido
   }
-  return readTokenEmail() || readAuthTokenEmail() || 'ariasdev672@gmail.com';
+  return readAuthTokenEmail() || readTokenEmail() || 'recepcionista@nexora.com';
 }
 
 export function ReservaInteractiveForm() {
   // 1. Datos del catálogo
   const [rooms, setRooms] = useState<RoomOption[]>([]);
-  const [roomHierarchyMap, setRoomHierarchyMap] = useState<Map<string, RoomLocationHierarchy>>(new Map());
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [roomError, setRoomError] = useState<string | null>(null);
 
@@ -237,7 +244,7 @@ export function ReservaInteractiveForm() {
   );
   const [numberOfGuests, setNumberOfGuests] = useState<number>(1);
   const [guestDirection, setGuestDirection] = useState<number>(1);
-  const [stateValue, setStateValue] = useState<string>('progress');
+  const [stateValue, setStateValue] = useState<string>('pending');
   const [customTotalPrice, setCustomTotalPrice] = useState<number | null>(null);
 
   // Store Zustand para centralizar y sincronizar huéspedes registrados
@@ -320,14 +327,9 @@ export function ReservaInteractiveForm() {
 
             setRooms(mappedRooms);
 
-            // Cargar y resolver jerarquía de ubicaciones (/building/{id}, /headquarters/{id}, /sub-headquarters/{id})
-            try {
-              const hierarchyMap = await resolveRoomsLocationBatch(rawList);
-              if (isMounted) {
-                setRoomHierarchyMap(hierarchyMap);
-              }
-            } catch {
-              // Fallback silencioso y controlado
+            // Preseleccionar la primera habitación si está disponible para asegurar el payload
+            if (mappedRooms.length > 0) {
+              setSelectedRoomId((prev) => prev || mappedRooms[0].id);
             }
           } else {
             setRoomError(
@@ -475,13 +477,6 @@ export function ReservaInteractiveForm() {
           a.number.localeCompare(b.number, undefined, { numeric: true })
         );
         setRooms(mappedRooms);
-
-        try {
-          const hierarchyMap = await resolveRoomsLocationBatch(rawList);
-          setRoomHierarchyMap(hierarchyMap);
-        } catch {
-          // Fallback silencioso y controlado
-        }
       } else {
         setRoomError(
           validation.message || 'No se pudo obtener la lista de habitaciones.'
@@ -636,34 +631,6 @@ export function ReservaInteractiveForm() {
     });
   }, [persons]);
 
-  const roomDropdownOptions = useMemo<DropdownOption[]>(() => {
-    return rooms.map((room) => {
-      const hierarchy = roomHierarchyMap.get(room.id) || {
-        roomId: room.id,
-        roomNumber: room.number,
-        floor: room.floor,
-        buildingId: room.building_id ?? null,
-        buildingName: null,
-        hasBuilding: false,
-        headquartersId: null,
-        headquartersName: null,
-        hasHeadquarters: false,
-        subHeadquartersId: null,
-        subHeadquartersName: null,
-        hasSubHeadquarters: false,
-        formattedOptionLabel: `(Habitación ${room.number} - Piso ${room.floor} - Sin edificio registrado - Sin sede registrada - Sin sub sede registrada)`,
-      };
-
-      return {
-        value: room.id,
-        label: hierarchy.formattedOptionLabel,
-        id: room.id,
-        rawName: room.number,
-        customContent: <RoomDropdownItem hierarchy={hierarchy} />,
-      };
-    });
-  }, [rooms, roomHierarchyMap]);
-
   const estadoDropdownOptions = useMemo<DropdownOption[]>(() => {
     return ESTADOS_RESERVA.map((est) => ({
       value: est.value,
@@ -677,6 +644,20 @@ export function ReservaInteractiveForm() {
     [checkInDate, checkOutDate]
   );
 
+  // Fechas parseadas estables para DatePicker (evita recreación continua de instancias Date)
+  const parsedCheckIn = useMemo(
+    () => (checkInDate ? parseISODate(checkInDate) : null),
+    [checkInDate]
+  );
+  const parsedCheckOut = useMemo(
+    () => (checkOutDate ? parseISODate(checkOutDate) : null),
+    [checkOutDate]
+  );
+  const todayMinDate = useMemo(
+    () => parseISODate(getTodayString()) ?? undefined,
+    []
+  );
+
   // Precio sugerido derivado y precio final mostrado
   const suggestedPrice = useMemo(() => {
     const roomPrice = selectedRoom ? selectedRoom.price : 160000;
@@ -685,26 +666,6 @@ export function ReservaInteractiveForm() {
 
   const effectiveTotalPrice =
     customTotalPrice !== null ? customTotalPrice : suggestedPrice;
-
-  // Manejador al seleccionar habitación
-  const handleRoomChange = (roomId: string) => {
-    setSelectedRoomId(roomId);
-    if (errors.roomId) setErrors((p) => ({ ...p, roomId: '' }));
-
-    const found = rooms.find((r) => r.id === roomId);
-    if (found && numberOfGuests > found.capacity) {
-      setNumberOfGuests(found.capacity);
-      if (selectedPersonIds.length > found.capacity) {
-        const trimmed = selectedPersonIds.slice(0, found.capacity);
-        setSelectedPersonIds(trimmed);
-        setSelectedPersonId(trimmed[0] || '');
-        syncSelectedHuespedes(trimmed, persons);
-      }
-      if (companions.length > found.capacity - 1) {
-        setCompanions((prev) => prev.slice(0, Math.max(0, found.capacity - 1)));
-      }
-    }
-  };
 
   // Manejador del número de huéspedes con sincronización hacia los huéspedes seleccionados
   const handleNumberOfGuestsChange = (newVal: number) => {
@@ -828,14 +789,17 @@ export function ReservaInteractiveForm() {
     setCheckInDate(newCheckIn);
     if (errors.checkInDate) setErrors((p) => ({ ...p, checkInDate: '' }));
 
-    // Si checkOut es menor o igual, avanzamos un día
-    if (checkOutDate && newCheckIn >= checkOutDate) {
-      const nextDay = new Date(newCheckIn);
-      nextDay.setDate(nextDay.getDate() + 1);
-      const y = nextDay.getFullYear();
-      const m = String(nextDay.getMonth() + 1).padStart(2, '0');
-      const d = String(nextDay.getDate()).padStart(2, '0');
-      setCheckOutDate(`${y}-${m}-${d}`);
+    // Si checkOut es menor o igual, avanzamos un día evitando desfase de zona horaria
+    if (checkOutDate && newCheckIn && newCheckIn >= checkOutDate) {
+      const parsedIn = parseISODate(newCheckIn);
+      if (parsedIn) {
+        const nextDay = new Date(
+          parsedIn.getFullYear(),
+          parsedIn.getMonth(),
+          parsedIn.getDate() + 1
+        );
+        setCheckOutDate(toISODate(nextDay));
+      }
     }
   };
 
@@ -866,10 +830,6 @@ export function ReservaInteractiveForm() {
   // Validación de formulario
   const validateForm = () => {
     const errs: Record<string, string> = {};
-
-    if (!selectedRoomId) {
-      errs.roomId = 'Por favor selecciona una habitación para la reserva.';
-    }
 
     if (!selectedPersonId) {
       errs.personId =
@@ -926,7 +886,7 @@ export function ReservaInteractiveForm() {
     // created_by obtenido del localStorage 'auth_user' y del item email
     const createdByEmail = getCreatedByEmail();
 
-    // Determinar person_ids para el payload de /stay (titular y acompañantes registrados)
+    // Determinar person_ids para el payload de /reserve (titular y acompañantes registrados)
     const activePersonIds = [
       selectedPersonId,
       ...selectedPersonIds.filter((id) => id !== selectedPersonId),
@@ -934,39 +894,42 @@ export function ReservaInteractiveForm() {
     ].filter((id): id is string => Boolean(id && id.trim()));
 
     const finalPersonIds =
-      activePersonIds.length > 0 ? activePersonIds : [selectedPersonId];
+      activePersonIds.length > 0
+        ? Array.from(new Set(activePersonIds))
+        : (selectedPersonId ? [selectedPersonId] : []);
 
-    // Payload de estadía corregido exactamente para /stay con el método POST
-    const stayPayload: StayPayload = {
-      room_id: selectedRoomId,
+    // Construcción del payload exacto para POST /reserve
+    const reservePayload = {
       person_ids: finalPersonIds,
       check_in_date: checkInIso,
       check_out_date: checkOutIso,
-      payment_method: 'card',
-      security_deposit: effectiveTotalPrice,
-      remarks: 'Check-in regular',
-      status: stateValue,
-      created_by: createdByEmail || 'ariasdev672@gmail.com',
+      number_of_guests: numberOfGuests || finalPersonIds.length || 1,
+      state: stateValue || 'pending',
+      total_price: Number(effectiveTotalPrice),
+      created_by: createdByEmail || 'recepcionista@nexora.com',
     };
 
     try {
-      // Envío casi simultáneo de los endpoints /stay y /guest-attendant balanceando cargas (Reglas de Oro 1, 2, 3 y 4)
-      const result = await coordinateBalancedStaySubmission(
-        stayPayload,
-        finalPersonIds
-      );
+      // Envío balanceado al endpoint /reserve con executeBalancedRequest
+      const response = await executeBalancedRequest(async () => {
+        return api.post<unknown>('/reserve', reservePayload, {
+          validateStatus: () => true, // Permite evaluar manualmente los status codes con validateStatusCode
+        });
+      });
 
-      setSubmitStatusCode(result.stayStatusCode);
+      // Validación del código de estado con validateStatusCode
+      const validation = validateStatusCode(response.status);
+      setSubmitStatusCode(response.status);
 
-      if (result.success) {
-        // Respuesta POSITIVA: mensaje empático y tranquilizador usando psicología para el recepcionista
+      if (validation.isValid) {
+        // Respuesta POSITIVA: mensaje empático usando validateStatusCode
         setSubmitFeedback({
           type: 'success',
-          title: result.title || '¡Reserva confirmada con éxito!',
+          title: validation.title || '¡Reserva confirmada con éxito!',
           message:
-            result.message ||
+            validation.message ||
             '¡Excelente trabajo! La reserva se registró y aseguró con éxito en el sistema.',
-          statusCode: result.stayStatusCode,
+          statusCode: response.status,
         });
 
         setSuccessReservation({
@@ -982,35 +945,35 @@ export function ReservaInteractiveForm() {
         });
       } else {
         // Respuesta NEGATIVA: psicología empática orientada al recepcionista para preservar la calma
-        let friendlyTitle = result.title || 'No pudimos registrar la reserva';
-        let friendlyMessage = result.message;
+        let friendlyTitle = validation.title || 'No pudimos registrar la reserva';
+        let friendlyMessage = validation.message;
 
-        if (result.stayStatusCode === 409) {
-          friendlyTitle = 'Habitación no disponible en esas fechas';
+        if (response.status === 409) {
+          friendlyTitle = 'Conflicto en las fechas de la reserva';
           friendlyMessage =
-            '¡Tranquilo(a)! Tus datos siguen intactos en el formulario. La habitación seleccionada ya tiene una reserva activa para esas fechas. Puedes ajustar el periodo o elegir otra habitación con un solo clic.';
-        } else if (result.stayStatusCode === 400) {
+            '¡Tranquilo(a)! Tus datos siguen intactos en el formulario. Ya existe una reserva para esas fechas o huésped. Puedes ajustar el periodo e intentar nuevamente.';
+        } else if (response.status === 400) {
           friendlyTitle = 'Revisemos algunos datos de la reserva';
           friendlyMessage =
             friendlyMessage ||
-            'Tus datos están completamente a salvo. Por favor verifica que las fechas y el huésped titular estén correctamente seleccionados e inténtalo nuevamente.';
-        } else if (result.stayStatusCode >= 500) {
+            'Tus datos están completamente a salvo. Por favor verifica que las fechas y los huéspedes estén correctamente seleccionados e inténtalo nuevamente.';
+        } else if (response.status >= 500) {
           friendlyTitle = 'El servidor tuvo una pausa momentánea';
           friendlyMessage =
             '¡Respira con calma! No es tu culpa: tus datos siguen aquí intactos en pantalla. Espera un momento y vuelve a presionar "Confirmar y asegurar reserva".';
         }
 
         setSubmitFeedback({
-          type: result.stayStatusCode === 409 ? 'warning' : 'error',
+          type: response.status === 409 ? 'warning' : 'error',
           title: friendlyTitle,
           message:
             friendlyMessage ||
             'Tus datos están intactos en pantalla. Intenta nuevamente en un momento.',
-          statusCode: result.stayStatusCode,
+          statusCode: response.status,
         });
       }
     } catch {
-      // Manejo de errores de red o interrupción de conexión con psicología preventiva
+      // Manejo de errores de red o interrupción de conexión con validateStatusCode(0)
       const netVal = validateStatusCode(0);
       setSubmitStatusCode(0);
 
@@ -1084,13 +1047,14 @@ export function ReservaInteractiveForm() {
 
             {/* Ficha Resumen */}
             <div className="divide-line/60 border-line bg-canvas/60 mt-6 divide-y rounded-2xl border p-5 text-left text-xs">
-              <div className="flex items-center justify-between py-2.5">
-                <span className="text-ink-muted">Habitación asignada:</span>
-                <span className="text-ink font-bold">
-                  {successReservation.roomNumber} -{' '}
-                  {successReservation.roomFloor}
-                </span>
-              </div>
+              {successReservation.roomNumber ? (
+                <div className="flex items-center justify-between py-2.5">
+                  <span className="text-ink-muted">Habitación:</span>
+                  <span className="text-ink font-bold">
+                    {successReservation.roomNumber} - {successReservation.roomFloor}
+                  </span>
+                </div>
+              ) : null}
               <div className="flex items-center justify-between py-2.5">
                 <span className="text-ink-muted">Huésped titular:</span>
                 <span className="text-ink font-semibold">
@@ -1263,35 +1227,7 @@ export function ReservaInteractiveForm() {
               )}
 
               <form onSubmit={handleSubmit} noValidate className="space-y-6">
-                {/* 1. DROPDOWN: HABITACIONES (RecursosDropdown reutilizable) */}
-                <div>
-                  <RecursosDropdown
-                    id="select-habitacion"
-                    label="Habitación (Numero - Piso)"
-                    isLoading={loadingRooms}
-                    placeholder={
-                      loadingRooms
-                        ? 'Consultando habitaciones (/room)…'
-                        : '-- Selecciona una habitación --'
-                    }
-                    options={roomDropdownOptions}
-                    value={selectedRoomId}
-                    onChange={(val) => handleRoomChange(val)}
-                    disabled={loadingRooms || submitting}
-                    required
-                    error={errors.roomId || roomError || undefined}
-                  />
-
-                  {/* Ficha descriptiva de la habitación seleccionada con jerarquía completa */}
-                  {selectedRoom && (
-                    <RoomSelectedHierarchyCard
-                      room={selectedRoom}
-                      hierarchy={roomHierarchyMap.get(selectedRoom.id)}
-                    />
-                  )}
-                </div>
-
-                {/* 2. DROPDOWN: PERSONAS REGISTRADAS (RecursosDropdown reutilizable) */}
+                {/* DROPDOWN: PERSONAS REGISTRADAS (RecursosDropdown reutilizable) */}
                 <div>
                   <div className="flex items-start gap-2.5">
                     <div className="min-w-0 flex-1">
@@ -1454,66 +1390,38 @@ export function ReservaInteractiveForm() {
 
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     {/* Fecha de Entrada */}
-                    <div>
-                      <label
-                        htmlFor="check-in-date"
-                        className="text-ink-muted mb-1 block text-[11px] font-medium"
-                      >
-                        Fecha de entrada
-                      </label>
-                      <input
-                        type="date"
-                        id="check-in-date"
-                        value={checkInDate}
-                        min={getTodayString()}
-                        onChange={(e) => handleCheckInChange(e.target.value)}
-                        disabled={submitting}
-                        className={`bg-canvas text-ink focus:border-primary focus:ring-primary/20 w-full cursor-pointer rounded-xl border px-3.5 py-2 text-xs transition outline-none focus:ring-2 ${
-                          errors.checkInDate
-                            ? 'border-danger/60 focus:border-danger'
-                            : 'border-line'
-                        }`}
-                      />
-                      {errors.checkInDate && (
-                        <p
-                          role="alert"
-                          className="text-danger mt-1 text-xs font-medium"
-                        >
-                          {errors.checkInDate}
-                        </p>
-                      )}
-                    </div>
+                    <DatePicker
+                      id="check-in-date"
+                      label="Fecha de entrada"
+                      placeholder="Elegir fecha de entrada…"
+                      value={parsedCheckIn}
+                      onChange={(date) => {
+                        const iso = date ? toISODate(date) : '';
+                        handleCheckInChange(iso);
+                      }}
+                      minDate={todayMinDate}
+                      disabled={submitting}
+                      error={errors.checkInDate}
+                      required
+                      clearable={false}
+                    />
 
                     {/* Fecha de Salida */}
-                    <div>
-                      <label
-                        htmlFor="check-out-date"
-                        className="text-ink-muted mb-1 block text-[11px] font-medium"
-                      >
-                        Fecha de salida
-                      </label>
-                      <input
-                        type="date"
-                        id="check-out-date"
-                        value={checkOutDate}
-                        min={checkInDate || getTodayString()}
-                        onChange={(e) => handleCheckOutChange(e.target.value)}
-                        disabled={submitting}
-                        className={`bg-canvas text-ink focus:border-primary focus:ring-primary/20 w-full cursor-pointer rounded-xl border px-3.5 py-2 text-xs transition outline-none focus:ring-2 ${
-                          errors.checkOutDate
-                            ? 'border-danger/60 focus:border-danger'
-                            : 'border-line'
-                        }`}
-                      />
-                      {errors.checkOutDate && (
-                        <p
-                          role="alert"
-                          className="text-danger mt-1 text-xs font-medium"
-                        >
-                          {errors.checkOutDate}
-                        </p>
-                      )}
-                    </div>
+                    <DatePicker
+                      id="check-out-date"
+                      label="Fecha de salida"
+                      placeholder="Elegir fecha de salida…"
+                      value={parsedCheckOut}
+                      onChange={(date) => {
+                        const iso = date ? toISODate(date) : '';
+                        handleCheckOutChange(iso);
+                      }}
+                      minDate={parsedCheckIn ?? todayMinDate}
+                      disabled={submitting}
+                      error={errors.checkOutDate}
+                      required
+                      clearable={false}
+                    />
                   </div>
                 </div>
 
@@ -1724,15 +1632,15 @@ export function ReservaInteractiveForm() {
                 </div>
 
                 <div className="space-y-3 text-xs">
-                  {/* Habitación con formato number - floor */}
-                  <div className="flex items-start justify-between">
-                    <span className="text-ink-muted">Habitación:</span>
-                    <strong className="text-ink max-w-[180px] truncate text-right">
-                      {selectedRoom
-                        ? `${selectedRoom.number} - ${selectedRoom.floor}`
-                        : 'Sin seleccionar'}
-                    </strong>
-                  </div>
+                  {/* Habitación con formato number - floor (si aplica) */}
+                  {selectedRoom && (
+                    <div className="flex items-start justify-between">
+                      <span className="text-ink-muted">Habitación:</span>
+                      <strong className="text-ink max-w-[180px] truncate text-right">
+                        {selectedRoom.number} - {selectedRoom.floor}
+                      </strong>
+                    </div>
+                  )}
 
                   {/* Huésped */}
                   <div className="flex items-start justify-between">
@@ -1837,13 +1745,33 @@ export function ReservaInteractiveForm() {
         onSaveCompanion={handleSaveCompanion}
       />
 
-      {/* Componente reutilizable Loader con overlay mientras se procesa la reserva en segundo plano */}
-      <Loader
-        overlay
-        visible={submitting}
-        label="Confirmando y asegurando reserva en el sistema…"
-        size={36}
-      />
+      {/* Componente Rocket renderizado mientras se crea el payload y se envía la reserva */}
+      {submitting && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+        >
+          <div className="bg-panel border-line flex w-full max-w-sm flex-col items-center rounded-3xl border p-8 text-center shadow-2xl">
+            <Rocket
+              size="md"
+              autoLaunch
+              loop
+              interactive={false}
+              timing={{ ignitionMs: 600, ascentMs: 1400 }}
+              className="ring-primary/20 bg-canvas/60 shadow-xl ring-1"
+            />
+            <div className="mt-5 space-y-1.5">
+              <h4 className="text-ink text-lg font-bold">
+                Creando y asegurando reserva…
+              </h4>
+              <p className="text-ink-muted text-xs leading-relaxed">
+                Transmitiendo el payload al endpoint /reserve con balanceo de carga. Tus datos están seguros.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

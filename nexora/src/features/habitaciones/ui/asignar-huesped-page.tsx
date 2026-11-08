@@ -4,7 +4,6 @@ import { fadeIn } from '../../../design-tokens/motion';
 import type { RoomRow } from '../domain/habitacion-lista';
 import { buildHabitacionOcupadaModel } from '../domain/habitacion-ocupada';
 import { HabitacionCozyBackground } from './atoms/habitacion-cozy-background';
-import { AsignarHuespedModalPresentacion } from './molecules/asignar-huesped-modal-presentacion';
 import { AsignarHuespedModalFormulario } from './molecules/asignar-huesped-modal-formulario';
 import { HabitacionOcupadaModal } from './molecules/habitacion-ocupada-modal';
 import { FichaHuespedModal } from './molecules/ficha-huesped-modal';
@@ -26,7 +25,6 @@ export interface AsignarHuespedPageProps {
  * 4. Modelo (`HabitacionOcupadaModel`) y tabla con estado "OCUPADA" que bloquea la asignación.
  * - Verificación en tiempo real de estancia previa con el hook `useHabitacionStay` (GET /stay/reception/{room_id})
  * - Consulta de información de huéspedes con GET /person/{id} y visualización en el cuadro artístico
- * - Modal de presentación flotante con copywriting psicológico e información contextual
  * - Background moderno de habitación minimalista estilizada (estilo cozy) con TailwindCSS
  * - Barra flotante minimalista de navegación sin header invasivo
  */
@@ -36,7 +34,6 @@ export function AsignarHuespedPage({
   windowLandscapeSrc,
   archedWindow = true,
 }: AsignarHuespedPageProps) {
-  const [isPresentationOpen, setIsPresentationOpen] = useState(true);
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isOccupiedModalOpen, setIsOccupiedModalOpen] = useState(false);
   const [isFichaModalOpen, setIsFichaModalOpen] = useState(false);
@@ -57,16 +54,12 @@ export function AsignarHuespedPage({
           e.preventDefault();
           e.stopPropagation();
           setIsFichaModalOpen(false);
-        } else if (isPresentationOpen) {
-          e.preventDefault();
-          e.stopPropagation();
-          setIsPresentationOpen(false);
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isFormModalOpen, isOccupiedModalOpen, isFichaModalOpen, isPresentationOpen]);
+  }, [isFormModalOpen, isOccupiedModalOpen, isFichaModalOpen]);
 
   // Hook para verificar si la habitación ya cuenta con estancia y obtener la ficha de huéspedes
   const {
@@ -176,30 +169,15 @@ export function AsignarHuespedPage({
             </button>
           )}
 
-          {/* Chip informativo con botón para reabrir el modal de presentación */}
-          <button
-            type="button"
-            onClick={() => setIsPresentationOpen(true)}
-            className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-panel/85 px-4 py-2 text-xs font-bold text-ink shadow-sm backdrop-blur-md transition-all hover:border-primary/60 hover:bg-panel hover:shadow-md active:scale-95 cursor-pointer"
-            title="Ver detalles y presentación de la habitación"
-          >
+          {/* Chip informativo de la habitación */}
+          <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-panel/85 px-4 py-2 text-xs font-bold text-ink shadow-sm backdrop-blur-md">
             <span className="size-2 rounded-full bg-primary motion-reduce:animate-none" />
             <span>Habitación {room.number}</span>
             <span className="text-ink-muted">·</span>
-            <span className="font-semibold text-primary">Info</span>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              className="size-3.5 text-primary"
-              aria-hidden="true"
-            >
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 16v-4" />
-              <path d="M12 8h.01" />
-            </svg>
-          </button>
+            <span className="font-semibold text-primary">
+              {room.building.name || 'Edificio'} · Piso {room.floor}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -224,21 +202,6 @@ export function AsignarHuespedPage({
           )}
         </motion.div>
       )}
-
-      {/* Modal de presentación flotante con la información contextual del header */}
-      <AsignarHuespedModalPresentacion
-        isOpen={isPresentationOpen}
-        onClose={() => setIsPresentationOpen(false)}
-        room={room}
-        onBack={onBack}
-        onStartAssignment={() => {
-          if (hasActiveStay) {
-            setIsOccupiedModalOpen(true);
-          } else {
-            setIsFormModalOpen(true);
-          }
-        }}
-      />
 
       {/* 1. La advertencia debe mostrarse en un modal con la tabla de estado "OCUPADA" */}
       {occupiedModel && (
@@ -272,3 +235,5 @@ export function AsignarHuespedPage({
     </motion.div>
   );
 }
+
+export default AsignarHuespedPage;

@@ -2,7 +2,6 @@ import { useEffect, useState, useMemo } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
-  faBed,
   faCalendarDays,
   faUsers,
   faDollarSign,
@@ -11,9 +10,14 @@ import {
   faCircleInfo,
   faClock,
 } from '@fortawesome/free-solid-svg-icons'
-import type { StatusCodeValidationResult } from '../../../../shared/lib/status-code-validator'
+import {
+  validateStatusCode,
+  type StatusCodeValidationResult,
+} from '../../../../shared/lib/status-code-validator'
 import type { ReservaViewItem } from '../../domain/reserva-list-types'
 import { fetchReservaDetailFromApi } from '../../infrastructure/api-reserva-detail-repository'
+import { executeBalancedRequest } from '../../infrastructure/api-load-balancer'
+import { Loading } from '../../../../shared/loading'
 import { ReservaStateBadge } from '../atoms/reserva-state-badge'
 import { ReservaHuespedCard } from './reserva-huesped-card'
 import {
@@ -141,8 +145,10 @@ export function ReservaDetalleModal({
 }: ReservaDetalleModalProps) {
   const [detail, setDetail] = useState<ReservaViewItem | null>(null)
   const [loading, setLoading] = useState(false)
+  const [loadingGuests, setLoadingGuests] = useState(false)
   const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(null)
-  const [titularPersonData, setTitularPersonData] = useState<PersonDetailData | null>(null)
+  const [personsDataMap, setPersonsDataMap] = useState<Record<string, PersonDetailData>>({})
+  const [guestsBySlot, setGuestsBySlot] = useState<Record<number, PersonDetailData>>({})
   const [guestViewMode, setGuestViewMode] = useState<'stacked' | 'grid'>('stacked')
   const storeHuespedes = useHuespedesRegistradosStore((s) => s.huespedes)
 
@@ -190,17 +196,33 @@ export function ReservaDetalleModal({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, onClose])
 
-  // 3. Cargar detalle de la reserva al abrir y consultar datos del huésped titular
-  useEffect(() => {
+  // Sincronización en fase de render cuando se abre/cierra el modal o cambia la reserva seleccionada
+  const [prevIsOpen, setPrevIsOpen] = useState<boolean>(isOpen)
+  const [prevReservaId, setPrevReservaId] = useState<string | null>(reservaId)
+
+  if (isOpen !== prevIsOpen || reservaId !== prevReservaId) {
+    setPrevIsOpen(isOpen)
+    setPrevReservaId(reservaId)
     if (!isOpen || !reservaId) {
       setDetail(null)
       setFeedback(null)
-      setTitularPersonData(null)
+      setPersonsDataMap({})
+      setGuestsBySlot({})
+      setLoading(false)
+      setLoadingGuests(false)
+    } else {
+      setLoading(true)
+      setLoadingGuests(true)
+    }
+  }
+
+  // 3. Cargar detalle de la reserva al abrir y consultar datos de cada huésped mediante balanceo y validación de status
+  useEffect(() => {
+    if (!isOpen || !reservaId) {
       return
     }
 
     let isMounted = true
-    setLoading(true)
 
     fetchReservaDetailFromApi(reservaId)
       .then(async (res) => {
@@ -208,29 +230,137 @@ export function ReservaDetalleModal({
         setDetail(res.item)
         setFeedback(res.validation.message ? res.validation : null)
 
-        if (res.item?.personId) {
+        if (!res.item) {
+          if (isMounted) {
+            setLoading(false)
+            setLoadingGuests(false)
+          }
+          return
+        }
+
+        const totalGuests = Math.max(1, res.item.numberOfGuests || res.item.personIds?.length || 1)
+
+        // 1. Recolectar la lista ordenada de IDs de personas para cada slot (titular + acompañantes)
+        const slotPersonIds: (string | null)[] = []
+
+        // Slot 0: Titular
+        const titularId =
+          (Array.isArray(res.item.personIds) && res.item.personIds.length > 0
+            ? res.item.personIds[0]
+            : null) ||
+          res.item.personId ||
+          null
+        slotPersonIds.push(titularId)
+
+        // Slots 1..totalGuests - 1: Acompañantes
+        const storeCompanions = storeHuespedes.filter((h) => !h.isTitular)
+        for (let i = 1; i < totalGuests; i++) {
+          const idFromReservation = res.item.personIds?.[i]
+          const idFromStore = storeCompanions[i - 1]?.id || storeHuespedes[i]?.id
+          const idFromGuests = res.item.guests?.[i]?.id
+          const resolvedId = idFromReservation || idFromStore || idFromGuests || null
+          slotPersonIds.push(resolvedId)
+        }
+
+        // Si faltan IDs y hay más de 1 huésped, intentar obtener personas asociadas a la estadía
+        if (slotPersonIds.some((id, idx) => idx > 0 && !id)) {
           try {
-            const pRes = await api.get<PersonDetailData | PersonDetailData[]>(
-              `/person/${res.item.personId}`,
-              { validateStatus: () => true }
+            const stayPersonsRes = await executeBalancedRequest(
+              async () => {
+                try {
+                  return await api.get<PersonDetailData[]>(`/stays_person/${reservaId}`, {
+                    validateStatus: () => true,
+                  })
+                } catch {
+                  return await api.get<PersonDetailData[]>(`/stay_person/${reservaId}`, {
+                    validateStatus: () => true,
+                  })
+                }
+              },
+              { maxRetries: 1 }
             )
-            if (isMounted && pRes.status === 200 && pRes.data) {
-              const p = Array.isArray(pRes.data) ? pRes.data[0] : pRes.data
-              if (p) setTitularPersonData(p)
+            const spVal = validateStatusCode(stayPersonsRes?.status ?? 0)
+            if (spVal.isValid && Array.isArray(stayPersonsRes?.data)) {
+              stayPersonsRes.data.forEach((sp) => {
+                if (sp.id && !slotPersonIds.includes(sp.id)) {
+                  const emptyIdx = slotPersonIds.findIndex((id, idx) => idx > 0 && !id)
+                  if (emptyIdx !== -1) {
+                    slotPersonIds[emptyIdx] = sp.id
+                  } else if (slotPersonIds.length < totalGuests) {
+                    slotPersonIds.push(sp.id)
+                  }
+                }
+              })
             }
           } catch {
-            // Silencioso: se utiliza fallback con los datos de res.item
+            // Silencioso: fallback a datos en memoria o demo
           }
+        }
+
+        // 2. Consumir el endpoint /persons/${id} (con fallback a /person/${id}) por cada huésped
+        // utilizando executeBalancedRequest y validateStatusCode
+        const fetchedMap: Record<string, PersonDetailData> = {}
+        const fetchedSlotMap: Record<number, PersonDetailData> = {}
+
+        const fetchPromises = slotPersonIds.map(async (pid, slotIndex) => {
+          if (!pid || pid.trim() === '') return
+
+          try {
+            const pRes = await executeBalancedRequest(
+              async () => {
+                try {
+                  return await api.get<PersonDetailData | PersonDetailData[]>(
+                    `/persons/${pid}`,
+                    { validateStatus: () => true }
+                  )
+                } catch {
+                  return await api.get<PersonDetailData | PersonDetailData[]>(
+                    `/person/${pid}`,
+                    { validateStatus: () => true }
+                  )
+                }
+              },
+              { maxRetries: 1 }
+            )
+
+            const validation = validateStatusCode(pRes?.status ?? 0)
+            if (validation.isValid && pRes?.data) {
+              const data = Array.isArray(pRes.data) ? pRes.data[0] : pRes.data
+              if (data) {
+                fetchedMap[pid] = data
+                fetchedSlotMap[slotIndex] = data
+              }
+            }
+          } catch {
+            // Silencioso: fallback a storeHuespedes o DEMO_COMPANIONS_MAP
+          }
+        })
+
+        await Promise.allSettled(fetchPromises)
+
+        if (isMounted) {
+          setPersonsDataMap(fetchedMap)
+          setGuestsBySlot(fetchedSlotMap)
+        }
+      })
+      .catch((err) => {
+        const status = (err as { response?: { status?: number } })?.response?.status ?? 0
+        const val = validateStatusCode(status)
+        if (isMounted) {
+          setFeedback(val)
         }
       })
       .finally(() => {
-        if (isMounted) setLoading(false)
+        if (isMounted) {
+          setLoading(false)
+          setLoadingGuests(false)
+        }
       })
 
     return () => {
       isMounted = false
     }
-  }, [isOpen, reservaId])
+  }, [isOpen, reservaId, storeHuespedes])
 
   // 4. Construcción de tarjetas individuales para cada uno de los huéspedes según numberOfGuests
   const guestCards: StackedGuestCardItem[] = useMemo(() => {
@@ -239,47 +369,82 @@ export function ReservaDetalleModal({
     const cards: StackedGuestCardItem[] = []
 
     // Huésped 1: Titular
+    const titularData =
+      guestsBySlot[0] ||
+      (detail.personId ? personsDataMap[detail.personId] : null) ||
+      (detail.personIds?.[0] ? personsDataMap[detail.personIds[0]] : null)
+
+    const titularName = titularData?.name || detail.personDisplayName
+    const titularDocType = titularData?.document_type || 'CC'
+    const titularDoc = titularData?.document_number || undefined
+    const titularEmail = titularData?.email
+    const titularPhone = titularData?.phone_number
+
     cards.push({
-      id: detail.personId || 'titular',
-      title: titularPersonData?.name || detail.personDisplayName,
-      description: `Habitación: ${detail.roomDisplayName} • Titular principal`,
+      id: detail.personId || titularData?.id || 'titular',
+      title: titularName,
+      description: 'Huésped titular principal',
       bgClass: 'border-line/80 bg-panel/95 dark:bg-surface/70 text-ink',
       index: 1,
       isTitular: true,
-      name: titularPersonData?.name || detail.personDisplayName,
-      roomName: detail.roomDisplayName,
-      documentType: titularPersonData?.document_type || 'CC',
-      documentNumber: titularPersonData?.document_number || undefined,
-      email: titularPersonData?.email,
-      phoneNumber: titularPersonData?.phone_number,
+      name: titularName,
+      roomName: '',
+      documentType: titularDocType,
+      documentNumber: titularDoc,
+      email: titularEmail,
+      phoneNumber: titularPhone,
       statusLabel: 'Titular confirmado',
     })
 
     // Huéspedes 2..N: Acompañantes
     for (let i = 1; i < total; i++) {
+      const slotCompanionData = guestsBySlot[i]
+      const companionPersonId = detail.personIds?.[i]
+      const companionData =
+        slotCompanionData ||
+        (companionPersonId ? personsDataMap[companionPersonId] : null)
+
       const storeCompanion =
         storeHuespedes.filter((h) => !h.isTitular)[i - 1] || storeHuespedes[i]
       const demoCompanion = DEMO_COMPANIONS_MAP[detail.personId]?.[i - 1]
 
       const companionName =
-        storeCompanion?.name || demoCompanion?.name || `Acompañante #${i}`
+        companionData?.name ||
+        storeCompanion?.name ||
+        demoCompanion?.name ||
+        detail.guests?.[i]?.name ||
+        `Acompañante #${i}`
+
       const companionDoc =
-        storeCompanion?.document_number || demoCompanion?.document_number
+        companionData?.document_number ||
+        storeCompanion?.document_number ||
+        demoCompanion?.document_number
+
       const companionDocType =
-        storeCompanion?.document_type || demoCompanion?.document_type || 'Doc'
-      const companionEmail = storeCompanion?.email || demoCompanion?.email
+        companionData?.document_type ||
+        storeCompanion?.document_type ||
+        demoCompanion?.document_type ||
+        'Doc'
+
+      const companionEmail =
+        companionData?.email ||
+        storeCompanion?.email ||
+        demoCompanion?.email
+
       const companionPhone =
-        storeCompanion?.phone_number || demoCompanion?.phone_number
+        companionData?.phone_number ||
+        storeCompanion?.phone_number ||
+        demoCompanion?.phone_number
 
       cards.push({
-        id: storeCompanion?.id || `comp-${detail.id}-${i}`,
+        id: companionData?.id || storeCompanion?.id || `comp-${detail.id}-${i}`,
         title: companionName,
-        description: `Habitación: ${detail.roomDisplayName} • Acompañante #${i} asignado`,
+        description: `Acompañante #${i} asignado`,
         bgClass: 'border-line/80 bg-panel/95 dark:bg-surface/70 text-ink',
         index: i + 1,
         isTitular: false,
         name: companionName,
-        roomName: detail.roomDisplayName,
+        roomName: '',
         documentType: companionDocType,
         documentNumber: companionDoc,
         email: companionEmail,
@@ -289,7 +454,7 @@ export function ReservaDetalleModal({
     }
 
     return cards
-  }, [detail, titularPersonData, storeHuespedes])
+  }, [detail, personsDataMap, guestsBySlot, storeHuespedes])
 
   return (
     <AnimatePresence>
@@ -353,17 +518,22 @@ export function ReservaDetalleModal({
               </button>
             </div>
 
-            {/* Estado de carga con efecto fade in */}
+            {/* Componente Loading reutilizable mientras se consumen los endpoints de la reserva y huéspedes */}
             {loading && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.5, ease: 'easeOut' }}
-                className="flex flex-col items-center justify-center py-12 text-center"
+                className="py-12"
               >
-                <span className="size-8 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
-                <p className="mt-3 text-sm font-semibold text-ink">Consultando reserva...</p>
-                <p className="text-xs text-ink-muted">Obteniendo los datos más recientes del sistema.</p>
+                <Loading
+                  visible={loading}
+                  variant="block"
+                  size="md"
+                  label="Consultando detalle de la estadía…"
+                  description="Obteniendo información de la reserva y cargando datos de los huéspedes con balanceo preventivo…"
+                  delay={0}
+                />
               </motion.div>
             )}
 
@@ -375,22 +545,6 @@ export function ReservaDetalleModal({
                 transition={{ duration: 0.5, ease: 'easeOut' }}
                 className="mt-5 space-y-4"
               >
-                {/* Habitación asignada */}
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.5, ease: 'easeOut' }}
-                  className="rounded-2xl border border-line/70 bg-canvas/60 p-3.5"
-                >
-                  <span className="flex items-center gap-1.5 text-xs font-medium text-ink-muted">
-                    <FontAwesomeIcon icon={faBed} className="size-3 text-primary" />
-                    <span>Habitación asignada</span>
-                  </span>
-                  <p className="mt-1 font-semibold text-ink text-sm truncate">
-                    {detail.roomDisplayName}
-                  </p>
-                </motion.div>
-
                 {/* Fechas de entrada y salida con total de noches */}
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -437,7 +591,7 @@ export function ReservaDetalleModal({
                       <span>Huéspedes de la estadía</span>
                     </span>
                     <div className="flex items-center gap-2">
-                      {detail.numberOfGuests > 1 && (
+                      {detail.numberOfGuests > 1 && !loadingGuests && (
                         <div className="flex items-center rounded-lg border border-line bg-surface/60 p-0.5 text-[10px]">
                           <button
                             type="button"
@@ -471,7 +625,18 @@ export function ReservaDetalleModal({
                     </div>
                   </div>
 
-                  {guestViewMode === 'stacked' ? (
+                  {loadingGuests ? (
+                    <div className="rounded-2xl border border-line/60 bg-surface/30 p-6">
+                      <Loading
+                        visible={loadingGuests}
+                        variant="block"
+                        size="sm"
+                        label="Cargando huéspedes de la estadía…"
+                        description="Consultando /persons por cada huésped asignado mediante balanceo preventivo de carga…"
+                        delay={0}
+                      />
+                    </div>
+                  ) : guestViewMode === 'stacked' ? (
                     <ReservaHuespedesStackedCards cards={guestCards} />
                   ) : (
                     <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">

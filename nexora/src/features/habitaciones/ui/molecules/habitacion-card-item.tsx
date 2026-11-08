@@ -1,5 +1,15 @@
 import { motion, type Variants } from 'motion/react';
-import type { RoomRow } from '../../domain/habitacion-lista';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+  faBuilding,
+  faBed,
+  faTags,
+  faEye,
+  faCheck,
+  faRotateRight,
+  faTriangleExclamation,
+} from '@fortawesome/free-solid-svg-icons';
+import { type RoomRow, isHabitacionOcupada } from '../../domain/habitacion-lista';
 import { HabitacionStatusBadge } from './habitacion-status-badge';
 
 export const CARD_ITEM_VARIANTS: Variants = {
@@ -76,7 +86,16 @@ export function HabitacionCardItem({
   onOpenRoomDetail,
   onSelectHabitacion,
 }: HabitacionCardItemProps) {
+  const isOccupied = isHabitacionOcupada(room.status);
+
   const handleRoomClick = () => {
+    if (isOccupied) {
+      // Bloquear navegación a la vista de asignación de huéspedes si la habitación está ocupada
+      if (onOpenRoomDetail) {
+        onOpenRoomDetail(room);
+      }
+      return;
+    }
     if (onSelectHabitacion) {
       onSelectHabitacion(room);
     } else if (onOpenRoomDetail) {
@@ -92,41 +111,63 @@ export function HabitacionCardItem({
         if (target.closest('button') || target.closest('a')) return;
         handleRoomClick();
       }}
-      className="group border-line bg-panel hover:border-primary/30 relative cursor-pointer rounded-2xl border p-4.5 shadow-2xs transition-all hover:shadow-sm"
+      className={`group border-line bg-panel relative rounded-2xl border p-4.5 shadow-2xs transition-all ${
+        isOccupied
+          ? 'cursor-default'
+          : 'hover:border-primary/30 cursor-pointer hover:shadow-sm'
+      }`}
     >
       {/* Header: Número y Estado */}
       <div className="flex items-start justify-between gap-3">
         <button
           type="button"
           onClick={handleRoomClick}
-          className="group/num focus-visible:ring-primary/40 flex cursor-pointer items-center gap-2.5 rounded-xl text-left focus-visible:ring-2 focus-visible:outline-none"
-          title="Haz clic para asignar huésped a esta habitación"
+          className={`flex items-center gap-2.5 rounded-xl text-left focus-visible:outline-none ${
+            isOccupied
+              ? 'cursor-default'
+              : 'group/num focus-visible:ring-primary/40 cursor-pointer focus-visible:ring-2'
+          }`}
+          title={
+            isOccupied
+              ? `Habitación ${room.number} (Ocupada)`
+              : 'Haz clic para asignar huésped a esta habitación'
+          }
         >
           <span
             className={
-              hasTariff
-                ? 'relative grid size-9.5 shrink-0 place-items-center rounded-xl border border-emerald-500/35 bg-emerald-500/15 text-sm font-bold text-emerald-700 shadow-xs transition-colors group-hover/num:bg-emerald-600 group-hover/num:text-white dark:text-emerald-400'
-                : 'bg-primary/10 text-primary group-hover/num:bg-primary relative grid size-9.5 shrink-0 place-items-center rounded-xl text-sm font-bold shadow-xs transition-colors group-hover/num:text-white'
+              isOccupied
+                ? 'border-line/70 bg-canvas/80 text-ink-muted relative grid size-9.5 shrink-0 place-items-center rounded-xl text-sm font-bold shadow-2xs'
+                : hasTariff
+                  ? 'relative grid size-9.5 shrink-0 place-items-center rounded-xl border border-emerald-500/35 bg-emerald-500/15 text-sm font-bold text-emerald-700 shadow-xs transition-colors group-hover/num:bg-emerald-600 group-hover/num:text-white dark:text-emerald-400'
+                  : 'bg-primary/10 text-primary group-hover/num:bg-primary relative grid size-9.5 shrink-0 place-items-center rounded-xl text-sm font-bold shadow-xs transition-colors group-hover/num:text-white'
             }
             title={
-              hasTariff
-                ? `Habitación ${room.number} con tarifa aplicada: ${tariffName || 'Tarifa activa'}`
-                : `Habitación ${room.number}`
+              isOccupied
+                ? `Habitación ${room.number} (Ocupada)`
+                : hasTariff
+                  ? `Habitación ${room.number} con tarifa aplicada: ${tariffName || 'Tarifa activa'}`
+                  : `Habitación ${room.number}`
             }
           >
             {room.number}
-            {hasTariff && (
+            {hasTariff && !isOccupied && (
               <span
                 className="absolute -top-1 -right-1 grid size-3.5 place-items-center rounded-full bg-emerald-600 text-[8px] font-black text-white shadow-xs"
                 title="Tarifa aplicada"
               >
-                ✓
+                <FontAwesomeIcon icon={faCheck} className="size-2 text-white" />
               </span>
             )}
           </span>
           <div>
-            <span className="text-ink-muted group-hover/num:text-primary text-[11px] font-medium transition-colors">
-              Piso {room.floor} · Asignar huésped
+            <span
+              className={`text-[11px] font-medium transition-colors ${
+                isOccupied
+                  ? 'text-rose-600 dark:text-rose-400 font-semibold'
+                  : 'text-ink-muted group-hover/num:text-primary'
+              }`}
+            >
+              Piso {room.floor} {isOccupied ? '· Ocupada' : '· Asignar huésped'}
             </span>
             <div className="flex flex-wrap items-center gap-1.5">
               {/* Identificador de tarifa aplicada en el número de la habitación */}
@@ -165,16 +206,10 @@ export function HabitacionCardItem({
         {/* Edificio */}
         <div className="flex items-center justify-between gap-2">
           <span className="text-ink-muted flex items-center gap-1.5">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
+            <FontAwesomeIcon
+              icon={faBuilding}
               className="text-secondary size-3.5"
-            >
-              <path d="M3 21h18" />
-              <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16" />
-            </svg>
+            />
             Edificio:
           </span>
           <div className="text-right">
@@ -189,7 +224,8 @@ export function HabitacionCardItem({
                 className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-amber-600 hover:underline dark:text-amber-400"
                 title="Pulsa para reintentar cargar el edificio"
               >
-                <span>⚠️ No disp.</span>
+                <FontAwesomeIcon icon={faTriangleExclamation} className="size-3 text-amber-500" />
+                <span>No disp.</span>
                 <span className="underline">Reintentar</span>
               </button>
             ) : (
@@ -203,7 +239,7 @@ export function HabitacionCardItem({
                 title="Haz clic para inspeccionar los detalles del edificio"
               >
                 <span>{room.building.name}</span>
-                <span className="text-primary/70 text-[10px]">🔍</span>
+                <FontAwesomeIcon icon={faEye} className="text-primary/70 size-3" />
               </button>
             )}
           </div>
@@ -212,18 +248,10 @@ export function HabitacionCardItem({
         {/* Tipo de Cama */}
         <div className="flex items-center justify-between gap-2">
           <span className="text-ink-muted flex items-center gap-1.5">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
+            <FontAwesomeIcon
+              icon={faBed}
               className="text-primary size-3.5"
-            >
-              <path d="M2 4v16" />
-              <path d="M2 8h18a2 2 0 0 1 2 2v10" />
-              <path d="M2 17h20" />
-              <path d="M6 8v9" />
-            </svg>
+            />
             Cama:
           </span>
           <div className="text-right">
@@ -239,7 +267,8 @@ export function HabitacionCardItem({
                   className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-semibold text-amber-600 hover:underline dark:text-amber-400"
                   title="Pulsa para ver el detalle de la cama"
                 >
-                  <span>⚠️ No disp.</span>
+                  <FontAwesomeIcon icon={faTriangleExclamation} className="size-3 text-amber-500" />
+                  <span>No disp.</span>
                 </button>
                 <button
                   type="button"
@@ -265,7 +294,7 @@ export function HabitacionCardItem({
                     {room.bed.capacityPeople}p
                   </span>
                 ) : null}
-                <span className="text-primary/70 text-[10px]">🔍</span>
+                <FontAwesomeIcon icon={faEye} className="text-primary/70 size-3" />
               </button>
             )}
           </div>
@@ -274,19 +303,14 @@ export function HabitacionCardItem({
         {/* Tarifas disponibles */}
         <div className="border-line/40 flex items-center justify-between gap-2 border-t pt-2">
           <span className="text-ink-muted flex items-center gap-1.5">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
+            <FontAwesomeIcon
+              icon={faTags}
               className={
                 hasTariff
                   ? 'size-3.5 text-emerald-600 dark:text-emerald-400'
                   : 'text-secondary size-3.5'
               }
-            >
-              <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-            </svg>
+            />
             Tarifas:
           </span>
           <div className="text-right">
@@ -314,19 +338,26 @@ export function HabitacionCardItem({
                   <span className="max-w-[120px] truncate">
                     {tariffName || 'Tarifa aplicada'}
                   </span>
-                  <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                    ✓
-                  </span>
+                  <FontAwesomeIcon
+                    icon={faEye}
+                    className="size-3 text-emerald-600 dark:text-emerald-400"
+                  />
                 </>
               ) : isVerifying ? (
                 <>
-                  <span className="size-1.5 animate-ping rounded-full bg-amber-500" />
+                  <FontAwesomeIcon
+                    icon={faRotateRight}
+                    className="size-3 animate-spin text-amber-500"
+                  />
                   <span className="text-ink-muted">Verificando…</span>
                 </>
               ) : (
                 <>
                   <span>Sin tarifa</span>
-                  <span className="text-primary text-[10px] font-bold">➕</span>
+                  <FontAwesomeIcon
+                    icon={faEye}
+                    className="size-3 text-primary/70"
+                  />
                 </>
               )}
             </button>

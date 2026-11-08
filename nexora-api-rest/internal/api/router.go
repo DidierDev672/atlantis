@@ -50,8 +50,10 @@ import (
 	"nexora-api-rest/internal/guestattendant"
 	"nexora-api-rest/internal/itemmenu"
 	"nexora-api-rest/internal/menucategory"
+	"nexora-api-rest/internal/rolelimit"
 	"nexora-api-rest/internal/serviceassignment"
 	"nexora-api-rest/internal/servicerequest"
+	"nexora-api-rest/internal/userlimit"
 	"nexora-api-rest/usecase"
 )
 
@@ -59,7 +61,7 @@ import (
 // /headquarters, /sub-headquarters, /users, /permission-assignment, /login,
 // /room-types, /rooms, /building, /reserve, /stays, /rates, /room_tariffs,
 // /menu-category, /item-menu, /service-request, /service-assignments and /guest-attendant vertical slices.
-func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.HeadquarterRepository, subHeadquarterRepo domain.SubHeadquarterRepository, paletteRepo domain.PaletteRepository, userRepo domain.UserRepository, permissionAssignmentRepo domain.PermissionAssignmentRepository, roomTypeRepo domain.RoomTypeRepository, roomRepo domain.RoomRepository, buildingRepo domain.BuildingRepository, bedTypeRepo domain.BedTypeRepository, bedRepo domain.BedRepository, personRepo domain.PersonRepository, reserveRepo domain.ReserveRepository, stayRepo domain.StayRepository, rateRepo domain.RateRepository, roomTariffRepo domain.RoomTariffRepository, auditRepo domain.AuditRepository, moduleRepo externaldomain.ModuleRepository, resourceRepo externaldomain.ResourceRepository, permissionResourceRepo externaldomain.PermissionResourceRepository, menuCategoryRepo menucategory.Repository, itemMenuRepo itemmenu.Repository, serviceRequestRepo servicerequest.Repository, serviceAssignmentRepo serviceassignment.Repository, guestAttendantRepo guestattendant.Repository, rolePermissionRepo externaldomain.RolePermissionRepository, jwtSecret string) http.Handler {
+func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.HeadquarterRepository, subHeadquarterRepo domain.SubHeadquarterRepository, paletteRepo domain.PaletteRepository, userRepo domain.UserRepository, permissionAssignmentRepo domain.PermissionAssignmentRepository, roomTypeRepo domain.RoomTypeRepository, roomRepo domain.RoomRepository, buildingRepo domain.BuildingRepository, bedTypeRepo domain.BedTypeRepository, bedRepo domain.BedRepository, personRepo domain.PersonRepository, reserveRepo domain.ReserveRepository, stayRepo domain.StayRepository, rateRepo domain.RateRepository, roomTariffRepo domain.RoomTariffRepository, auditRepo domain.AuditRepository, moduleRepo externaldomain.ModuleRepository, resourceRepo externaldomain.ResourceRepository, permissionResourceRepo externaldomain.PermissionResourceRepository, menuCategoryRepo menucategory.Repository, itemMenuRepo itemmenu.Repository, serviceRequestRepo servicerequest.Repository, serviceAssignmentRepo serviceassignment.Repository, guestAttendantRepo guestattendant.Repository, rolePermissionRepo externaldomain.RolePermissionRepository, roleLimitRepo rolelimit.Repository, userLimitRepo userlimit.Repository, jwtSecret string) http.Handler {
 	roleHandler := &rolehttp.Handler{
 		Creator: roleapp.NewCreateRoleUseCase(roleRepo, ids.RandomID{}),
 		Lister:  roleapp.NewListRolesUseCase(roleRepo),
@@ -164,11 +166,12 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 	}
 
 	personHandler := &personhttp.Handler{
-		Creator: personapp.NewCreatePersonUseCase(personRepo, ids.RandomID{}),
-		Lister:  personapp.NewListPersonsUseCase(personRepo),
-		Getter:  personapp.NewGetPersonUseCase(personRepo),
-		Updater: personapp.NewUpdatePersonUseCase(personRepo),
-		Deleter: personapp.NewDeletePersonUseCase(personRepo),
+		Creator:          personapp.NewCreatePersonUseCase(personRepo, ids.RandomID{}),
+		Lister:           personapp.NewListPersonsUseCase(personRepo),
+		Getter:           personapp.NewGetPersonUseCase(personRepo),
+		ByDocumentGetter: personapp.NewGetPersonByDocumentUseCase(personRepo),
+		Updater:          personapp.NewUpdatePersonUseCase(personRepo),
+		Deleter:          personapp.NewDeletePersonUseCase(personRepo),
 	}
 
 	reserveHandler := &reservehttp.Handler{
@@ -180,7 +183,7 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 	}
 
 	stayHandler := &stayhttp.Handler{
-		Creator:         stayapp.NewCreateStayUseCase(stayRepo, ids.RandomID{}),
+		Creator:         stayapp.NewCreateStayUseCase(stayRepo, reserveRepo, ids.RandomID{}),
 		Lister:          stayapp.NewListStaysUseCase(stayRepo),
 		Getter:          stayapp.NewGetStayUseCase(stayRepo),
 		Updater:         stayapp.NewUpdateStayUseCase(stayRepo),
@@ -219,6 +222,8 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 	resourceHTTP := handler.NewResourceHTTP(usecase.NewResourceService(resourceRepo))
 	permissionResourceHTTP := handler.NewPermissionResourceHTTP(usecase.NewPermissionResourceService(permissionResourceRepo))
 	rolePermissionHTTP := handler.NewRolePermissionHTTP(usecase.NewRolePermissionService(rolePermissionRepo))
+	roleLimitHTTP := rolelimit.NewHandler(rolelimit.NewUseCase(roleLimitRepo, nil))
+	userLimitHTTP := userlimit.NewHandler(userlimit.NewUseCase(userLimitRepo, nil))
 	menuCategoryHTTP := menucategory.NewHandler(menucategory.NewUseCase(menuCategoryRepo, nil, nil))
 	itemMenuHTTP := itemmenu.NewHandler(itemmenu.NewUseCase(itemMenuRepo, nil, nil))
 	serviceRequestHTTP := servicerequest.NewHandler(servicerequest.NewUseCase(serviceRequestRepo, nil, nil))
@@ -306,6 +311,8 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 
 	// Persons: plural is the canonical form (matches /beds, /users, etc.);
 	// singular alias is kept for backwards compatibility.
+	mux.HandleFunc("GET /persons/by-document", personHandler.ByDocument)
+	mux.HandleFunc("GET /person/by-document", personHandler.ByDocument)
 	mux.HandleFunc("POST /persons", personHandler.Create)
 	mux.HandleFunc("POST /person", personHandler.Create)
 	mux.HandleFunc("GET /persons", personHandler.List)
@@ -391,6 +398,8 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 	resourceHTTP.Register(mux)
 	permissionResourceHTTP.Register(mux)
 	rolePermissionHTTP.Register(mux)
+	roleLimitHTTP.Register(mux)
+	userLimitHTTP.Register(mux)
 	menuCategoryHTTP.Register(mux)
 	itemMenuHTTP.Register(mux)
 	serviceRequestHTTP.Register(mux)

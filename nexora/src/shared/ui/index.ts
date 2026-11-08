@@ -3,3 +3,6 @@ export * from './Textarea'
 export * from './InfiniteScroll'
 export * from './ResourceCard'
 export * from './LazyAnimatedWrapper'
+export * from '../mars-planet'
+export * from '../earth-planet'
+

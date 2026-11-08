@@ -1,6 +1,35 @@
 import { useState } from 'react';
 import { motion, type Variants } from 'motion/react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+  faBuilding,
+  faBed,
+  faTags,
+  faCheck,
+  faPlus,
+  faRotateRight,
+  faTriangleExclamation,
+} from '@fortawesome/free-solid-svg-icons';
 import { fadeIn } from '../../../../design-tokens/motion';
+import {
+  InfiniteScroll,
+  InfiniteScrollEnd,
+} from '../../../../shared/ui/InfiniteScroll';
+import { EdificioDetalleModal } from '../../../edificios/ui/organisms/edificio-detalle-modal';
+import { TipoCamaDetalleModal } from './tipo-cama-detalle-modal';
+import { TarifasModal } from './tarifas-modal';
+import { HabitacionDetalleModal } from './habitacion-detalle-modal';
+import { type RoomRow, isHabitacionOcupada } from '../../domain/habitacion-lista';
+import { useHabitacionesLista } from '../../application/use-habitaciones-lista';
+import { HabitacionCardItem } from '../molecules/habitacion-card-item';
+import { HabitacionesFiltrosBar } from '../molecules/habitaciones-filtros-bar';
+import { HabitacionStatusBadge } from '../molecules/habitacion-status-badge';
+import {
+  HabitacionCardsSkeleton,
+  HabitacionTableSkeletonRows,
+} from '../molecules/habitacion-table-skeleton';
+import { useVerificarHabitacionesTarifas } from '../../application/use-verificar-habitaciones-tarifas';
+import type { HabitacionesViewMode } from '../molecules/habitaciones-view-mode-toggle';
 
 /**
  * Variantes de Stagger Reveal (Revelado Escalonado) en Framer Motion
@@ -36,25 +65,6 @@ export const STAGGER_ROW_VARIANTS: Variants = {
     },
   },
 };
-import {
-  InfiniteScroll,
-  InfiniteScrollEnd,
-} from '../../../../shared/ui/InfiniteScroll';
-import { EdificioDetalleModal } from '../../../edificios/ui/organisms/edificio-detalle-modal';
-import { TipoCamaDetalleModal } from './tipo-cama-detalle-modal';
-import { TarifasModal } from './tarifas-modal';
-import { HabitacionDetalleModal } from './habitacion-detalle-modal';
-import type { RoomRow } from '../../domain/habitacion-lista';
-import { useHabitacionesLista } from '../../application/use-habitaciones-lista';
-import { HabitacionCardItem } from '../molecules/habitacion-card-item';
-import { HabitacionesFiltrosBar } from '../molecules/habitaciones-filtros-bar';
-import { HabitacionStatusBadge } from '../molecules/habitacion-status-badge';
-import {
-  HabitacionCardsSkeleton,
-  HabitacionTableSkeletonRows,
-} from '../molecules/habitacion-table-skeleton';
-import { useVerificarHabitacionesTarifas } from '../../application/use-verificar-habitaciones-tarifas';
-import type { HabitacionesViewMode } from '../molecules/habitaciones-view-mode-toggle';
 
 interface HabitacionesListaTableProps {
   onNewHabitacion?: () => void;
@@ -221,15 +231,30 @@ export function HabitacionesListaTable({
             ) : (
               <div className="border-line overflow-x-auto rounded-xl border">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-canvas border-line text-ink-muted border-b font-semibold tracking-wider uppercase">
+                  <thead className="bg-canvas border-line text-ink-muted border-b font-semibold tracking-wider uppercase text-[11px]">
                     <tr>
                       <th className="px-5 py-3.5 sm:px-6">Número</th>
                       <th className="px-4 py-3.5">Piso</th>
-                      <th className="px-4 py-3.5">Edificio</th>
-                      <th className="px-4 py-3.5">Tipo de cama</th>
+                      <th className="px-4 py-3.5">
+                        <span className="inline-flex items-center gap-1.5">
+                          <FontAwesomeIcon icon={faBuilding} className="size-3 text-ink-muted/70" />
+                          <span>Edificio</span>
+                        </span>
+                      </th>
+                      <th className="px-4 py-3.5">
+                        <span className="inline-flex items-center gap-1.5">
+                          <FontAwesomeIcon icon={faBed} className="size-3 text-ink-muted/70" />
+                          <span>Tipo de habitación</span>
+                        </span>
+                      </th>
                       <th className="px-4 py-3.5">Estado</th>
                       <th className="px-4 py-3.5">Precio</th>
-                      <th className="px-4 py-3.5">Tarifas</th>
+                      <th className="px-4 py-3.5">
+                        <span className="inline-flex items-center gap-1.5">
+                          <FontAwesomeIcon icon={faTags} className="size-3 text-ink-muted/70" />
+                          <span>Tarifas</span>
+                        </span>
+                      </th>
                       <th className="px-4 py-3.5 text-right">Actualizado</th>
                     </tr>
                   </thead>
@@ -310,10 +335,16 @@ export function HabitacionesListaTable({
                       Piso
                     </th>
                     <th scope="col" className="px-4 py-3.5">
-                      Edificio
+                      <span className="inline-flex items-center gap-1.5">
+                        <FontAwesomeIcon icon={faBuilding} className="size-3 text-ink-muted/70" />
+                        <span>Edificio</span>
+                      </span>
                     </th>
                     <th scope="col" className="px-4 py-3.5">
-                      Tipo de cama
+                      <span className="inline-flex items-center gap-1.5">
+                        <FontAwesomeIcon icon={faBed} className="size-3 text-ink-muted/70" />
+                        <span>Tipo de habitación</span>
+                      </span>
                     </th>
                     <th scope="col" className="px-4 py-3.5">
                       Estado
@@ -322,7 +353,10 @@ export function HabitacionesListaTable({
                       Precio
                     </th>
                     <th scope="col" className="px-4 py-3.5">
-                      Tarifas
+                      <span className="inline-flex items-center gap-1.5">
+                        <FontAwesomeIcon icon={faTags} className="size-3 text-ink-muted/70" />
+                        <span>Tarifas</span>
+                      </span>
                     </th>
                     <th scope="col" className="px-4 py-3.5 text-right">
                       Actualizado
@@ -343,27 +377,47 @@ export function HabitacionesListaTable({
                       onClick={(e) => {
                         const target = e.target as HTMLElement;
                         if (target.closest('button') || target.closest('a')) return;
+                        if (isHabitacionOcupada(row.status)) {
+                          setSelectedRoomForDetail(row);
+                          return;
+                        }
                         if (onSelectHabitacion) {
                           onSelectHabitacion(row);
                         } else {
                           setSelectedRoomForDetail(row);
                         }
                       }}
-                      className="group hover:bg-canvas/70 transition-colors cursor-pointer"
+                      className={
+                        isHabitacionOcupada(row.status)
+                          ? 'group hover:bg-canvas/40 transition-colors'
+                          : 'group hover:bg-canvas/70 transition-colors cursor-pointer'
+                      }
                     >
                       {/* 1. NÚMERO */}
                       <td className="px-5 py-3.5 whitespace-nowrap sm:px-6">
                         <button
                           type="button"
                           onClick={() => {
+                            if (isHabitacionOcupada(row.status)) {
+                              setSelectedRoomForDetail(row);
+                              return;
+                            }
                             if (onSelectHabitacion) {
                               onSelectHabitacion(row);
                             } else {
                               setSelectedRoomForDetail(row);
                             }
                           }}
-                          className="group/num flex items-center gap-3 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-xl"
-                          title="Haz clic para asignar huésped a esta habitación"
+                          className={
+                            isHabitacionOcupada(row.status)
+                              ? 'flex items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-xl'
+                              : 'group/num flex items-center gap-3 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-xl'
+                          }
+                          title={
+                            isHabitacionOcupada(row.status)
+                              ? `Habitación ${row.number} (Ocupada - no disponible para asignación)`
+                              : 'Haz clic para asignar huésped a esta habitación'
+                          }
                         >
                           <span
                             className={
@@ -383,7 +437,7 @@ export function HabitacionesListaTable({
                                 className="absolute -top-1 -right-1 grid size-3.5 place-items-center rounded-full bg-emerald-600 text-[8px] font-black text-white shadow-xs"
                                 title="Tarifa aplicada"
                               >
-                                ✓
+                                <FontAwesomeIcon icon={faCheck} className="size-2 text-white" />
                               </span>
                             )}
                           </span>
@@ -445,18 +499,23 @@ export function HabitacionesListaTable({
                           <span className="bg-line/60 inline-block h-4 w-24 animate-pulse rounded" />
                         ) : row.building.error ? (
                           <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
-                            <span title="No se pudo obtener información del edificio">
-                              ⚠️ No disponible
+                            <span
+                              className="inline-flex items-center gap-1 text-xs"
+                              title="No se pudo obtener información del edificio"
+                            >
+                              <FontAwesomeIcon icon={faTriangleExclamation} className="size-3 text-amber-500" />
+                              <span>No disponible</span>
                             </span>
                             <button
                               type="button"
                               onClick={() =>
                                 row.buildingId && retryBuilding(row.buildingId)
                               }
-                              className="text-[11px] font-semibold underline hover:text-amber-700"
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold underline hover:text-amber-700 cursor-pointer"
                               title="Reintentar consulta de este edificio"
                             >
-                              Reintentar
+                              <FontAwesomeIcon icon={faRotateRight} className="size-2.5" />
+                              <span>Reintentar</span>
                             </button>
                           </div>
                         ) : (
@@ -477,25 +536,7 @@ export function HabitacionesListaTable({
                             title="Haz clic para ver la ficha detallada del edificio"
                           >
                             <span className="bg-primary/10 text-primary group-hover/bldg:bg-primary grid size-7 shrink-0 place-items-center rounded-lg shadow-2xs transition-colors group-hover/bldg:text-white">
-                              <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                className="size-3.5"
-                                aria-hidden="true"
-                              >
-                                <path d="M3 21h18" />
-                                <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16" />
-                                <path d="M9 9h1" />
-                                <path d="M9 13h1" />
-                                <path d="M9 17h1" />
-                                <path d="M14 9h1" />
-                                <path d="M14 13h1" />
-                                <path d="M14 17h1" />
-                              </svg>
+                              <FontAwesomeIcon icon={faBuilding} className="size-3.5" />
                             </span>
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
@@ -508,7 +549,7 @@ export function HabitacionesListaTable({
                         )}
                       </td>
 
-                      {/* 4. TIPO DE CAMA */}
+                      {/* 4. TIPO DE HABITACIÓN */}
                       <td className="px-4 py-3.5 whitespace-nowrap">
                         {row.bed.loading ? (
                           <span className="bg-line/60 inline-block h-4 w-28 animate-pulse rounded" />
@@ -526,20 +567,22 @@ export function HabitacionesListaTable({
                                   },
                                 })
                               }
-                              className="cursor-pointer text-[11px] font-semibold underline hover:text-amber-700"
-                              title="Haz clic para ver los detalles del tipo de cama"
+                              className="inline-flex items-center gap-1 cursor-pointer text-[11px] font-semibold underline hover:text-amber-700"
+                              title="Haz clic para ver los detalles del tipo de habitación"
                             >
-                              ⚠️ No disponible
+                              <FontAwesomeIcon icon={faTriangleExclamation} className="size-3 text-amber-500" />
+                              <span>No disponible</span>
                             </button>
                             <button
                               type="button"
                               onClick={() =>
                                 row.roomTypesId && retryBed(row.roomTypesId)
                               }
-                              className="cursor-pointer text-[11px] font-semibold underline hover:text-amber-700"
-                              title="Reintentar consulta de esta cama"
+                              className="inline-flex items-center gap-1 cursor-pointer text-[11px] font-semibold underline hover:text-amber-700"
+                              title="Reintentar consulta de esta habitación"
                             >
-                              Reintentar
+                              <FontAwesomeIcon icon={faRotateRight} className="size-2.5" />
+                              <span>Reintentar</span>
                             </button>
                           </div>
                         ) : (
@@ -556,24 +599,10 @@ export function HabitacionesListaTable({
                               })
                             }
                             className="group/bed border-line/40 bg-canvas/60 hover:border-primary/40 hover:bg-primary/10 focus-visible:ring-primary/40 flex cursor-pointer items-center gap-2.5 rounded-xl border px-2.5 py-1.5 text-left transition-all hover:shadow-2xs focus-visible:ring-2 focus-visible:outline-none"
-                            title="Haz clic para ver la información del tipo de cama"
+                            title="Haz clic para ver la información del tipo de habitación"
                           >
                             <span className="bg-primary/10 text-primary group-hover/bed:bg-primary grid size-7 shrink-0 place-items-center rounded-lg shadow-2xs transition-colors group-hover/bed:text-white">
-                              <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                className="size-3.5"
-                                aria-hidden="true"
-                              >
-                                <path d="M2 4v16" />
-                                <path d="M2 8h18a2 2 0 0 1 2 2v10" />
-                                <path d="M2 17h20" />
-                                <path d="M6 8v9" />
-                              </svg>
+                              <FontAwesomeIcon icon={faBed} className="size-3.5" />
                             </span>
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
@@ -641,16 +670,19 @@ export function HabitacionesListaTable({
                                 rateId: getRateId(row.id),
                               })
                             }
-                            className="group/rate border-emerald-500/40 bg-emerald-500/10 dark:border-emerald-400/30 dark:bg-emerald-500/20 flex cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left transition-all hover:bg-emerald-500/20 hover:shadow-2xs focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:outline-none"
+                            className="group/rate border-emerald-500/40 bg-emerald-500/10 dark:border-emerald-400/30 dark:bg-emerald-500/20 flex cursor-pointer items-center gap-2.5 rounded-xl border px-2.5 py-1.5 text-left transition-all hover:bg-emerald-500/20 hover:shadow-2xs focus-visible:ring-2 focus-visible:ring-emerald-500/40 focus-visible:outline-none"
                             title={`Tarifa verificada y aplicada: ${getTariffName(row.id) || 'Tarifa activa'}. Haz clic para gestionar o cambiar tarifa.`}
                           >
+                            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-emerald-500/20 text-emerald-700 shadow-2xs transition-colors group-hover/rate:bg-emerald-600 group-hover/rate:text-white dark:bg-emerald-500/30 dark:text-emerald-300">
+                              <FontAwesomeIcon icon={faTags} className="size-3.5" />
+                            </span>
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
                                 <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                 <span className="text-emerald-700 dark:text-emerald-300 text-xs font-bold truncate max-w-[130px]">
                                   {getTariffName(row.id) || 'Tarifa aplicada'}
                                 </span>
-                                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">✓</span>
+                                <FontAwesomeIcon icon={faCheck} className="size-2.5 text-emerald-600 dark:text-emerald-400 font-bold" />
                               </div>
                               <span className="text-emerald-700/80 dark:text-emerald-300/80 block text-[11px] font-medium">
                                 {getTariffPrice(row.id) != null
@@ -661,14 +693,19 @@ export function HabitacionesListaTable({
                           </button>
                         ) : isVerifying ? (
                           <div
-                            className="border-line/40 bg-canvas/60 inline-flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-ink-muted text-xs shadow-2xs"
+                            className="border-line/40 bg-canvas/60 inline-flex items-center gap-2.5 rounded-xl border px-2.5 py-1.5 text-ink-muted text-xs shadow-2xs"
                             title="Consultando y verificando tarifa con el servidor..."
                           >
-                            <span className="size-2 rounded-full bg-amber-500 animate-ping" />
+                            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-amber-500/15 text-amber-600 dark:text-amber-400 shadow-2xs">
+                              <FontAwesomeIcon icon={faTags} className="size-3.5 animate-pulse" />
+                            </span>
                             <div className="min-w-0">
-                              <span className="text-ink-muted block text-xs font-semibold">
-                                Verificando…
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="size-1.5 rounded-full bg-amber-500 animate-ping" />
+                                <span className="text-ink-muted block text-xs font-semibold">
+                                  Verificando…
+                                </span>
+                              </div>
                               <span className="text-[10px] text-ink-muted/80 block">
                                 Consultando
                               </span>
@@ -686,16 +723,19 @@ export function HabitacionesListaTable({
                                 rateId: null,
                               })
                             }
-                            className="group/rate border-line/60 bg-canvas/60 hover:border-primary/40 hover:bg-primary/5 flex cursor-pointer items-center gap-2 rounded-xl border px-2.5 py-1.5 text-left transition-all hover:shadow-2xs focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none"
+                            className="group/rate border-line/60 bg-canvas/60 hover:border-primary/40 hover:bg-primary/5 flex cursor-pointer items-center gap-2.5 rounded-xl border px-2.5 py-1.5 text-left transition-all hover:shadow-2xs focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none"
                             title="Habitación sin tarifa aplicada. Haz clic para asignar una tarifa."
                           >
+                            <span className="bg-primary/10 text-primary group-hover/rate:bg-primary grid size-7 shrink-0 place-items-center rounded-lg shadow-2xs transition-colors group-hover/rate:text-white">
+                              <FontAwesomeIcon icon={faTags} className="size-3.5" />
+                            </span>
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
                                 <span className="size-1.5 rounded-full bg-ink-muted/50" />
                                 <span className="text-ink text-xs font-semibold transition-colors group-hover/rate:text-primary">
                                   Sin tarifa
                                 </span>
-                                <span className="text-[11px] text-ink-muted group-hover/rate:text-primary">➕</span>
+                                <FontAwesomeIcon icon={faPlus} className="size-2.5 text-ink-muted group-hover/rate:text-primary transition-colors" />
                               </div>
                               <span className="text-ink-muted block text-[11px] group-hover/rate:text-primary/80">
                                 Asignar tarifa
@@ -742,13 +782,12 @@ export function HabitacionesListaTable({
                   onRetryBuilding={retryBuilding}
                   onRetryBed={retryBed}
                   onOpenRoomDetail={(r) => {
-                    if (onSelectHabitacion) {
-                      onSelectHabitacion(r);
-                    } else {
-                      setSelectedRoomForDetail(r);
-                    }
+                    setSelectedRoomForDetail(r);
                   }}
-                  onSelectHabitacion={onSelectHabitacion}
+                  onSelectHabitacion={(r) => {
+                    if (isHabitacionOcupada(r.status)) return;
+                    onSelectHabitacion?.(r);
+                  }}
                   onOpenBuilding={(id, summary) =>
                     setSelectedBuilding({
                       id,

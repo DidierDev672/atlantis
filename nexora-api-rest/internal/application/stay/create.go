@@ -9,6 +9,7 @@ import (
 )
 
 // CreateInput contains the parameters needed to create a new stay.
+// RoomID is optional: if omitted, it is automatically resolved from the reservation.
 type CreateInput struct {
 	RoomID          domain.RoomID
 	ReservationID   domain.ReserveID
@@ -24,15 +25,17 @@ type CreateInput struct {
 
 // CreateStayUseCase handles the creation of a stay (Single Responsibility).
 type CreateStayUseCase struct {
-	repo       domain.StayRepository
-	idProvider IDProvider
+	repo          domain.StayRepository
+	reserveFinder ReserveFinder
+	idProvider    IDProvider
 }
 
 // NewCreateStayUseCase constructs the use case with its dependencies (DIP).
-func NewCreateStayUseCase(repo domain.StayRepository, idProvider IDProvider) *CreateStayUseCase {
+func NewCreateStayUseCase(repo domain.StayRepository, reserveFinder ReserveFinder, idProvider IDProvider) *CreateStayUseCase {
 	return &CreateStayUseCase{
-		repo:       repo,
-		idProvider: idProvider,
+		repo:          repo,
+		reserveFinder: reserveFinder,
+		idProvider:    idProvider,
 	}
 }
 
@@ -52,9 +55,23 @@ func (uc *CreateStayUseCase) Create(ctx context.Context, in CreateInput) (domain
 		status = parsedStatus
 	}
 
+	roomID := in.RoomID
+	if roomID == "" {
+		if in.ReservationID == "" {
+			return domain.Stay{}, domain.ErrInvalidStayReservationID
+		}
+		if uc.reserveFinder != nil {
+			reserve, err := uc.reserveFinder.FindByID(ctx, in.ReservationID)
+			if err != nil {
+				return domain.Stay{}, err
+			}
+			roomID = reserve.RoomID
+		}
+	}
+
 	stay, err := domain.NewStay(
 		uc.idProvider.NewStayID(),
-		in.RoomID,
+		roomID,
 		in.ReservationID,
 		in.PersonIDs,
 		in.CheckInDate,

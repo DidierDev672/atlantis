@@ -11,6 +11,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"nexora-api-rest/internal/api/httpjson"
+	"nexora-api-rest/internal/infrastructure/config"
 )
 
 // rateLimitConfig holds the tunable knobs of the token bucket limiting.
@@ -126,14 +127,40 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
+func isLoopbackIP(ipStr string) bool {
+	if ipStr == "localhost" || ipStr == "127.0.0.1" || ipStr == "::1" {
+		return true
+	}
+	ip := net.ParseIP(ipStr)
+	return ip != nil && ip.IsLoopback()
+}
+
 // rateLimitMiddleware wraps the handler chain with the token-bucket limiter.
 // Exceeding clients get 429 with a JSON error body; the request never reaches
 // the application handlers.
 func rateLimitMiddleware(next http.Handler) http.Handler {
-	rl := newRateLimiter(defaultRateLimitConfig)
+	cfg := config.RateLimit()
+	if !cfg.Enabled {
+		return next
+	}
+
+	rl := newRateLimiter(rateLimitConfig{
+		Rate:       cfg.RPS,
+		Burst:      cfg.Burst,
+		IdleTTL:    10 * time.Minute,
+		CleanEvery: 1 * time.Minute,
+	})
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !rl.allow(clientIP(r)) {
-			log.Printf("rate limit exceeded for IP %s: %s %s", clientIP(r), r.Method, r.URL.Path)
+		ip := clientIP(r)
+		if cfg.SkipLocalhost && isLoopbackIP(ip) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if !rl.allow(ip) {
+			log.Printf("rate limit exceeded for IP %s: %s %s", ip, r.Method, r.URL.Path)
+			w.Header().Set("Retry-After", "1")
 			httpjson.WriteError(w, http.StatusTooManyRequests, "too many requests: rate limit exceeded")
 			return
 		}

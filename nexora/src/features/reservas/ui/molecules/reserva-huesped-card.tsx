@@ -18,8 +18,8 @@ export interface ReservaHuespedCardProps {
   isTitular: boolean
   /** Nombre completo o descriptivo del huésped */
   name: string
-  /** Nombre o identificador legible de la habitación */
-  roomName: string
+  /** Nombre o identificador legible de la habitación (opcional) */
+  roomName?: string
   /** Tipo de documento (ej: CC, Pasaporte, Cédula) */
   documentType?: string
   /** Número de documento si se encuentra disponible */
@@ -126,12 +126,18 @@ export function ReservaHuespedCard({
         </div>
       </div>
 
-      {/* Pie de la tarjeta: Estado y Habitación vinculada */}
+      {/* Pie de la tarjeta: Estado y Habitación vinculada si existe */}
       <div className="mt-3 flex items-center justify-between border-t border-line/50 pt-2 text-[10px] text-ink-muted">
-        <span className="inline-flex items-center gap-1.5 truncate">
-          <FontAwesomeIcon icon={faBed} className="size-2.5 text-primary/70 shrink-0" />
-          <span className="truncate">{roomName}</span>
-        </span>
+        {roomName ? (
+          <span className="inline-flex items-center gap-1.5 truncate">
+            <FontAwesomeIcon icon={faBed} className="size-2.5 text-primary/70 shrink-0" />
+            <span className="truncate">{roomName}</span>
+          </span>
+        ) : (
+          <span className="text-[10px] text-ink-muted font-medium">
+            Huésped #{index}
+          </span>
+        )}
         <span className="font-medium text-emerald-600 dark:text-emerald-400 shrink-0">
           {statusLabel}
         </span>

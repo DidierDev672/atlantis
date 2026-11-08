@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
 import { motion } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPenToSquare } from '@fortawesome/free-solid-svg-icons'
@@ -21,7 +21,6 @@ import { ApiHabitacionDetalleRepository } from '../../infrastructure/api-habitac
 import { ObtenerSiguienteNumeroHabitacion } from '../../application/obtener-siguiente-numero-habitacion'
 import { Button } from '../atoms/button'
 import { FadeIn } from '../atoms/fade-in'
-import { SelectField } from '../atoms/select-field'
 import { cn } from '../lib/cn'
 
 export interface Option {
@@ -325,8 +324,8 @@ export function HabitacionDetalleForm({
     }
   }, [selectedTarifa])
 
-  const handleEstadoChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    setEstado(event.target.value as HabitacionEstado)
+  const handleEstadoChange = (val: string) => {
+    setEstado(val as HabitacionEstado)
     clearError('estado')
   }
 
@@ -353,7 +352,7 @@ export function HabitacionDetalleForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 relative z-30 has-[[aria-expanded='true']]:z-50">
         <FadeIn duration={ANIMATION.duration} delay={ANIMATION.start}>
           <div className="flex items-start gap-2">
             <div className="flex-1 min-w-0">
@@ -402,23 +401,25 @@ export function HabitacionDetalleForm({
           </div>
         </FadeIn>
 
-        <FadeIn duration={ANIMATION.duration} delay={ANIMATION.step}>
-          <SelectField
+        <FadeIn duration={ANIMATION.duration} delay={ANIMATION.step} className="relative z-30 has-[[aria-expanded='true']]:z-50">
+          <RecursosDropdown
             label="Edificio"
             placeholder={edificiosLoading ? 'Cargando edificios…' : 'Elige un edificio…'}
             options={edificios}
             value={edificioId}
-            onChange={(event) => handleEdificioChange(event.target.value)}
+            onChange={handleEdificioChange}
             error={errors.edificioId}
             required
             disabled={edificiosLoading}
+            isLoading={edificiosLoading}
+            direction="auto"
             emptyLabel="Aún no hay edificios registrados."
           />
         </FadeIn>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FadeIn duration={ANIMATION.duration} delay={0.14}>
+      <div className="grid gap-4 sm:grid-cols-2 relative z-20 has-[[aria-expanded='true']]:z-50">
+        <FadeIn duration={ANIMATION.duration} delay={0.14} className="relative z-20 has-[[aria-expanded='true']]:z-50">
           <div className="space-y-1">
             <RecursosDropdown
               label="Piso"
@@ -435,6 +436,8 @@ export function HabitacionDetalleForm({
               error={errors.piso}
               disabled={!edificioId || loadingFloors}
               required
+              direction="auto"
+              searchable={pisoOptions.length > 7}
               emptyLabel={
                 !edificioId
                   ? 'Primero elige un edificio para ver sus pisos disponibles.'
@@ -451,32 +454,36 @@ export function HabitacionDetalleForm({
           </div>
         </FadeIn>
 
-        <FadeIn duration={ANIMATION.duration} delay={0.21}>
-          <SelectField
+        <FadeIn duration={ANIMATION.duration} delay={0.21} className="relative z-20 has-[[aria-expanded='true']]:z-50">
+          <RecursosDropdown
             label="Tipo de habitación"
             placeholder={roomTypesLoading ? 'Cargando tipos…' : 'Elige un tipo…'}
             options={roomTypes}
             value={tipoHabitacion}
-            onChange={(event) =>
-              handleInputChange('tipoHabitacion', setTipoHabitacion, event.target.value)
+            onChange={(val) =>
+              handleInputChange('tipoHabitacion', setTipoHabitacion, val)
             }
             error={errors.tipoHabitacion}
             required
             disabled={roomTypesLoading}
+            isLoading={roomTypesLoading}
+            direction="auto"
             emptyLabel="Aún no hay tipos de habitación registrados."
           />
         </FadeIn>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FadeIn duration={ANIMATION.duration} delay={0.28}>
-          <SelectField
+      <div className="grid gap-4 sm:grid-cols-2 relative z-10 has-[[aria-expanded='true']]:z-50">
+        <FadeIn duration={ANIMATION.duration} delay={0.28} className="relative z-10 has-[[aria-expanded='true']]:z-50">
+          <RecursosDropdown
             label="Estado"
             options={estadoOptions}
             value={estado}
             onChange={handleEstadoChange}
             error={errors.estado}
             required
+            direction="auto"
+            searchable={false}
           />
         </FadeIn>
 

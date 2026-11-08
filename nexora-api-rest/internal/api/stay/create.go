@@ -10,7 +10,6 @@ import (
 )
 
 type createStayRequest struct {
-	RoomID          string   `json:"room_id"`
 	ReservationID   string   `json:"reservation_id"`
 	PersonIDs       []string `json:"person_ids"`
 	CheckInDate     string   `json:"check_in_date"`
@@ -48,7 +47,6 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	created, err := h.Creator.Create(r.Context(), stayapp.CreateInput{
-		RoomID:          domain.RoomID(req.RoomID),
 		ReservationID:   domain.ReserveID(req.ReservationID),
 		PersonIDs:       toPersonIDs(req.PersonIDs),
 		CheckInDate:     checkIn,
@@ -68,7 +66,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 			errors.Is(err, domain.ErrInvalidStayDates),
 			errors.Is(err, domain.ErrInvalidPaymentMethod),
 			errors.Is(err, domain.ErrInvalidSecurityDeposit),
-			errors.Is(err, domain.ErrInvalidStayStatus):
+			errors.Is(err, domain.ErrInvalidStayStatus),
+			errors.Is(err, domain.ErrReserveNotFound):
 			httpjson.WriteError(w, http.StatusUnprocessableEntity, err.Error())
 		default:
 			httpjson.WriteInternalError(w, err)

@@ -21,8 +21,8 @@ type Handler struct {
 // reserveResponse represents the JSON projection of the reservation entity.
 type reserveResponse struct {
 	ID             string    `json:"id"`
-	RoomID         string    `json:"room_id"`
-	PersonID       string    `json:"person_id"`
+	RoomID         string    `json:"room_id,omitempty"`
+	PersonIDs      []string  `json:"person_ids"`
 	CheckInDate    time.Time `json:"check_in_date"`
 	CheckOutDate   time.Time `json:"check_out_date"`
 	NumberOfGuests int       `json:"number_of_guests"`
@@ -34,10 +34,15 @@ type reserveResponse struct {
 }
 
 func newReserveResponse(r domain.Reserve) reserveResponse {
+	personIDs := toPersonIDStrings(r.PersonIDs)
+	if len(personIDs) == 0 && string(r.PersonID) != "" {
+		personIDs = []string{string(r.PersonID)}
+	}
+
 	return reserveResponse{
 		ID:             string(r.ID),
 		RoomID:         string(r.RoomID),
-		PersonID:       string(r.PersonID),
+		PersonIDs:      personIDs,
 		CheckInDate:    r.CheckInDate,
 		CheckOutDate:   r.CheckOutDate,
 		NumberOfGuests: r.NumberOfGuests,
@@ -47,6 +52,30 @@ func newReserveResponse(r domain.Reserve) reserveResponse {
 		CreatedAt:      r.CreatedAt,
 		UpdatedAt:      r.UpdatedAt,
 	}
+}
+
+// toPersonIDs converts a raw slice of person id strings into domain.PersonID.
+func toPersonIDs(raw []string) []domain.PersonID {
+	ids := make([]domain.PersonID, 0, len(raw))
+	for _, v := range raw {
+		trimmed := strings.TrimSpace(v)
+		if trimmed != "" {
+			ids = append(ids, domain.PersonID(trimmed))
+		}
+	}
+	return ids
+}
+
+// toPersonIDStrings converts a slice of domain.PersonID into raw strings.
+func toPersonIDStrings(ids []domain.PersonID) []string {
+	out := make([]string, 0, len(ids))
+	for _, v := range ids {
+		trimmed := strings.TrimSpace(string(v))
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 // parseDateTime parses date strings flexibly, accepting RFC3339 or ISO date format (YYYY-MM-DD).

@@ -9,12 +9,15 @@ export interface HabitacionInput {
   name: string
   capacity: string
   basePrice: string
+  edificioId?: string
+  estado?: string
 }
 
 export interface HabitacionValidationErrors {
   name?: string
   capacity?: string
   basePrice?: string
+  estado?: string
 }
 
 export { HabitacionApiError } from './habitacion-error'

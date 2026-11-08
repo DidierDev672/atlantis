@@ -10,8 +10,8 @@ import (
 )
 
 type createReserveRequest struct {
-	RoomID         string   `json:"room_id"`
-	PersonID       string   `json:"person_id"`
+	PersonIDs      []string `json:"person_ids"`
+	PersonID       string   `json:"person_id,omitempty"`
 	CheckInDate    string   `json:"check_in_date"`
 	CheckOutDate   string   `json:"check_out_date"`
 	NumberOfGuests int      `json:"number_of_guests"`
@@ -45,12 +45,27 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		totalPrice = *req.TotalPrice
 	}
 
+	personIDs := toPersonIDs(req.PersonIDs)
+	if len(personIDs) == 0 && req.PersonID != "" {
+		personIDs = toPersonIDs([]string{req.PersonID})
+	}
+
+	primaryPersonID := domain.PersonID("")
+	if len(personIDs) > 0 {
+		primaryPersonID = personIDs[0]
+	}
+
+	numberOfGuests := req.NumberOfGuests
+	if numberOfGuests <= 0 && len(personIDs) > 0 {
+		numberOfGuests = len(personIDs)
+	}
+
 	created, err := h.Creator.Create(r.Context(), reserveapp.CreateInput{
-		RoomID:         domain.RoomID(req.RoomID),
-		PersonID:       domain.PersonID(req.PersonID),
+		PersonID:       primaryPersonID,
+		PersonIDs:      personIDs,
 		CheckInDate:    checkIn,
 		CheckOutDate:   checkOut,
-		NumberOfGuests: req.NumberOfGuests,
+		NumberOfGuests: numberOfGuests,
 		State:          req.State,
 		TotalPrice:     totalPrice,
 		CreatedBy:      req.CreatedBy,

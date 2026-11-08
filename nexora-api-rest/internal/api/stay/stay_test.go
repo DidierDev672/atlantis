@@ -92,7 +92,6 @@ func TestStayHandler_Create(t *testing.T) {
 	}
 
 	payload := map[string]interface{}{
-		"room_id":          "room-1",
 		"reservation_id":   "res-1",
 		"person_ids":       []string{"person-1"},
 		"check_in_date":    now.Format(time.RFC3339),
@@ -134,7 +133,6 @@ func TestStayHandler_Create_InvalidDate(t *testing.T) {
 	}
 
 	payload := map[string]interface{}{
-		"room_id":        "room-1",
 		"reservation_id": "res-1",
 		"person_ids":     []string{"person-1"},
 		"check_in_date":  "invalid-date",

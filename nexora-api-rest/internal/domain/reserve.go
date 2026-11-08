@@ -56,6 +56,7 @@ type Reserve struct {
 	ID             ReserveID
 	RoomID         RoomID
 	PersonID       PersonID
+	PersonIDs      []PersonID
 	CheckInDate    time.Time
 	CheckOutDate   time.Time
 	NumberOfGuests int
@@ -78,10 +79,47 @@ func NewReserve(
 	createdBy string,
 	createdAt time.Time,
 ) (Reserve, error) {
+	personIDs := make([]PersonID, 0, 1)
+	if strings.TrimSpace(string(personID)) != "" {
+		personIDs = append(personIDs, personID)
+	}
+
+	return NewReserveWithPersons(
+		id,
+		roomID,
+		personIDs,
+		checkInDate,
+		checkOutDate,
+		numberOfGuests,
+		state,
+		totalPrice,
+		createdBy,
+		createdAt,
+	)
+}
+
+// NewReserveWithPersons constructs a new reservation supporting multiple persons.
+func NewReserveWithPersons(
+	id ReserveID,
+	roomID RoomID,
+	personIDs []PersonID,
+	checkInDate, checkOutDate time.Time,
+	numberOfGuests int,
+	state ReserveState,
+	totalPrice float64,
+	createdBy string,
+	createdAt time.Time,
+) (Reserve, error) {
+	primary := PersonID("")
+	if len(personIDs) > 0 {
+		primary = personIDs[0]
+	}
+
 	reserve := Reserve{
 		ID:             id,
 		RoomID:         roomID,
-		PersonID:       personID,
+		PersonID:       primary,
+		PersonIDs:      personIDs,
 		CheckInDate:    checkInDate,
 		CheckOutDate:   checkOutDate,
 		NumberOfGuests: numberOfGuests,
@@ -104,9 +142,7 @@ func (r Reserve) Validate() error {
 	switch {
 	case strings.TrimSpace(string(r.ID)) == "":
 		return ErrInvalidReserveID
-	case strings.TrimSpace(string(r.RoomID)) == "":
-		return ErrInvalidReserveRoomID
-	case strings.TrimSpace(string(r.PersonID)) == "":
+	case strings.TrimSpace(string(r.PersonID)) == "" && len(r.PersonIDs) == 0:
 		return ErrInvalidReservePersonID
 	case r.CheckInDate.IsZero() || r.CheckOutDate.IsZero() || !r.CheckOutDate.After(r.CheckInDate):
 		return ErrInvalidReservationDates
@@ -117,6 +153,13 @@ func (r Reserve) Validate() error {
 	case r.TotalPrice < 0:
 		return ErrInvalidTotalPrice
 	}
+
+	for _, pid := range r.PersonIDs {
+		if strings.TrimSpace(string(pid)) == "" {
+			return ErrInvalidReservePersonID
+		}
+	}
+
 	return nil
 }
 
@@ -151,7 +194,14 @@ func (r *Reserve) UpdateDetails(
 ) error {
 	updated := *r
 	updated.RoomID = roomID
-	updated.PersonID = personID
+	if personID != "" {
+		updated.PersonID = personID
+		if len(updated.PersonIDs) == 0 {
+			updated.PersonIDs = []PersonID{personID}
+		} else {
+			updated.PersonIDs[0] = personID
+		}
+	}
 	updated.CheckInDate = checkInDate
 	updated.CheckOutDate = checkOutDate
 	updated.NumberOfGuests = numberOfGuests

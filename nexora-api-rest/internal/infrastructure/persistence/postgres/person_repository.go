@@ -100,10 +100,10 @@ func (r *PersonRepository) FindByDocumentTypeAndDocumentNumber(ctx context.Conte
 	query := personSelect + " WHERE p.document_type = $1 AND p.document_number = $2 AND p.deleted_at IS NULL"
 	args := []any{documentType, documentNumber}
 	if hqID, ok := domain.ActiveHeadquarterFromContext(ctx); ok {
-		query += " AND p.headquarters_id = $3"
+		query += " AND (p.headquarters_id = $3 OR p.headquarters_id IS NULL)"
 		args = append(args, string(hqID))
 	}
-	query += " " + personGroupBy
+	query += " " + personGroupBy + " LIMIT 1"
 
 	person, err := scanPerson(r.conn.QueryRow(ctx, query, args...))
 	if err != nil {

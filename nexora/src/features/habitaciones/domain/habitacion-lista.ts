@@ -1,10 +1,28 @@
 export type HabitacionEstadoKey =
   | 'available'
   | 'occupied'
+  | 'busy'
   | 'maintenance'
   | 'cleaning'
   | 'inactive'
   | string
+
+/**
+ * Determina si una habitación se encuentra actualmente ocupada
+ * considerando los estados canónicos y del backend ('busy', 'occupied', 'ocupada').
+ */
+export function isHabitacionOcupada(status?: string | null): boolean {
+  if (!status) return false
+  const s = status.toLowerCase().trim()
+  return (
+    s === 'busy' ||
+    s === 'occupied' ||
+    s === 'ocupada' ||
+    s === 'ocupado' ||
+    s.includes('busy') ||
+    s.includes('ocup')
+  )
+}
 
 export interface BedDetail {
   id?: string

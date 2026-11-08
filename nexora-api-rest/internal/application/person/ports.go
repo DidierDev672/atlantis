@@ -26,6 +26,11 @@ type PersonGetter interface {
 	GetByID(ctx context.Context, id domain.PersonID) (domain.Person, error)
 }
 
+// PersonByDocumentGetter returns a single person by document type and document number.
+type PersonByDocumentGetter interface {
+	GetByDocument(ctx context.Context, documentType domain.DocumentType, documentNumber string) (domain.Person, error)
+}
+
 // PersonUpdater edits an existing person.
 type PersonUpdater interface {
 	Update(ctx context.Context, in UpdateInput) (domain.Person, error)
