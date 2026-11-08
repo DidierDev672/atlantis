@@ -12,6 +12,7 @@ import (
 type CreateInput struct {
 	RoomID         domain.RoomID
 	PersonID       domain.PersonID
+	PersonIDs      []domain.PersonID
 	CheckInDate    time.Time
 	CheckOutDate   time.Time
 	NumberOfGuests int
@@ -45,13 +46,23 @@ func (uc *CreateReserveUseCase) Create(ctx context.Context, in CreateInput) (dom
 		state = parsedState
 	}
 
-	reserve, err := domain.NewReserve(
+	personIDs := in.PersonIDs
+	if len(personIDs) == 0 && strings.TrimSpace(string(in.PersonID)) != "" {
+		personIDs = []domain.PersonID{in.PersonID}
+	}
+
+	numberOfGuests := in.NumberOfGuests
+	if numberOfGuests <= 0 && len(personIDs) > 0 {
+		numberOfGuests = len(personIDs)
+	}
+
+	reserve, err := domain.NewReserveWithPersons(
 		uc.idProvider.NewReserveID(),
 		in.RoomID,
-		in.PersonID,
+		personIDs,
 		in.CheckInDate,
 		in.CheckOutDate,
-		in.NumberOfGuests,
+		numberOfGuests,
 		state,
 		in.TotalPrice,
 		in.CreatedBy,

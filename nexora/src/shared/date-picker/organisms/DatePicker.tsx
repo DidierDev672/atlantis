@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { DayState, DatePickerProps } from '../types';
 import { useCalendar } from '../hooks/useCalendar';
 import { useControllableState } from '../hooks/useControllableState';
@@ -80,6 +81,18 @@ export function DatePicker({
     weekStartsOn,
     autoFocus: open,
   });
+
+  // Sincronizar el mes visual con la fecha seleccionada cuando se abre el popover
+  useEffect(() => {
+    if (open && selectedDate) {
+      if (
+        viewMonth.getFullYear() !== selectedDate.getFullYear() ||
+        viewMonth.getMonth() !== selectedDate.getMonth()
+      ) {
+        moveTo(selectedDate, false);
+      }
+    }
+  }, [open, selectedDate, moveTo, viewMonth]);
 
   const currentYear = new Date().getFullYear();
   const resolvedMinYear =

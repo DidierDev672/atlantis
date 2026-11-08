@@ -1,8 +1,26 @@
-import { useState, useEffect, type ChangeEvent, type FormEvent } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  type ChangeEvent,
+  type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
+import axios from 'axios';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons';
 import { Input } from '../../../../shared/ui/Input';
-import { RecursosDropdown } from '../../../recursos/ui/molecules/recursos-dropdown';
+import { MarsPlanet } from '../../../../shared/mars-planet';
+import { DatePicker, toISODate, parseISODate } from '../../../../shared/date-picker';
+import { Loading } from '../../../../shared/loading';
+import { validateStatusCode } from '../../../../shared/lib/status-code-validator';
+import { executeBalancedRequest } from '../../../reservas/infrastructure/api-load-balancer';
+import {
+  RecursosDropdown,
+  type DropdownOption,
+} from '../../../recursos/ui/molecules/recursos-dropdown';
 import { cn } from '../lib/cn';
 import { api } from '../../../../lib/api';
 
@@ -65,6 +83,95 @@ const INITIAL_STATE: DatosBasicosHuesped = {
   roleId: '',
   roles: [],
 };
+
+/**
+ * Mapea el tipo de documento del formulario UX al valor aceptado por la API de personas
+ * (id_card | national_id | foreign_id).
+ */
+export function mapDocumentTypeToApi(tipoDocumento?: string): string {
+  const norm = (tipoDocumento || '').trim().toLowerCase();
+  if (norm.includes('nacional') || norm === 'national_id') return 'national_id';
+  if (norm.includes('tarjeta') || norm === 'id_card') return 'id_card';
+  if (
+    norm.includes('extranjera') ||
+    norm.includes('pasaporte') ||
+    norm === 'foreign_id'
+  )
+    return 'foreign_id';
+  return 'national_id';
+}
+
+/**
+ * Mapea el tipo de documento retornado por la API (id_card | national_id | foreign_id)
+ * al valor esperado en español por las opciones del selector en la UX.
+ */
+export function mapDocumentTypeToUx(documentType?: string): string {
+  const norm = (documentType || '').trim().toLowerCase();
+  if (norm === 'national_id' || norm.includes('nacional')) {
+    return 'Identificacion nacional';
+  }
+  if (norm === 'id_card' || norm.includes('tarjeta')) {
+    return 'Tarjeta de identificacion';
+  }
+  if (
+    norm === 'foreign_id' ||
+    norm.includes('extranjera') ||
+    norm.includes('pasaporte')
+  ) {
+    return 'Identificacion extranjera';
+  }
+  return 'Identificacion nacional';
+}
+
+/**
+ * Normaliza el género retornado por la API ('M' o 'F') para que coincida con las opciones del formulario.
+ */
+export function mapGenderToUx(gender?: string): string {
+  if (!gender) return '';
+  const g = gender.trim().toUpperCase();
+  if (g === 'M' || g.startsWith('MASC') || g.includes('(MASCULINO)'))
+    return 'M';
+  if (g === 'F' || g.startsWith('FEM') || g.includes('(FEMENINO)')) return 'F';
+  return g;
+}
+
+/**
+ * Normaliza la fecha de nacimiento (ISO 8601 con hora o sin hora) al formato 'YYYY-MM-DD'
+ * que requiere el input HTML5 type="date".
+ */
+export function mapDateOfBirthToUx(dob?: string): string {
+  if (!dob) return '';
+  if (dob.includes('T')) {
+    return dob.split('T')[0];
+  }
+  return dob;
+}
+
+/**
+ * Convierte una fecha de nacimiento (YYYY-MM-DD o ISO con hora)
+ * a un objeto Date local para DatePicker, evitando desfases de zona horaria.
+ */
+export function parseBirthDate(val?: string): Date | null {
+  if (!val) return null;
+  const cleanVal = mapDateOfBirthToUx(val).trim();
+  return parseISODate(cleanVal);
+}
+
+export interface PersonByDocumentResponse {
+  id: string;
+  document_type: string;
+  document_number: string;
+  name: string;
+  phone_number?: string;
+  email?: string;
+  date_of_birth?: string;
+  gender?: string;
+  nationality?: string;
+  roles?: string[];
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
 
 /**
  * Extrae y normaliza el número de huéspedes ingresado (entre 1 y 10).
@@ -436,28 +543,55 @@ function DatosBasicosDialogContent({
     setCurrentGuestIndex((curr) => Math.min(curr, newCount));
   }, [numeroHuespedes]);
 
-  // Consultar /roles para asegurar que se utilice el ID real del rol de huésped en el payload
+  // Estado para las opciones y carga balanceada del campo "Rol del huésped"
+  const [roleOptions, setRoleOptions] = useState<DropdownOption[]>([]);
+  const [isLoadingRoles, setIsLoadingRoles] = useState(false);
+
+  // Consultar /roles con balanceo preventivo mediante api-load-balancer para el campo "Rol del huésped"
   useEffect(() => {
     let isMounted = true;
-    api
-      .get<{ id: string; name: string }[]>('/roles', {
-        validateStatus: () => true,
-      })
+    setIsLoadingRoles(true);
+
+    executeBalancedRequest(
+      () =>
+        api.get<{ id: string; name: string }[]>('/roles', {
+          validateStatus: () => true,
+        }),
+      { maxRetries: 2 }
+    )
       .then((res) => {
         if (!isMounted) return;
-        if (res.status === 200 && Array.isArray(res.data)) {
+        const validation = validateStatusCode(res.status);
+        if (validation.isValid && Array.isArray(res.data)) {
+          const rawRoles = res.data;
+          const mappedOptions: DropdownOption[] = rawRoles.map((r) => {
+            const isHuesped =
+              r.name.trim().toLowerCase() === 'guest' ||
+              r.name.trim().toLowerCase() === 'huesped' ||
+              r.name.trim().toLowerCase() === 'huésped';
+            return {
+              value: r.id,
+              label: isHuesped ? 'Huésped' : r.name,
+              id: r.id,
+              rawName: r.name,
+            };
+          });
+          setRoleOptions(mappedOptions);
+
           const huespedRole =
-            res.data.find(
+            rawRoles.find(
               (r) =>
                 r.name
                   .trim()
                   .toLowerCase()
                   .normalize('NFD')
-                  .replace(/[\u0300-\u036f]/g, '') === 'huesped'
+                  .replace(/[\u0300-\u036f]/g, '') === 'huesped' ||
+                r.name.trim().toLowerCase() === 'guest'
             ) ||
-            res.data.find((r) =>
+            rawRoles.find((r) =>
               r.name.trim().toLowerCase().includes('huesped')
-            );
+            ) ||
+            rawRoles[0];
 
           if (huespedRole) {
             const realRoleId = huespedRole.id;
@@ -494,7 +628,14 @@ function DatosBasicosDialogContent({
           }
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.error('Error al balancear la consulta de roles:', err);
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoadingRoles(false);
+        }
+      });
 
     return () => {
       isMounted = false;
@@ -514,6 +655,17 @@ function DatosBasicosDialogContent({
     return { ...INITIAL_STATE };
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // Estado para la búsqueda por documento con balanceo preventivo de carga
+  const [isSearchingPerson, setIsSearchingPerson] = useState(false);
+  const [searchNotice, setSearchNotice] = useState<{
+    type: 'success' | 'info' | 'warning' | 'error';
+    title?: string | null;
+    message: string;
+  } | null>(null);
+
+  // Referencia para evitar consultas duplicadas idénticas consecutivas
+  const lastSearchedRef = useRef<string>('');
 
   // Cierre por tecla Escape con fase de captura
   useEffect(() => {
@@ -539,6 +691,9 @@ function DatosBasicosDialogContent({
       };
       return copy;
     });
+    if (name === 'numeroDocumento' && searchNotice) {
+      setSearchNotice(null);
+    }
     if (errors[name]) {
       setErrors((prev) => {
         const next = { ...prev };
@@ -575,6 +730,153 @@ function DatosBasicosDialogContent({
     }
   };
 
+  const handleBirthDateChange = (date: Date | null) => {
+    const val = date ? toISODate(date) : '';
+    setFormData((prev) => ({ ...prev, fechaNacimiento: val }));
+    setGuestsData((prev) => {
+      const copy = [...prev];
+      copy[currentGuestIndex - 1] = {
+        ...(copy[currentGuestIndex - 1] || INITIAL_STATE),
+        fechaNacimiento: val,
+      };
+      return copy;
+    });
+    if (errors.fechaNacimiento) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.fechaNacimiento;
+        return next;
+      });
+    }
+  };
+
+  /**
+   * Consulta GET /persons/by-document con axios y api-load-balancer al presionar Enter o Tab.
+   * Valida el status code con status-code-validator y autocompleta los campos.
+   */
+  const handleSearchByDocument = async (explicitDocNumber?: string) => {
+    const docNumber = (explicitDocNumber ?? formData.numeroDocumento).trim();
+    if (!docNumber) return;
+
+    const docTypeApi = mapDocumentTypeToApi(formData.tipoDocumento);
+    const searchKey = `${docTypeApi}:${docNumber}`;
+
+    setIsSearchingPerson(true);
+    setSearchNotice(null);
+
+    try {
+      const response = await executeBalancedRequest(
+        () =>
+          api.get<PersonByDocumentResponse>('/persons/by-document', {
+            params: {
+              document_type: docTypeApi,
+              document_number: docNumber,
+            },
+            validateStatus: () => true,
+          }),
+        { maxRetries: 1 }
+      );
+
+      const status = response.status;
+      const validation = validateStatusCode(status);
+
+      if (validation.isValid && response.data) {
+        const data = response.data;
+        const mappedDocType = mapDocumentTypeToUx(data.document_type);
+        const mappedDob = mapDateOfBirthToUx(data.date_of_birth);
+        const mappedGender = mapGenderToUx(data.gender);
+
+        const updatedFields: Partial<DatosBasicosHuesped> = {
+          id: data.id,
+          tipoDocumento: mappedDocType,
+          numeroDocumento: data.document_number || docNumber,
+          nombreCompleto: data.name || '',
+          fechaNacimiento: mappedDob || '',
+          genero: mappedGender || '',
+          email: data.email || '',
+          numeroTelefono: data.phone_number || formData.numeroTelefono || '',
+          nacionalidad: data.nationality || formData.nacionalidad || 'Colombia',
+          roles: data.roles || formData.roles,
+          roleId: (data.roles && data.roles[0]) || formData.roleId,
+        };
+
+        setFormData((prev) => ({
+          ...prev,
+          ...updatedFields,
+        }));
+
+        setGuestsData((prev) => {
+          const copy = [...prev];
+          copy[currentGuestIndex - 1] = {
+            ...(copy[currentGuestIndex - 1] || INITIAL_STATE),
+            ...updatedFields,
+          };
+          return copy;
+        });
+
+        // Limpiar errores en los campos autocompletados
+        setErrors((prev) => {
+          const next = { ...prev };
+          delete next.tipoDocumento;
+          delete next.numeroDocumento;
+          delete next.nombreCompleto;
+          return next;
+        });
+
+        lastSearchedRef.current = searchKey;
+        setSearchNotice({
+          type: 'success',
+          title: 'Huésped registrado',
+          message: `Huésped encontrado: ${data.name}. Datos cargados automáticamente.`,
+        });
+      } else if (status === 404) {
+        lastSearchedRef.current = searchKey;
+        setSearchNotice({
+          type: 'info',
+          title: validation.title ?? 'No encontrado',
+          message:
+            'Documento no registrado en el sistema. Puedes completar los datos para crear un nuevo registro.',
+        });
+      } else {
+        setSearchNotice({
+          type: validation.category,
+          title: validation.title ?? 'Aviso',
+          message: validation.message ?? 'No se pudo verificar el documento.',
+        });
+      }
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response) {
+        const validation = validateStatusCode(error.response.status);
+        setSearchNotice({
+          type: validation.category,
+          title: validation.title ?? 'Aviso',
+          message: validation.message ?? 'Error al consultar el documento.',
+        });
+      } else {
+        setSearchNotice({
+          type: 'warning',
+          title: 'Aviso de conexión',
+          message:
+            'No se pudo conectar con el servicio en este momento. Puedes ingresar los datos manualmente.',
+        });
+      }
+    } finally {
+      setIsSearchingPerson(false);
+    }
+  };
+
+  /** Manejador de teclado para Enter y Tab en el campo de número de documento */
+  const handleDocumentKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+      }
+      const val = (e.currentTarget.value || formData.numeroDocumento).trim();
+      if (!val) return;
+      void handleSearchByDocument(val);
+    }
+  };
+
   const handleSelectGuest = (targetIndex: number) => {
     if (
       targetIndex === currentGuestIndex ||
@@ -590,6 +892,8 @@ function DatosBasicosDialogContent({
     setCurrentGuestIndex(targetIndex);
     setFormData(updated[targetIndex - 1] ?? { ...INITIAL_STATE });
     setErrors({});
+    setSearchNotice(null);
+    lastSearchedRef.current = '';
   };
 
   const handleAddGuest = () => {
@@ -630,7 +934,7 @@ function DatosBasicosDialogContent({
     }
 
     // 1. Invocar registro en segundo plano con POST /persons tanto en "Guardar y siguiente" como en "Guardar datos básicos"
-    let currentGuestWithId = { ...formData };
+    const currentGuestWithId = { ...formData };
     if (onRegisterGuest) {
       const regResult = await onRegisterGuest(formData, currentGuestIndex);
       const isSuccess =
@@ -688,7 +992,7 @@ function DatosBasicosDialogContent({
           e.stopPropagation();
           onClose();
         }}
-        className="fixed inset-0 bg-stone-950/80 backdrop-blur-md cursor-pointer"
+        className="fixed inset-0 cursor-pointer bg-stone-950/80 backdrop-blur-md"
         aria-hidden="true"
       />
 
@@ -746,7 +1050,7 @@ function DatosBasicosDialogContent({
               e.stopPropagation();
               onClose();
             }}
-            className="border-line bg-canvas/80 text-ink-muted hover:bg-panel hover:text-ink focus-visible:ring-primary/40 absolute top-4 right-4 z-40 grid size-8.5 cursor-pointer place-items-center rounded-full border transition-all hover:scale-105 active:scale-95 focus-visible:ring-2 shadow-2xs"
+            className="border-line bg-canvas/80 text-ink-muted hover:bg-panel hover:text-ink focus-visible:ring-primary/40 absolute top-4 right-4 z-40 grid size-8.5 cursor-pointer place-items-center rounded-full border shadow-2xs transition-all hover:scale-105 focus-visible:ring-2 active:scale-95"
             title="Cerrar modal de datos básicos (Esc)"
             aria-label="Cerrar datos básicos"
           >
@@ -755,7 +1059,7 @@ function DatosBasicosDialogContent({
               fill="none"
               stroke="currentColor"
               strokeWidth="2"
-              className="size-4 pointer-events-none"
+              className="pointer-events-none size-4"
             >
               <path d="M18 6 6 18M6 6l12 12" />
             </svg>
@@ -765,19 +1069,10 @@ function DatosBasicosDialogContent({
           <div className="relative z-10 mb-5 space-y-2 pr-8">
             <div className="flex flex-wrap items-center gap-2">
               <span className="border-primary/20 bg-primary/10 text-primary inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-bold tracking-wider uppercase">
-                <svg
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  className="size-3"
-                >
-                  <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <line x1="19" y1="8" x2="19" y2="14" />
-                  <line x1="22" y1="11" x2="16" y2="11" />
-                </svg>
-                Identificación de Huésped
+                <MarsPlanet variant="planet" customPx={14} />
+                {roomNumber
+                  ? `Asignación · Habitación ${roomNumber}`
+                  : 'Identificación de Huésped'}
               </span>
 
               {/* Selector e indicador táctico del mazo de cartas según número de huéspedes */}
@@ -868,7 +1163,7 @@ function DatosBasicosDialogContent({
               <motion.div
                 initial={{ opacity: 0, y: -4 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-ink"
+                className="text-ink mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs"
               >
                 <div className="flex items-start gap-2">
                   <span className="mt-0.5 grid size-4 shrink-0 place-items-center rounded-full bg-amber-500/20 text-[10px] font-bold text-amber-600 dark:text-amber-400">
@@ -894,6 +1189,17 @@ function DatosBasicosDialogContent({
 
           {/* Formulario con Transición Cinemática de Carta de Sniper */}
           <form onSubmit={handleSubmit} className="relative z-10 space-y-4">
+            {/* Componente Loading mientras se consume el endpoint /persons/by-document mediante balanceo preventivo */}
+            <Loading
+              visible={isSearchingPerson}
+              variant="overlay"
+              size="md"
+              label="Buscando datos del huésped…"
+              description="Consultando /persons/by-document mediante balanceo preventivo de carga…"
+              delay={0}
+              className="z-30 rounded-2xl"
+            />
+
             <AnimatePresence mode="wait" custom={direction}>
               <motion.div
                 key={currentGuestIndex}
@@ -916,20 +1222,61 @@ function DatosBasicosDialogContent({
                       options={OPCIONES_TIPO_DOCUMENTO}
                       placeholder="Elegir tipo…"
                       error={errors.tipoDocumento}
+                      direction="auto"
                       required
                     />
                   </div>
 
-                  {/* Número de documento */}
+                  {/* Número de documento con consumo de /persons/by-document en Enter o Tab */}
                   <div className="sm:col-span-1">
                     <Input
                       label="Número de documento"
                       name="numeroDocumento"
                       value={formData.numeroDocumento}
                       onChange={handleInputChange}
+                      onKeyDown={handleDocumentKeyDown}
                       placeholder="Ej. 1098765432"
                       error={errors.numeroDocumento}
                       required
+                      hint={
+                        searchNotice ? (
+                          <span
+                            className={cn(
+                              'inline-flex items-center gap-1 font-medium transition-colors',
+                              searchNotice.type === 'success' &&
+                                'text-emerald-600 dark:text-emerald-400',
+                              searchNotice.type === 'info' &&
+                                'text-sky-600 dark:text-sky-400',
+                              searchNotice.type === 'warning' &&
+                                'text-amber-600 dark:text-amber-400',
+                              searchNotice.type === 'error' &&
+                                'text-rose-600 dark:text-rose-400'
+                            )}
+                          >
+                            {searchNotice.message}
+                          </span>
+                        ) : (
+                          'Presiona Enter o Tab para buscar si ya está registrado'
+                        )
+                      }
+                      action={
+                        <button
+                          type="button"
+                          onClick={() => void handleSearchByDocument()}
+                          disabled={
+                            isSearchingPerson ||
+                            !formData.numeroDocumento.trim()
+                          }
+                          className="text-ink-muted hover:text-primary cursor-pointer p-1 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                          title="Buscar persona por documento (Enter o Tab)"
+                          aria-label="Buscar persona por documento"
+                        >
+                          <FontAwesomeIcon
+                            icon={faMagnifyingGlass}
+                            className="size-3.5"
+                          />
+                        </button>
+                      }
                     />
                   </div>
 
@@ -948,12 +1295,16 @@ function DatosBasicosDialogContent({
 
                   {/* Fecha de nacimiento */}
                   <div className="sm:col-span-1">
-                    <Input
+                    <DatePicker
                       label="Fecha de nacimiento"
-                      type="date"
-                      name="fechaNacimiento"
-                      value={formData.fechaNacimiento}
-                      onChange={handleInputChange}
+                      placeholder="Elegir fecha…"
+                      value={parseBirthDate(formData.fechaNacimiento)}
+                      onChange={handleBirthDateChange}
+                      maxDate={new Date()}
+                      minYear={1920}
+                      maxYear={new Date().getFullYear()}
+                      error={errors.fechaNacimiento}
+                      clearable
                     />
                   </div>
 
@@ -965,6 +1316,7 @@ function DatosBasicosDialogContent({
                       onChange={(val) => handleDropdownChange('genero', val)}
                       options={OPCIONES_GENERO}
                       placeholder="Elegir género…"
+                      direction="auto"
                     />
                   </div>
 
@@ -1003,14 +1355,17 @@ function DatosBasicosDialogContent({
                     />
                   </div>
 
-                  {/* Rol del huésped (RecursosDropdown con endpoint="/roles") */}
+                  {/* Rol del huésped (balanceado preventivamente con api-load-balancer) */}
                   <div className="sm:col-span-1">
                     <RecursosDropdown
                       label="Rol del huésped"
                       endpoint="/roles"
+                      options={roleOptions.length > 0 ? roleOptions : undefined}
+                      isLoading={isLoadingRoles}
                       value={formData.roleId || formData.roles?.[0] || ''}
                       onChange={(val) => handleDropdownChange('roleId', val)}
                       placeholder="Elegir rol…"
+                      direction="auto"
                       isDisabled
                     />
                   </div>
@@ -1050,7 +1405,7 @@ function DatosBasicosDialogContent({
 
               <button
                 type="submit"
-                className="border-primary/50 bg-primary text-primary-foreground inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border px-5 py-2 text-xs font-bold shadow-sm transition-all hover:brightness-110 active:scale-95 sm:w-auto"
+                className="border-primary/50 bg-primary inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border px-5 py-2 text-xs font-bold text-white shadow-sm transition-all hover:brightness-110 active:scale-95 sm:w-auto"
               >
                 {currentGuestIndex < guestCount ? (
                   <>

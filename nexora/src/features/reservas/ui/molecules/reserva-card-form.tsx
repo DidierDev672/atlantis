@@ -4,6 +4,11 @@ import { Input } from '../../../../shared/ui/Input'
 import { Button } from '../../../recursos/ui/atoms/button'
 import { RecursosDropdown } from '../../../recursos/ui/molecules/recursos-dropdown'
 import {
+  DatePicker,
+  toISODate,
+  parseISODate,
+} from '../../../../shared/date-picker'
+import {
   formatPrecioCOP,
   RESERVA_ESTADO_OPTIONS,
   type ReservaInput,
@@ -13,7 +18,7 @@ import {
 export interface ReservaCardFormProps {
   formValues: ReservaInput
   errors: ReservaValidationErrors
-  roomDropdownOptions: ReadonlyArray<{ value: string; label: string }>
+  roomDropdownOptions?: ReadonlyArray<{ value: string; label: string }>
   personDropdownOptions: ReadonlyArray<{ value: string; label: string }>
   loadingDependencies: boolean
   submitting: boolean
@@ -24,7 +29,6 @@ export interface ReservaCardFormProps {
 export function ReservaCardForm({
   formValues,
   errors,
-  roomDropdownOptions,
   personDropdownOptions,
   loadingDependencies,
   submitting,
@@ -56,29 +60,6 @@ export function ReservaCardForm({
 
       <form onSubmit={onSubmit} noValidate className="space-y-6">
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-          {/* Habitación y Cama (name - etiquette) */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            className="sm:col-span-2"
-          >
-            <RecursosDropdown
-              label="Habitación y cama"
-              placeholder={
-                loadingDependencies
-                  ? 'Cargando habitaciones y camas…'
-                  : 'Selecciona una habitación y cama…'
-              }
-              options={roomDropdownOptions}
-              value={formValues.bedId}
-              onChange={(value) => onFieldChange('bedId', value)}
-              error={errors.bedId}
-              required
-              disabled={loadingDependencies || submitting}
-            />
-          </motion.div>
-
           {/* Datos básicos del huésped (name - phone_number) */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -100,40 +81,60 @@ export function ReservaCardForm({
             />
           </motion.div>
 
-          {/* Fecha de registro */}
+          {/* Fecha de entrada */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
           >
-            <Input
-              type="date"
-              label="Fecha de registro"
-              value={formValues.checkInDate}
-              onChange={(e) => onFieldChange('checkInDate', e.target.value)}
+            <DatePicker
+              label="Fecha de entrada"
+              value={
+                formValues.checkInDate
+                  ? parseISODate(formValues.checkInDate)
+                  : null
+              }
+              onChange={(d) =>
+                onFieldChange('checkInDate', d ? toISODate(d) : '')
+              }
               error={errors.checkInDate}
               required
               disabled={submitting}
-              min={new Date().toISOString().split('T')[0]}
+              minDate={new Date()}
+              clearable={false}
             />
           </motion.div>
 
-          {/* Fecha de salidad */}
+          {/* Fecha de salida */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.5, ease: 'easeOut' }}
           >
-            <Input
-              type="date"
-              label="Fecha de salidad"
-              value={formValues.checkOutDate}
-              onChange={(e) => onFieldChange('checkOutDate', e.target.value)}
+            <DatePicker
+              label="Fecha de salida"
+              value={
+                formValues.checkOutDate
+                  ? parseISODate(formValues.checkOutDate)
+                  : null
+              }
+              onChange={(d) =>
+                onFieldChange('checkOutDate', d ? toISODate(d) : '')
+              }
               error={errors.checkOutDate}
               required
               disabled={submitting}
-              min={formValues.checkInDate || new Date().toISOString().split('T')[0]}
-              hint={nights !== null ? `${nights} ${nights === 1 ? 'noche' : 'noches'} de estadía` : undefined}
+              minDate={
+                formValues.checkInDate
+                  ? parseISODate(formValues.checkInDate) ?? undefined
+                  : new Date()
+              }
+              hint={
+                nights !== null
+                  ? `${nights} ${nights === 1 ? 'noche' : 'noches'} de estadía`
+                  : undefined
+              }
+              clearable={false}
             />
           </motion.div>
 

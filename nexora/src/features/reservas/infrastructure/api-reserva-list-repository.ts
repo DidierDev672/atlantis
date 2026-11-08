@@ -194,10 +194,10 @@ export async function fetchReservasFromApi(): Promise<FetchReservasResult> {
       })
     }
 
-    // Consumo balanceado del endpoint /stay con el método GET
+    // Consumo balanceado del endpoint /reserve con el método GET
     const [response] = await Promise.all([
       executeBalancedRequest(() =>
-        api.get<unknown>('/stay', {
+        api.get<unknown>('/reserve', {
           validateStatus: () => true,
         })
       ),
@@ -218,6 +218,8 @@ export async function fetchReservasFromApi(): Promise<FetchReservasResult> {
         const obj = rawData as Record<string, unknown>
         if (Array.isArray(obj.data)) {
           staysList = obj.data as ReservaApiDto[]
+        } else if (Array.isArray(obj.reserves)) {
+          staysList = obj.reserves as ReservaApiDto[]
         } else if (Array.isArray(obj.stays)) {
           staysList = obj.stays as ReservaApiDto[]
         } else if (Array.isArray(obj.items)) {

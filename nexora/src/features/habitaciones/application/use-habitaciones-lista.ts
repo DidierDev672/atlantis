@@ -372,9 +372,22 @@ export function useHabitacionesLista() {
 
       // 2. Filtro por estado
       if (filters.status !== 'all') {
-        const rowStatus = row.status.toLowerCase()
-        const filterStatus = filters.status.toLowerCase()
-        if (rowStatus !== filterStatus) {
+        const rowStatus = row.status.toLowerCase().trim()
+        const filterStatus = filters.status.toLowerCase().trim()
+
+        const isMatch =
+          rowStatus === filterStatus ||
+          (filterStatus === 'occupied' &&
+            (rowStatus === 'busy' || rowStatus === 'ocupada' || rowStatus === 'ocupado')) ||
+          (filterStatus === 'available' &&
+            (rowStatus === 'disponible' || rowStatus === 'free' || rowStatus === 'libre')) ||
+          (filterStatus === 'maintenance' && rowStatus === 'mantenimiento') ||
+          (filterStatus === 'cleaning' &&
+            (rowStatus === 'limpieza' || rowStatus === 'dirty' || rowStatus === 'sucia')) ||
+          (filterStatus === 'inactive' &&
+            (rowStatus === 'inactiva' || rowStatus === 'inactivo' || rowStatus === 'disabled'))
+
+        if (!isMatch) {
           return false
         }
       }
@@ -412,3 +425,6 @@ export function useHabitacionesLista() {
     retryBed,
   }
 }
+
+export default useHabitacionesLista
+

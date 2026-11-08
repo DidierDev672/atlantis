@@ -1,8 +1,13 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect, useMemo, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faUserPlus, faXmark } from '@fortawesome/free-solid-svg-icons';
 import { Input } from '../../../../shared/ui/Input';
+import {
+  DatePicker,
+  toISODate,
+  parseISODate,
+} from '../../../../shared/date-picker';
 import { Button } from '../../../recursos/ui/atoms/button';
 import { RecursosDropdown, type DropdownOption } from '../../../recursos/ui/molecules/recursos-dropdown';
 import { Loader } from '../../../tema/ui/atoms/loader';
@@ -88,6 +93,17 @@ export function NuevoHuespedModal({
   const [email, setEmail] = useState('');
   // 6. Input fecha de nacimiento
   const [dateOfBirth, setDateOfBirth] = useState('');
+
+  // Fecha parseada para el DatePicker reutilizable (/shared/date-picker)
+  const parsedDob = useMemo(() => {
+    if (!dateOfBirth) return null;
+    const cleanDate = dateOfBirth.includes('T')
+      ? dateOfBirth.slice(0, 10)
+      : dateOfBirth;
+    return parseISODate(cleanDate);
+  }, [dateOfBirth]);
+
+  const maxBirthDate = useMemo(() => new Date(), []);
   // 7. Dropdown género: [Masculino, Femenino, Otro] mapeado a valores [M, F, O]
   const [genre, setGenre] = useState<'M' | 'F' | 'O'>('M');
   // 8. Input nacionalidad
@@ -549,19 +565,24 @@ export function NuevoHuespedModal({
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {/* 6. INPUT: FECHA DE NACIMIENTO */}
-                <Input
+                <DatePicker
                   id="modal-fecha-nacimiento"
-                  type="date"
                   label="Fecha de nacimiento"
-                  value={dateOfBirth}
-                  max={new Date().toISOString().split('T')[0]}
-                  onChange={(e) => {
-                    setDateOfBirth(e.target.value);
+                  placeholder="Elegir fecha de nacimiento…"
+                  value={parsedDob}
+                  onChange={(date) => {
+                    const iso = date ? toISODate(date) : '';
+                    setDateOfBirth(iso);
                     if (errors.dateOfBirth)
                       setErrors((p) => ({ ...p, dateOfBirth: '' }));
                   }}
+                  maxDate={maxBirthDate}
+                  minYear={1920}
+                  maxYear={new Date().getFullYear()}
                   error={errors.dateOfBirth}
+                  disabled={submitting}
                   required
+                  clearable
                 />
 
                 {/* 7. DROPDOWN: GÉNERO (RecursosDropdown reutilizable) */}

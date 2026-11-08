@@ -1,6 +1,5 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
-  faBed,
   faCalendarDays,
   faArrowRight,
   faDollarSign,
@@ -10,6 +9,7 @@ import { motion } from 'motion/react'
 import { fadeIn } from '../../../../design-tokens/motion'
 import type { ReservaViewItem } from '../../domain/reserva-list-types'
 import { ReservaStateBadge } from '../atoms/reserva-state-badge'
+import { ReservaCardPlanet } from '../atoms/reserva-card-planet'
 
 interface ReservaCardItemProps {
   item: ReservaViewItem
@@ -77,54 +77,44 @@ export function ReservaCardItem({ item, onSelect, onSelectHuesped }: ReservaCard
       variants={fadeIn}
       className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-line bg-panel p-5 shadow-xs transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
     >
-      {/* Encabezado de la card: Habitación y Estado */}
-      <div className="flex items-start justify-between gap-3 border-b border-line/60 pb-3.5">
-        <div className="flex items-center gap-2.5">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <FontAwesomeIcon icon={faBed} className="size-4" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-ink text-sm sm:text-base leading-snug">
-              {item.roomDisplayName}
+      {/* Encabezado de la card: Planeta aleatorio en esquina superior izquierda, Huésped principal y Estado */}
+      <div className="flex items-center justify-between gap-3 border-b border-line/60 pb-3.5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {/* Planeta en la esquina superior izquierda de la card */}
+          <ReservaCardPlanet id={item.id} size={30} />
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              const targetId = item.personId || item.personIds?.[0]
+              if (targetId && onSelectHuesped) {
+                onSelectHuesped(targetId)
+              }
+            }}
+            title="Ver información del huésped"
+            aria-label={`Ver información del huésped: ${item.personDisplayName}`}
+            className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/15 text-xs font-bold text-primary border border-primary/25 shadow-2xs select-none hover:bg-primary hover:text-white hover:scale-105 active:scale-95 transition-all cursor-pointer focus-visible:outline-2 focus-visible:outline-primary"
+          >
+            {initials}
+          </button>
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate font-semibold text-ink text-sm sm:text-base leading-snug" title={item.personDisplayName}>
+              {item.personDisplayName}
             </h3>
-            <p className="text-xs text-neutral">Alojamiento asignado</p>
+            <p className="text-[11px] text-neutral">Huésped principal</p>
           </div>
+          {item.numberOfGuests > 1 && (
+            <span
+              className="shrink-0 rounded-md border border-neutral/20 bg-surface/80 px-1.5 py-0.5 text-[10px] font-semibold text-secondary"
+              title={`${item.numberOfGuests} huéspedes en total`}
+            >
+              +{item.numberOfGuests - 1}
+            </span>
+          )}
         </div>
 
         <ReservaStateBadge label={item.stateLabel} tone={item.stateTone} status={item.state} />
-      </div>
-
-      {/* Huésped titular con iniciales */}
-      <div className="mt-3.5 flex items-center gap-2.5 rounded-xl bg-canvas/70 px-3 py-2 border border-line/40">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            const targetId = item.personId || item.personIds?.[0]
-            if (targetId && onSelectHuesped) {
-              onSelectHuesped(targetId)
-            }
-          }}
-          title="Ver información del huésped"
-          aria-label={`Ver información del huésped: ${item.personDisplayName}`}
-          className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/15 text-xs font-bold text-primary border border-primary/25 shadow-2xs select-none hover:bg-primary hover:text-white hover:scale-105 active:scale-95 transition-all cursor-pointer focus-visible:outline-2 focus-visible:outline-primary"
-        >
-          {initials}
-        </button>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-semibold text-ink" title={item.personDisplayName}>
-            {item.personDisplayName}
-          </p>
-          <p className="text-[11px] text-neutral">Huésped principal</p>
-        </div>
-        {item.numberOfGuests > 1 && (
-          <span
-            className="shrink-0 rounded-md border border-neutral/20 bg-surface/80 px-1.5 py-0.5 text-[10px] font-semibold text-secondary"
-            title={`${item.numberOfGuests} huéspedes en total`}
-          >
-            +{item.numberOfGuests - 1}
-          </span>
-        )}
       </div>
 
       {/* Fechas de entrada y salida con noches */}

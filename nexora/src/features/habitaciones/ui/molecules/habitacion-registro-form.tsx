@@ -2,6 +2,12 @@ import { useState, type FormEvent } from 'react'
 import { motion } from 'motion/react'
 import { customEasing, fadeUp } from '../../../../design-tokens/motion'
 import { Input } from '../../../../shared/ui/Input'
+import { RecursosDropdown } from '../../../recursos/ui/molecules/recursos-dropdown'
+import {
+  HABITACION_ESTADOS,
+  HABITACION_ESTADO_LABELS,
+  type HabitacionEstado,
+} from '../../domain/habitacion-detalle'
 import {
   CAPACITY_MAX,
   CAPACITY_MIN,
@@ -12,6 +18,11 @@ import {
 } from '../../domain/habitacion'
 import { Button } from '../atoms/button'
 import { FadeIn } from '../atoms/fade-in'
+
+const estadoOptions = HABITACION_ESTADOS.map((val) => ({
+  value: val,
+  label: HABITACION_ESTADO_LABELS[val],
+}))
 
 export interface HabitacionRegistroFormProps {
   submitting: boolean
@@ -25,6 +36,8 @@ export function HabitacionRegistroForm({
   onSubmit,
 }: HabitacionRegistroFormProps) {
   const [name, setName] = useState('')
+  const [edificioId, setEdificioId] = useState('')
+  const [estado, setEstado] = useState<HabitacionEstado>('disponible')
   const [capacity, setCapacity] = useState('')
   const [basePrice, setBasePrice] = useState('')
   const [errors, setErrors] = useState<HabitacionValidationErrors>({})
@@ -35,7 +48,7 @@ export function HabitacionRegistroForm({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    const values: HabitacionInput = { name, capacity, basePrice }
+    const values: HabitacionInput = { name, capacity, basePrice, edificioId, estado }
     const nextErrors = validateHabitacionInput(values)
     setErrors(nextErrors)
     if (Object.keys(nextErrors).length === 0) {
@@ -61,6 +74,18 @@ export function HabitacionRegistroForm({
           error={errors.name}
           hint="Un nombre que tus huéspedes reconozcan de un vistazo."
           icon={<BedIcon />}
+        />
+      </FadeIn>
+
+      <FadeIn duration={0.45} delay={0.06} className="relative z-20 has-[[aria-expanded='true']]:z-50">
+        <RecursosDropdown
+          label="Edificio"
+          endpoint="/building"
+          value={edificioId}
+          onChange={setEdificioId}
+          direction="auto"
+          placeholder="Elige un edificio…"
+          emptyLabel="Aún no hay edificios registrados."
         />
       </FadeIn>
 
@@ -107,9 +132,20 @@ export function HabitacionRegistroForm({
         </FadeIn>
       </div>
 
+      <FadeIn duration={0.45} delay={0.26} className="relative z-10 has-[[aria-expanded='true']]:z-50">
+        <RecursosDropdown
+          label="Estado"
+          options={estadoOptions}
+          value={estado}
+          onChange={(val) => setEstado(val as HabitacionEstado)}
+          direction="auto"
+          searchable={false}
+        />
+      </FadeIn>
+
       <FadeIn
         duration={0.45}
-        delay={0.28}
+        delay={0.32}
         className="flex items-center justify-end border-t border-line pt-4"
       >
         <Button

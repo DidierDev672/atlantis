@@ -4,6 +4,7 @@ import { validateStatusCode, type StatusCodeValidationResult } from '../../../sh
 import type { ReservaApiDto, ReservaViewItem } from '../domain/reserva-list-types'
 import { MOCK_RESERVAS_DATA } from './mock-reservas-data'
 import { transformReservaDto } from './api-reserva-list-repository'
+import { executeBalancedRequest } from './api-load-balancer'
 
 export interface FetchReservaDetailResult {
   item: ReservaViewItem | null
@@ -16,8 +17,12 @@ export async function fetchReservaDetailFromApi(id: string): Promise<FetchReserv
 
   try {
     const [resRooms, resPersons] = await Promise.allSettled([
-      api.get<Array<{ id: string; number?: string; floor?: number }>>('/room', { validateStatus: () => true }),
-      api.get<Array<{ id: string; first_name?: string; last_name?: string; name?: string }>>('/persons', { validateStatus: () => true }),
+      executeBalancedRequest(() =>
+        api.get<Array<{ id: string; number?: string; floor?: number }>>('/room', { validateStatus: () => true })
+      ),
+      executeBalancedRequest(() =>
+        api.get<Array<{ id: string; first_name?: string; last_name?: string; name?: string }>>('/persons', { validateStatus: () => true })
+      ),
     ])
 
     if (resRooms.status === 'fulfilled' && Array.isArray(resRooms.value.data)) {
@@ -32,14 +37,19 @@ export async function fetchReservaDetailFromApi(id: string): Promise<FetchReserv
       })
     }
 
-    let response = await api.get<ReservaApiDto | ReservaApiDto[]>(`/stay/${id}`, {
-      validateStatus: () => true,
-    })
-
-    if (response.status !== 200 || !response.data) {
-      response = await api.get<ReservaApiDto | ReservaApiDto[]>(`/reserve/${id}`, {
+    // Consumo balanceado del endpoint /reserve/{id} con método GET (fallback a /stay/{id})
+    let response = await executeBalancedRequest(() =>
+      api.get<ReservaApiDto | ReservaApiDto[]>(`/reserve/${id}`, {
         validateStatus: () => true,
       })
+    )
+
+    if (response.status !== 200 || !response.data) {
+      response = await executeBalancedRequest(() =>
+        api.get<ReservaApiDto | ReservaApiDto[]>(`/stay/${id}`, {
+          validateStatus: () => true,
+        })
+      )
     }
 
     const validation = validateStatusCode(response.status)

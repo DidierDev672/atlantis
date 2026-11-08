@@ -3,15 +3,23 @@ import { motion, AnimatePresence } from 'motion/react';
 import { HabitacionesHeader } from './molecules/habitaciones-header';
 import { HabitacionDetallePanel } from './organisms/habitacion-detalle-panel';
 import { HabitacionesListaTable } from './organisms/habitaciones-lista-table';
-import { AsignarHuespedPage } from './asignar-huesped-page';
+import { AsignarHuespedPage } from './asignar-huesped-page'; // Importación de la vista cozy de habitación
 import { type HabitacionesViewMode } from './molecules/habitaciones-view-mode-toggle';
-import type { RoomRow } from '../domain/habitacion-lista';
+import { type RoomRow, isHabitacionOcupada } from '../domain/habitacion-lista';
 
 export function HabitacionesPage() {
   const [activeTab, setActiveTab] = useState<'lista' | 'registro'>('lista');
   const [viewMode, setViewMode] = useState<HabitacionesViewMode>('cards');
   const [selectedRoomForHuesped, setSelectedRoomForHuesped] =
     useState<RoomRow | null>(null);
+
+  const handleSelectHabitacion = (room: RoomRow) => {
+    // Si la habitación está ocupada, bloquear la navegación a la vista de asignación de huéspedes
+    if (isHabitacionOcupada(room.status)) {
+      return;
+    }
+    setSelectedRoomForHuesped(room);
+  };
 
   return (
     <div className="bg-canvas min-h-screen px-4 py-8 sm:px-6 lg:px-8">
@@ -59,9 +67,7 @@ export function HabitacionesPage() {
                       onNewHabitacion={() => setActiveTab('registro')}
                       viewMode={viewMode}
                       onViewModeChange={setViewMode}
-                      onSelectHabitacion={(room) =>
-                        setSelectedRoomForHuesped(room)
-                      }
+                      onSelectHabitacion={handleSelectHabitacion}
                     />
                   </motion.div>
                 ) : (

@@ -38,7 +38,7 @@ export interface ReservaAcompanantesModalProps {
  * Variantes de animación para la transición cinemática de intercambio de cartas de sniper.
  * Emula la salida deslizante con leve giro angular (tilt) y entrada elástica con física spring.
  */
-export const sniperCardTransitionVariants = {
+const sniperCardTransitionVariants = {
   enter: (dir: number) => ({
     x: dir > 0 ? 56 : -56,
     opacity: 0,
@@ -107,8 +107,10 @@ export function ReservaAcompanantesModal({
     setActiveIndex(nextIndex);
   };
 
-  // Al abrir el modal, situar en el primer acompañante pendiente de registro
-  useEffect(() => {
+  // Sincronizar al abrir el modal situando en el primer acompañante pendiente de registro sin efectos en cascada
+  const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
+  if (isOpen !== prevIsOpen) {
+    setPrevIsOpen(isOpen);
     if (isOpen) {
       const firstPendingIndex = Array.from(
         { length: Math.max(1, totalGuests - 1) },
@@ -119,7 +121,7 @@ export function ReservaAcompanantesModal({
       setDirection(1);
       setActiveIndex(target);
     }
-  }, [isOpen, totalGuests, companions]);
+  }
 
   // Cerrar con Escape y bloquear scroll del body
   useEffect(() => {
@@ -128,6 +130,7 @@ export function ReservaAcompanantesModal({
     document.body.style.overflow = 'hidden';
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleKeyDown);

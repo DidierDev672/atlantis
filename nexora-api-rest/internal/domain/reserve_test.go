@@ -47,7 +47,7 @@ func TestReserve_Invariants(t *testing.T) {
 			expectedError: domain.ErrInvalidReserveID,
 		},
 		{
-			name:          "empty room id",
+			name:          "empty room id is allowed for unassigned room",
 			id:            "res-1",
 			roomID:        "",
 			personID:      "person-1",
@@ -56,7 +56,7 @@ func TestReserve_Invariants(t *testing.T) {
 			guests:        2,
 			state:         domain.ReserveStatePending,
 			price:         100.0,
-			expectedError: domain.ErrInvalidReserveRoomID,
+			expectedError: nil,
 		},
 		{
 			name:          "empty person id",
@@ -143,4 +143,50 @@ func TestReserve_Invariants(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReserve_WithPersons(t *testing.T) {
+	now := time.Now().UTC()
+
+	t.Run("multiple persons with unassigned room is valid", func(t *testing.T) {
+		res, err := domain.NewReserveWithPersons(
+			"res-multiple",
+			"",
+			[]domain.PersonID{"person-1", "person-2"},
+			now,
+			now.Add(24*time.Hour),
+			2,
+			domain.ReserveStatePending,
+			200.0,
+			"admin",
+			now,
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if res.PersonID != "person-1" {
+			t.Errorf("expected primary person 'person-1', got '%s'", res.PersonID)
+		}
+		if len(res.PersonIDs) != 2 {
+			t.Errorf("expected 2 persons, got %d", len(res.PersonIDs))
+		}
+	})
+
+	t.Run("empty person list fails", func(t *testing.T) {
+		_, err := domain.NewReserveWithPersons(
+			"res-fail",
+			"",
+			[]domain.PersonID{},
+			now,
+			now.Add(24*time.Hour),
+			1,
+			domain.ReserveStatePending,
+			100.0,
+			"admin",
+			now,
+		)
+		if err != domain.ErrInvalidReservePersonID {
+			t.Errorf("expected ErrInvalidReservePersonID, got %v", err)
+		}
+	})
 }

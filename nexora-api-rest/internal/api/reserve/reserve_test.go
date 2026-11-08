@@ -94,8 +94,7 @@ func TestReserveHandler_Create(t *testing.T) {
 	}
 
 	body := map[string]any{
-		"room_id":          "room-1",
-		"person_id":        "person-1",
+		"person_ids":       []string{"person-1"},
 		"check_in_date":    "2026-10-01T14:00:00Z",
 		"check_out_date":   "2026-10-03T11:00:00Z",
 		"number_of_guests": 2,
@@ -159,6 +158,10 @@ func TestReserveHandler_List(t *testing.T) {
 	if resList[0]["id"] != "res-100" {
 		t.Errorf("expected id res-100, got %v", resList[0]["id"])
 	}
+	pidsList, ok := resList[0]["person_ids"].([]any)
+	if !ok || len(pidsList) != 1 || pidsList[0] != "person-1" {
+		t.Errorf("expected person_ids array ['person-1'], got %v", resList[0]["person_ids"])
+	}
 }
 
 func TestReserveHandler_Get(t *testing.T) {
@@ -185,6 +188,10 @@ func TestReserveHandler_Get(t *testing.T) {
 
 	if resBody["id"] != "res-100" {
 		t.Errorf("expected id res-100, got %v", resBody["id"])
+	}
+	pids, ok := resBody["person_ids"].([]any)
+	if !ok || len(pids) != 1 || pids[0] != "person-1" {
+		t.Errorf("expected person_ids array ['person-1'], got %v", resBody["person_ids"])
 	}
 }
 

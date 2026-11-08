@@ -6,6 +6,7 @@ import {
   clampDate,
   compareDays,
   endOfMonth,
+  isSameDay,
   startOfDay,
   startOfMonth,
   weekColumn,
@@ -45,12 +46,20 @@ export function useCalendar({
     (target: Date, focus = false) => {
       const next = clampDate(startOfDay(target), minDate, maxDate);
       const nextMonth = startOfMonth(next);
-      setDirection(nextMonth.getTime() < viewMonth.getTime() ? -1 : 1);
-      setViewMonth(nextMonth);
-      setFocusedDate(next);
+      setViewMonth((prev) => {
+        if (
+          prev.getFullYear() === nextMonth.getFullYear() &&
+          prev.getMonth() === nextMonth.getMonth()
+        ) {
+          return prev;
+        }
+        setDirection(nextMonth.getTime() < prev.getTime() ? -1 : 1);
+        return nextMonth;
+      });
+      setFocusedDate((prev) => (isSameDay(prev, next) ? prev : next));
       if (focus) setFocusToken((t) => t + 1);
     },
-    [minDate, maxDate, viewMonth]
+    [minDate, maxDate]
   );
 
   const goToMonth = (delta: number) => moveTo(addMonths(focusedDate, delta));

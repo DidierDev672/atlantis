@@ -166,11 +166,12 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 	}
 
 	personHandler := &personhttp.Handler{
-		Creator: personapp.NewCreatePersonUseCase(personRepo, ids.RandomID{}),
-		Lister:  personapp.NewListPersonsUseCase(personRepo),
-		Getter:  personapp.NewGetPersonUseCase(personRepo),
-		Updater: personapp.NewUpdatePersonUseCase(personRepo),
-		Deleter: personapp.NewDeletePersonUseCase(personRepo),
+		Creator:          personapp.NewCreatePersonUseCase(personRepo, ids.RandomID{}),
+		Lister:           personapp.NewListPersonsUseCase(personRepo),
+		Getter:           personapp.NewGetPersonUseCase(personRepo),
+		ByDocumentGetter: personapp.NewGetPersonByDocumentUseCase(personRepo),
+		Updater:          personapp.NewUpdatePersonUseCase(personRepo),
+		Deleter:          personapp.NewDeletePersonUseCase(personRepo),
 	}
 
 	reserveHandler := &reservehttp.Handler{
@@ -182,7 +183,7 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 	}
 
 	stayHandler := &stayhttp.Handler{
-		Creator:         stayapp.NewCreateStayUseCase(stayRepo, ids.RandomID{}),
+		Creator:         stayapp.NewCreateStayUseCase(stayRepo, reserveRepo, ids.RandomID{}),
 		Lister:          stayapp.NewListStaysUseCase(stayRepo),
 		Getter:          stayapp.NewGetStayUseCase(stayRepo),
 		Updater:         stayapp.NewUpdateStayUseCase(stayRepo),
@@ -310,6 +311,8 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 
 	// Persons: plural is the canonical form (matches /beds, /users, etc.);
 	// singular alias is kept for backwards compatibility.
+	mux.HandleFunc("GET /persons/by-document", personHandler.ByDocument)
+	mux.HandleFunc("GET /person/by-document", personHandler.ByDocument)
 	mux.HandleFunc("POST /persons", personHandler.Create)
 	mux.HandleFunc("POST /person", personHandler.Create)
 	mux.HandleFunc("GET /persons", personHandler.List)

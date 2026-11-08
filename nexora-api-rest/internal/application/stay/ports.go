@@ -11,6 +11,11 @@ type IDProvider interface {
 	NewStayID() domain.StayID
 }
 
+// ReserveFinder is the narrow port for looking up a reservation (ISP).
+type ReserveFinder interface {
+	FindByID(ctx context.Context, id domain.ReserveID) (domain.Reserve, error)
+}
+
 // StayCreator is the narrow port for creating stays (ISP).
 type StayCreator interface {
 	Create(ctx context.Context, in CreateInput) (domain.Stay, error)

@@ -12,75 +12,71 @@ import {
   type FocusEvent,
 } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import { fadeIn } from '../../design-tokens/motion'
+import { fadeUp } from '../../design-tokens/motion'
 import { cn } from '../lib/cn'
 
 export type TextareaResize = 'none' | 'vertical' | 'horizontal' | 'both'
-export type TextareaLabelVariant = 'top' | 'floating'
 
 export interface TextareaProps
   extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'className'> {
   /**
-   * Etiqueta del campo. Cambia dinámicamente de color según el estado
-   * (focus, error, disabled, default).
+   * Etiqueta superior del campo. Vinculada semánticamente mediante htmlFor e id.
    */
   label?: string
 
   /**
-   * Variante de la etiqueta:
-   * - 'top': Etiqueta superior fija con indicador de estado (por defecto).
-   * - 'floating': Etiqueta flotante animada que se desplaza al borde superior.
-   */
-  labelVariant?: TextareaLabelVariant
-
-  /**
    * Mensaje de error de validación.
-   * Cambia los bordes y el anillo de enfoque a rojo, y muestra este texto debajo.
+   * Cambia el borde a color de peligro (rojo), activa aria-invalid y se muestra debajo.
    */
   error?: string
 
   /**
-   * Texto de asistencia / recomendación debajo del textarea (se oculta si hay error).
+   * Texto de ayuda o descripción complementaria debajo del textarea (se oculta si hay un error activo).
+   */
+  helperText?: string
+
+  /**
+   * Alias compatible con helperText para texto o componentes de asistencia.
    */
   hint?: ReactNode
 
   /**
+   * Número de filas de texto visibles por defecto.
+   * @default 4
+   */
+  rows?: number
+
+  /**
+   * Si es true, el componente ocupa el 100% del ancho de su contenedor.
+   * @default true
+   */
+  fullWidth?: boolean
+
+  /**
    * Muestra el contador de caracteres en la esquina inferior derecha.
-   * Si se especifica `maxLength`, mostrará `actual/maxLength`.
-   * Si no se pasa `maxLength`, mostrará el número total de caracteres ingresados.
    */
   showCount?: boolean
 
   /**
-   * Límite máximo de caracteres permitidos.
-   */
-  maxLength?: number
-
-  /**
-   * Controla el comportamiento de redimensionamiento nativo:
-   * - 'none': Deshabilita el resize (resize-none).
-   * - 'vertical': Permite sólo resize vertical (resize-y).
-   * - 'horizontal': Permite sólo resize horizontal (resize-x).
-   * - 'both': Permite ambas direcciones (resize).
+   * Comportamiento de redimensionamiento nativo del textarea.
    * @default 'none'
    */
   resize?: TextareaResize
 
   /**
-   * Si es `true`, el textarea ajusta automáticamente su altura al contenido (auto-grow).
-   * Al activarse, anula el resize manual para una experiencia visual pulida.
+   * Si es true, el textarea ajusta automáticamente su altura al escribir (auto-grow).
    * @default false
    */
   autoResize?: boolean
 
   /**
-   * Altura mínima cuando autoResize está activo (en píxeles o clases CSS).
-   * @default 96 (equivalente a min-h-[96px])
+   * Altura mínima en píxeles cuando autoResize está activo.
+   * @default 96
    */
   minHeight?: number
 
   /**
-   * Clases adicionales para el contenedor principal.
+   * Clases adicionales para el contenedor exterior.
    */
   className?: string
 
@@ -103,21 +99,18 @@ const resizeClasses: Record<TextareaResize, string> = {
 }
 
 /**
- * Componente de Textarea reutilizable construido con Tailwind CSS y principios de UX/UI modernos:
- * - Bordes suaves con transiciones refinadas.
- * - Anillo de enfoque (focus ring) con sombra de elevación sutil.
- * - Estados: Default, Lleno, Focus, Disabled y Validación con Error.
- * - Etiqueta superior o flotante con cambio reactivo de color.
- * - Contador de caracteres con feedback visual de proximidad al límite.
- * - Soporte para redimensionado desactivado o altura dinámica (auto-grow).
+ * Componente Textarea reutilizable, accesible y configurable construido con React,
+ * Tailwind CSS y Motion siguiendo las directrices de arquitectura y diseño de agent.md.
  */
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   function Textarea(
     {
       label,
-      labelVariant = 'top',
       error,
+      helperText,
       hint,
+      rows = 4,
+      fullWidth = true,
       showCount = false,
       maxLength,
       resize = 'none',
@@ -125,7 +118,6 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
       minHeight = 96,
       required = false,
       disabled = false,
-      rows = 3,
       value,
       defaultValue,
       onChange,
@@ -140,15 +132,15 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     },
     ref
   ) {
-    const autoId = useId()
-    const fieldId = id ?? autoId
+    const generatedId = useId()
+    const fieldId = id ?? generatedId
     const errorId = `${fieldId}-error`
-    const hintId = `${fieldId}-hint`
+    const helperId = `${fieldId}-helper`
 
     const innerRef = useRef<HTMLTextAreaElement>(null)
-    useImperativeHandle(ref, () => innerRef.current!)
+    useImperativeHandle(ref, () => innerRef.current as HTMLTextAreaElement)
 
-    // Estados internos para feedback de interacción
+    // Estados interactivos
     const [isFocused, setIsFocused] = useState(false)
     const [charCount, setCharCount] = useState<number>(() => {
       if (typeof value === 'string') return value.length
@@ -157,9 +149,16 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
     })
 
     const hasError = Boolean(error && error.trim().length > 0)
-    const hasValue = (typeof value === 'string' ? value.length : charCount) > 0
+    const effectiveHelper = helperText ?? hint
 
-    // Ajuste dinámico de altura cuando autoResize está activo
+    // Sincronización del contador de caracteres cuando el valor controlado cambia
+    useEffect(() => {
+      if (typeof value === 'string') {
+        setCharCount(value.length)
+      }
+    }, [value])
+
+    // Auto-ajuste de altura cuando autoResize está habilitado
     const adjustAutoHeight = useCallback(() => {
       if (!autoResize || !innerRef.current) return
       const el = innerRef.current
@@ -173,13 +172,6 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         adjustAutoHeight()
       }
     }, [autoResize, adjustAutoHeight, value])
-
-    // Sincronizar contador de caracteres cuando el valor controlado cambia
-    useEffect(() => {
-      if (typeof value === 'string') {
-        setCharCount(value.length)
-      }
-    }, [value])
 
     const handleFocus = (e: FocusEvent<HTMLTextAreaElement>) => {
       setIsFocused(true)
@@ -199,7 +191,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
       onChange?.(e)
     }
 
-    // Cálculo del estado visual de la etiqueta (Label color state)
+    // Cálculo dinámico de clases para el label según el estado
     const getLabelColorClass = () => {
       if (disabled) return 'text-ink-muted/50 cursor-not-allowed'
       if (hasError) return 'text-danger font-semibold'
@@ -213,10 +205,19 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
 
     const effectiveResizeClass = autoResize ? 'resize-none overflow-hidden' : resizeClasses[resize]
 
+    // Determinación del aria-describedby
+    const ariaDescribedBy = hasError ? errorId : effectiveHelper ? helperId : undefined
+
     return (
-      <div className={cn('group w-full flex flex-col', className)}>
-        {/* 1. Etiqueta Superior Tradicional */}
-        {label && labelVariant === 'top' && (
+      <div
+        className={cn(
+          'group flex flex-col',
+          fullWidth ? 'w-full' : 'w-auto inline-flex',
+          className
+        )}
+      >
+        {/* 1. Etiqueta vinculada accesible */}
+        {label && (
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <label
               htmlFor={fieldId}
@@ -235,36 +236,15 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
             </label>
 
             {!required && !disabled && (
-              <span className="text-[11px] font-normal tracking-wide text-ink-muted">
+              <span className="text-[11px] font-normal tracking-wide text-ink-muted select-none">
                 Opcional
               </span>
             )}
           </div>
         )}
 
-        {/* 2. Contenedor del Textarea con Posible Etiqueta Flotante */}
+        {/* 2. Campo <textarea> */}
         <div className="relative w-full">
-          {label && labelVariant === 'floating' && (
-            <label
-              htmlFor={fieldId}
-              className={cn(
-                'pointer-events-none absolute left-3.5 z-10 origin-[0] transition-all duration-200 ease-out select-none',
-                isFocused || hasValue
-                  ? '-top-2.5 px-1.5 text-xs bg-panel rounded-sm'
-                  : 'top-3 text-sm text-ink-soft',
-                getLabelColorClass(),
-                labelClassName
-              )}
-            >
-              <span>{label}</span>
-              {required && (
-                <span aria-hidden="true" className="ml-0.5 text-danger">
-                  *
-                </span>
-              )}
-            </label>
-          )}
-
           <textarea
             ref={innerRef}
             id={fieldId}
@@ -277,27 +257,25 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
             onChange={handleChange}
             onFocus={handleFocus}
             onBlur={handleBlur}
-            placeholder={
-              labelVariant === 'floating' && !isFocused && !hasValue ? undefined : placeholder
-            }
+            placeholder={placeholder}
             aria-invalid={hasError ? true : undefined}
-            aria-describedby={hasError ? errorId : hint ? hintId : undefined}
+            aria-describedby={ariaDescribedBy}
             style={autoResize ? { minHeight: `${minHeight}px` } : undefined}
             className={cn(
               // Tipografía y geometría base
-              'w-full rounded-2xl border px-4 py-3 text-sm leading-relaxed text-ink',
+              'w-full rounded-xl border px-3.5 py-2.5 text-sm leading-relaxed text-ink',
               'font-sans bg-panel shadow-xs outline-none',
-              // Transiciones suaves para todos los estados interactivos
+              // Transiciones fluidas en hover, focus y validación
               'transition-all duration-200 ease-in-out',
-              // Placeholder estilizado
+              // Placeholder sutil
               'placeholder:text-ink-soft/70 placeholder:font-normal',
-              // Control de Redimensionamiento
+              // Redimensionamiento
               effectiveResizeClass,
-              // Estado: Focus e Indicador de Anillo Visual
+              // Anillo de enfoque (Focus Ring)
               'focus:ring-2 focus:ring-offset-0 focus:shadow-md',
-              // Estados de Color y Bordes según Error vs Normal
+              // Estados de color y borde: Error vs Normal / Hover / Focus
               hasError
-                ? 'border-danger/60 text-danger-900 focus:border-danger focus:ring-danger/20'
+                ? 'border-danger text-ink focus:border-danger focus:ring-danger/20'
                 : 'border-line hover:border-ink-soft focus:border-primary focus:ring-primary/20',
               // Estado: Deshabilitado (Disabled)
               'disabled:cursor-not-allowed disabled:opacity-50 disabled:bg-canvas/50 disabled:hover:border-line disabled:shadow-none',
@@ -307,15 +285,15 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           />
         </div>
 
-        {/* 3. Barra Inferior: Mensaje de Error / Ayuda (Izquierda) + Contador de Caracteres (Derecha) */}
+        {/* 3. Mensaje de error / Ayuda (con animación fadeUp de agent.md) y Contador */}
         <div className="mt-1.5 flex items-start justify-between gap-3 min-h-[1.25rem] px-0.5">
-          {/* Mensaje de Error o Ayuda */}
+          {/* Contenedor del Mensaje */}
           <div className="flex-1">
             <AnimatePresence initial={false} mode="wait">
               {hasError ? (
                 <motion.p
                   key={errorId}
-                  variants={fadeIn}
+                  variants={fadeUp}
                   initial="hidden"
                   animate="visible"
                   exit="exit"
@@ -337,15 +315,15 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
                   </svg>
                   <span>{error}</span>
                 </motion.p>
-              ) : hint != null ? (
-                <p id={hintId} className="text-xs text-ink-soft leading-normal">
-                  {hint}
+              ) : effectiveHelper ? (
+                <p id={helperId} className="text-xs text-ink-muted leading-normal">
+                  {effectiveHelper}
                 </p>
               ) : null}
             </AnimatePresence>
           </div>
 
-          {/* Contador de Caracteres en la esquina inferior derecha */}
+          {/* Contador de caracteres opcional */}
           {(showCount || maxLength != null) && (
             <div
               aria-live="polite"

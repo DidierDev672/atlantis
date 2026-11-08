@@ -1,6 +1,5 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
-  faBed,
   faUser,
   faCalendarDays,
   faUsers,
@@ -71,15 +70,9 @@ export function ReservasTablaView({ items, onSelect, onSelectHuesped }: Reservas
       {/* Visualización en tabla para pantallas medianas y de escritorio */}
       <div className="hidden md:block overflow-hidden rounded-2xl border border-line bg-panel shadow-xs">
         <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-left text-sm">
+        <table className="w-full min-w-[680px] text-left text-sm">
           <thead className="border-b border-line bg-surface/40 text-xs font-semibold uppercase tracking-wider text-ink-muted">
             <tr>
-              <th scope="col" className="px-5 py-3.5">
-                <span className="flex items-center gap-1.5">
-                  <FontAwesomeIcon icon={faBed} className="size-3 text-neutral" />
-                  <span>Habitación</span>
-                </span>
-              </th>
               <th scope="col" className="px-5 py-3.5">
                 <span className="flex items-center gap-1.5">
                   <FontAwesomeIcon icon={faUser} className="size-3 text-neutral" />
@@ -134,16 +127,6 @@ export function ReservasTablaView({ items, onSelect, onSelectHuesped }: Reservas
                 variants={staggerItem}
                 className="transition-colors hover:bg-canvas/50"
               >
-                {/* Habitación */}
-                <td className="px-5 py-4 font-semibold text-ink">
-                  <div className="flex items-center gap-2">
-                    <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                      <FontAwesomeIcon icon={faBed} className="size-3" />
-                    </div>
-                    <span className="truncate">{item.roomDisplayName}</span>
-                  </div>
-                </td>
-
                 {/* Huésped */}
                 <td className="px-5 py-4">
                   <div className="flex items-center gap-2.5">

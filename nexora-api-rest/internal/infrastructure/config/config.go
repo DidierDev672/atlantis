@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -103,4 +104,48 @@ func DatabaseURL() string {
 		"postgres://%s:%s@%s:%s/%s?sslmode=%s&timezone=%s",
 		db.User, db.Password, db.Host, db.Port, db.Name, db.SSLMode, db.Timezone,
 	)
+}
+
+// RateLimitConfig holds settings for HTTP rate limiting.
+type RateLimitConfig struct {
+	Enabled       bool
+	RPS           float64
+	Burst         int
+	SkipLocalhost bool
+}
+
+// RateLimit returns the rate limiter settings loaded from environment variables.
+// In development, localhost is skipped by default to prevent frontend reloads or
+// multiple concurrent component fetches from hitting 429 Too Many Requests.
+func RateLimit() RateLimitConfig {
+	enabled := true
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("RATE_LIMIT_ENABLED"))); v == "false" || v == "0" || v == "off" || v == "no" {
+		enabled = false
+	}
+
+	skipLocalhost := true
+	if v := strings.ToLower(strings.TrimSpace(os.Getenv("RATE_LIMIT_SKIP_LOCALHOST"))); v == "false" || v == "0" || v == "off" || v == "no" {
+		skipLocalhost = false
+	}
+
+	rps := 100.0
+	if v := strings.TrimSpace(os.Getenv("RATE_LIMIT_RPS")); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+			rps = f
+		}
+	}
+
+	burst := 200
+	if v := strings.TrimSpace(os.Getenv("RATE_LIMIT_BURST")); v != "" {
+		if i, err := strconv.Atoi(v); err == nil && i > 0 {
+			burst = i
+		}
+	}
+
+	return RateLimitConfig{
+		Enabled:       enabled,
+		RPS:           rps,
+		Burst:         burst,
+		SkipLocalhost: skipLocalhost,
+	}
 }
