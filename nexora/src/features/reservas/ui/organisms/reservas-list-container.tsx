@@ -1,7 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faBed, faRotateRight } from '@fortawesome/free-solid-svg-icons'
 import { motion } from 'motion/react'
-import { fadeIn, staggerContainer } from '../../../../design-tokens/motion'
+import { fadeIn } from '../../../../design-tokens/motion'
 import { InfiniteScroll } from '../../../../shared/ui/InfiniteScroll'
 import { Loading } from '../../../../shared/loading'
 import type { ReservaViewItem, ReservaViewMode } from '../../domain/reserva-list-types'
@@ -97,13 +97,7 @@ export function ReservasListContainer({
       }
     >
       {viewMode === 'cards' ? (
-        <motion.div
-          variants={staggerContainer}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, amount: 0.05 }}
-          className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3"
-        >
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
           {items.map((item) => (
             <ReservaCardItem
               key={item.id}
@@ -112,13 +106,25 @@ export function ReservasListContainer({
               onSelectHuesped={onSelectHuesped}
             />
           ))}
-        </motion.div>
+        </div>
       ) : (
         <ReservasTablaView
           items={items}
           onSelect={onSelectReserva}
           onSelectHuesped={onSelectHuesped}
         />
+      )}
+
+      {hasMore && !loading && (
+        <div className="flex justify-center pt-6 pb-2">
+          <button
+            type="button"
+            onClick={() => void onLoadMore()}
+            className="border-line bg-panel hover:bg-surface text-ink inline-flex cursor-pointer items-center gap-2 rounded-xl border px-4 py-2 text-xs font-semibold shadow-2xs transition active:scale-95"
+          >
+            <span>Cargar más reservas</span>
+          </button>
+        </div>
       )}
     </InfiniteScroll>
   )

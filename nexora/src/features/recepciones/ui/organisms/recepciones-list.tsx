@@ -317,7 +317,8 @@ export function RecepcionesList({
             hasMore={hasMore}
             isLoading={loading}
             onLoadMore={onLoadMore}
-            threshold={200}
+            threshold={0.1}
+            rootMargin="0px 0px 200px 0px"
             endMessage={<InfiniteScrollEnd label="Ya visualizas todas las recepciones registradas." />}
           >
             <div className="overflow-x-auto">

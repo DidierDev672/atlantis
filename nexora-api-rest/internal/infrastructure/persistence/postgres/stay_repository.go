@@ -19,7 +19,7 @@ const StaySchemaDDL = `
 CREATE TABLE IF NOT EXISTS stays (
     id               VARCHAR(36) PRIMARY KEY,
     room_id          VARCHAR(36) NOT NULL,
-    reservation_id   VARCHAR(36) NOT NULL,
+    reservation_id   VARCHAR(36) NOT NULL DEFAULT '',
     check_in_date    TIMESTAMPTZ NOT NULL,
     check_out_date   TIMESTAMPTZ NOT NULL,
     payment_method   VARCHAR(30) NOT NULL,
@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS stays (
     CHECK (security_deposit >= 0),
     CHECK (check_out_date > check_in_date)
 );
+ALTER TABLE stays ALTER COLUMN reservation_id DROP NOT NULL;
+ALTER TABLE stays ALTER COLUMN reservation_id SET DEFAULT '';
 ALTER TABLE stays ADD COLUMN IF NOT EXISTS headquarters_id VARCHAR(36);
 ALTER TABLE stays ADD COLUMN IF NOT EXISTS updated_by VARCHAR(100);
 ALTER TABLE stays ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(100);
@@ -71,7 +73,7 @@ var _ domain.StayRepository = (*StayRepository)(nil)
 // staySelect returns a stay row with its PersonIDs reconstructed from the N:N
 // pivot table via array_agg (empty array when the stay has no guests). It must
 // be followed by a GROUP BY over every non-aggregated stay column.
-const staySelect = `SELECT s.id, s.room_id, s.reservation_id,
+const staySelect = `SELECT s.id, s.room_id, COALESCE(s.reservation_id, '') AS reservation_id,
 	COALESCE(ARRAY_AGG(sp.person_id) FILTER (WHERE sp.person_id IS NOT NULL), ARRAY[]::VARCHAR[]) AS person_ids,
 	s.check_in_date, s.check_out_date, s.payment_method, s.security_deposit, s.remarks,
 	s.status, s.created_by, s.created_at, s.updated_at

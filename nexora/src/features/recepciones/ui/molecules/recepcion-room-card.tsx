@@ -4,6 +4,7 @@ import {
   type RecepcionRoomItem,
   getRoomStatusConfig,
 } from '../../domain/recepcion-room'
+import { RandomPlanet } from '../../../../shared/planets'
 
 export interface RecepcionRoomCardProps {
   room: RecepcionRoomItem
@@ -32,23 +33,9 @@ export function RecepcionRoomCard({ room, onClick }: RecepcionRoomCardProps) {
       <div className="space-y-3.5">
         <div className="flex items-start justify-between gap-2.5">
           <div className="flex items-center gap-3">
-            {/* Icono de Habitación / Llave */}
-            <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-primary/20 bg-primary/10 text-primary shadow-2xs group-hover:bg-primary group-hover:text-white transition-colors">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="size-5"
-                aria-hidden="true"
-              >
-                <path d="M2 4v16" />
-                <path d="M2 8h18a2 2 0 0 1 2 2v10" />
-                <path d="M2 17h20" />
-                <path d="M6 8v9" />
-              </svg>
+            {/* Planeta aleatorio cósmico de /shared */}
+            <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-primary/20 bg-primary/10 text-primary shadow-2xs group-hover:bg-primary/20 transition-colors">
+              <RandomPlanet size={26} seed={room.id || room.number} interactive />
             </span>
 
             <div>

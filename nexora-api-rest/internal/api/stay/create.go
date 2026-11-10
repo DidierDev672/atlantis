@@ -10,7 +10,8 @@ import (
 )
 
 type createStayRequest struct {
-	ReservationID   string   `json:"reservation_id"`
+	RoomID          string   `json:"room_id"`
+	ReservationID   string   `json:"reservation_id,omitempty"`
 	PersonIDs       []string `json:"person_ids"`
 	CheckInDate     string   `json:"check_in_date"`
 	CheckOutDate    string   `json:"check_out_date"`
@@ -47,6 +48,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	created, err := h.Creator.Create(r.Context(), stayapp.CreateInput{
+		RoomID:          domain.RoomID(req.RoomID),
 		ReservationID:   domain.ReserveID(req.ReservationID),
 		PersonIDs:       toPersonIDs(req.PersonIDs),
 		CheckInDate:     checkIn,

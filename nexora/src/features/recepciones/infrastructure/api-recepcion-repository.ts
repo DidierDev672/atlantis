@@ -1,6 +1,7 @@
 import { isAxiosError } from 'axios'
 import { api } from '../../../lib/api'
 import { validateStatusCode } from '../../../shared/lib/status-code-validator'
+import { executeBalancedRequest } from '../../reservas/infrastructure/api-load-balancer'
 import {
   calcularNoches,
   ESTADO_OPTIONS,
@@ -101,11 +102,16 @@ interface RawTipoCama {
 interface RawReserva {
   id?: string | number
   room_id?: string
+  person_ids?: string[]
   person_id?: string
   check_in_date?: string
   check_out_date?: string
-  total_price?: number
+  number_of_guests?: number
   state?: string
+  total_price?: number
+  created_by?: string
+  created_at?: string
+  updated_at?: string
 }
 
 interface RawPerson {
@@ -129,23 +135,31 @@ export class ApiRecepcionRepository implements RecepcionRepository {
   /**
    * Obtiene la lista de recepciones/estadías activas e históricas (GET /stay).
    * Se enriquece con la jerarquía física (Sede -> Edificio -> Habitación -> Cama).
+   * Utiliza balanceo de carga (executeBalancedRequest) y validación de status code (validateStatusCode).
    */
   async getRecepciones(): Promise<Recepcion[]> {
     try {
-      const response = await api.get<unknown>('/stay', {
-        validateStatus: (status) => status >= 200 && status < 300,
-      })
+      const response = await executeBalancedRequest(() =>
+        api.get<unknown>('/stay', {
+          validateStatus: () => true,
+        }),
+      )
 
-      const rawStays: RawStay[] = Array.isArray(response.data)
-        ? response.data
-        : Array.isArray((response.data as { data?: RawStay[] })?.data)
-          ? ((response.data as { data: RawStay[] }).data ?? [])
-          : []
+      const validation = validateStatusCode(response.status)
+      if (!validation.isValid) {
+        console.warn(`[getRecepciones] Estado ${response.status} en GET /stay:`, validation.message)
+      } else {
+        const rawStays: RawStay[] = Array.isArray(response.data)
+          ? response.data
+          : Array.isArray((response.data as { data?: RawStay[] })?.data)
+            ? ((response.data as { data: RawStay[] }).data ?? [])
+            : []
 
-      if (rawStays.length > 0) {
-        const enriched = await this.enrichRawStays(rawStays)
-        this.syncLocalStorage(enriched)
-        return enriched
+        if (rawStays.length > 0) {
+          const enriched = await this.enrichRawStays(rawStays)
+          this.syncLocalStorage(enriched)
+          return enriched
+        }
       }
     } catch (error) {
       console.warn('Fallo al obtener recepciones desde GET /stay. Activando modo resiliente:', error)
@@ -164,14 +178,20 @@ export class ApiRecepcionRepository implements RecepcionRepository {
 
   /**
    * Registra y persiste una nueva recepción/estadía en el backend (POST /stay).
+   * Integra balanceo de carga preventivo (executeBalancedRequest) y validación de status code con status-code-validator.ts.
    */
   async createRecepcion(payload: RecepcionPayload): Promise<Recepcion> {
     try {
-      const response = await api.post<Record<string, unknown>>('/stay', payload, {
-        validateStatus: () => true, // Permite validar cada status sin rechazo inmediato
-      })
+      const response = await executeBalancedRequest(() =>
+        api.post<Record<string, unknown>>('/stay', payload, {
+          validateStatus: () => true, // Permite validar cada status sin rechazo inmediato
+        }),
+      )
 
-      if (response.status === 201) {
+      // 1. Validar status code con status-code-validator.ts
+      const validation = validateStatusCode(response.status)
+
+      if (validation.isValid) {
         const idGenerado =
           response.data && typeof response.data.id === 'string'
             ? response.data.id
@@ -193,29 +213,21 @@ export class ApiRecepcionRepository implements RecepcionRepository {
               : undefined
           : undefined
 
+      // Mensaje empático fundamentado en status-code-validator
+      const finalMsg = serverMsg || validation.message || `No fue posible registrar la estadía (${response.status})`
+
       switch (response.status) {
         case 400:
-          throw new RecepcionApiError(
-            400,
-            serverMsg || 'Los datos de la recepción o fechas son inconsistentes.',
-          )
+          throw new RecepcionApiError(400, finalMsg)
         case 401:
-          throw new RecepcionApiError(
-            401,
-            'Tu sesión ha expirado. Por favor ingresa nuevamente para registrar la estadía.',
-          )
+          throw new RecepcionApiError(401, finalMsg)
         case 404:
-          throw new RecepcionNotFoundError('habitación o huésped', payload.room_id)
+          throw new RecepcionNotFoundError('habitación o reserva previa', payload.room_id)
         case 409:
-          throw new RecepcionConflictError(
-            serverMsg || 'La habitación seleccionada ya tiene una estadía activa en ese horario.',
-          )
+          throw new RecepcionConflictError(finalMsg)
         case 500:
         default:
-          throw new RecepcionApiError(
-            response.status,
-            serverMsg || `Fallo interno en el servidor (Código HTTP ${response.status}).`,
-          )
+          throw new RecepcionApiError(response.status, finalMsg)
       }
     } catch (error: unknown) {
       if (error instanceof RecepcionApiError) {
@@ -223,12 +235,14 @@ export class ApiRecepcionRepository implements RecepcionRepository {
       }
       if (isAxiosError(error)) {
         if (!error.response) {
+          const netValidation = validateStatusCode(0)
           throw new RecepcionNetworkError(
-            'No se pudo establecer conexión con el servidor de estadías. Verifica tu conexión.',
+            netValidation.message || 'No se pudo establecer conexión con el servidor de estadías. Verifica tu conexión.',
           )
         }
         const statusCode = error.response.status
-        const msg = error.response.data?.message || error.response.data?.error || error.message
+        const validation = validateStatusCode(statusCode)
+        const msg = error.response.data?.message || error.response.data?.error || validation.message || error.message
         throw new RecepcionApiError(statusCode, msg)
       }
       throw new RecepcionApiError(
@@ -971,9 +985,11 @@ export class ApiRecepcionRepository implements RecepcionRepository {
 
   async getReservas(): Promise<ReservaInfo[]> {
     try {
-      const response = await api.get<unknown>('/reserve', {
-        validateStatus: () => true,
-      })
+      const response = await executeBalancedRequest(() =>
+        api.get<unknown>('/reserve', {
+          validateStatus: () => true,
+        }),
+      )
 
       // Validar rigurosamente el código de estado HTTP con validateStatusCode
       const validation = validateStatusCode(response.status)
@@ -1001,32 +1017,42 @@ export class ApiRecepcionRepository implements RecepcionRepository {
           .map(async (res) => {
             const id = String(res.id)
             const roomId = String(res.room_id || '')
-            const personId = String(res.person_id || '')
+            const rawPersonIds = Array.isArray(res.person_ids)
+              ? res.person_ids.map(String)
+              : res.person_id
+                ? [String(res.person_id)]
+                : []
+            const primaryPersonId = rawPersonIds[0] || String(res.person_id || '')
             let guestName = ''
             let guestPhone = ''
 
-            if (personId) {
-              const p = await this.getPersonById(personId)
+            if (primaryPersonId) {
+              const p = await this.getPersonById(primaryPersonId)
               if (p) {
                 guestName = p.name
                 guestPhone = p.phone_number || ''
               }
             }
 
-            const name = guestName || `Huésped #${personId.slice(0, 6) || id.slice(0, 6)}`
+            const guestCount = res.number_of_guests || rawPersonIds.length || 1
+            const countSuffix = guestCount > 1 ? ` (${guestCount} huéspedes)` : ''
+            const name = guestName || `Huésped #${primaryPersonId.slice(0, 6) || id.slice(0, 6)}`
             const phone = guestPhone || 'Sin teléfono'
 
             return {
               id,
               roomId,
-              roomName: `Habitación #${roomId.slice(0, 6)}`,
-              personId,
+              roomName: roomId ? `Habitación #${roomId.slice(0, 6)}` : 'Sin habitación previa',
+              personId: primaryPersonId,
+              personIds: rawPersonIds,
               guestName: name,
               guestPhone: phone,
               checkInDate: res.check_in_date || '',
               checkOutDate: res.check_out_date || '',
+              numberOfGuests: guestCount,
+              state: res.state,
               totalPrice: res.total_price,
-              label: `${name} - ${phone}`,
+              label: `${name} - ${phone}${countSuffix}`,
             }
           }),
       )
@@ -1241,7 +1267,7 @@ export class ApiRecepcionRepository implements RecepcionRepository {
     const primaryPersonId =
       (payload.person_ids && payload.person_ids.length > 0
         ? payload.person_ids[0]
-        : payload.person_id) || ''
+        : '') || ''
 
     const [habitacion, guest, beds, edificios, sedes] = await Promise.all([
       this.getHabitacionById(payload.room_id),

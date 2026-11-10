@@ -120,3 +120,32 @@ func TestCreateStayUseCase_ReservationNotFound(t *testing.T) {
 		t.Fatalf("expected ErrReserveNotFound, got %v", err)
 	}
 }
+
+func TestCreateStayUseCase_DirectRoomID_WithoutReservation(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	repo := &mockStayRepo{}
+	uc := stayapp.NewCreateStayUseCase(repo, nil, dummyIDProvider{})
+
+	stay, err := uc.Create(ctx, stayapp.CreateInput{
+		RoomID:          "room-direct",
+		PersonIDs:       []domain.PersonID{"per-1"},
+		CheckInDate:     now,
+		CheckOutDate:    now.Add(24 * time.Hour),
+		PaymentMethod:   "cash",
+		SecurityDeposit: 0.0,
+		Status:          "progress",
+		CreatedBy:       "reception",
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if stay.RoomID != "room-direct" {
+		t.Fatalf("expected roomID 'room-direct', got '%s'", stay.RoomID)
+	}
+	if stay.ReservationID != "" {
+		t.Fatalf("expected empty reservationID, got '%s'", stay.ReservationID)
+	}
+}

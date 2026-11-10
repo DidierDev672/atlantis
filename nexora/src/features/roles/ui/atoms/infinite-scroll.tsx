@@ -36,6 +36,14 @@ export function InfiniteScroll({
 
   const firingRef = useRef(false)
 
+  // Normalización defensiva de threshold para evitar RangeError en IntersectionObserver
+  const safeThreshold =
+    typeof threshold === 'number' && !Number.isNaN(threshold)
+      ? threshold >= 0 && threshold <= 1
+        ? threshold
+        : Math.min(Math.max(threshold > 1 ? 0.1 : threshold, 0), 1)
+      : 0
+
   useEffect(() => {
     const sentinel = sentinelRef.current
     if (!sentinel || !hasMore) return
@@ -52,13 +60,13 @@ export function InfiniteScroll({
           firingRef.current = false
         })
       },
-      { root: null, rootMargin, threshold },
+      { root: null, rootMargin, threshold: safeThreshold },
     )
 
     observer.observe(sentinel)
 
     return () => observer.disconnect()
-  }, [hasMore, isLoading, rootMargin, threshold])
+  }, [hasMore, isLoading, rootMargin, safeThreshold])
 
   return (
     <div className={className}>

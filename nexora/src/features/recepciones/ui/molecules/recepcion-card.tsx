@@ -6,6 +6,7 @@ import {
   formatReadableDateTime,
   type Recepcion,
 } from '../../domain/recepcion'
+import { RandomPlanet } from '../../../../shared/planets'
 
 export interface RecepcionCardProps {
   recepcion: Recepcion
@@ -117,16 +118,10 @@ export function RecepcionCard({
               title="Haz clic para inspeccionar camas y tipos de confort de esta habitación"
               className="group/hab inline-flex items-center gap-1.5 rounded-lg border border-blue-500/25 bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-500/20 hover:border-blue-500/40 focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-all cursor-pointer"
             >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                className="size-3.5 text-blue-600 dark:text-blue-300 transition-transform group-hover/hab:scale-110"
-              >
-                <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-                <path d="M3 7h18" />
-              </svg>
+              <RandomPlanet
+                size={14}
+                seed={recepcion.habitacion?.id || recepcion.roomId || recepcion.id}
+              />
               <span>
                 {recepcion.habitacion?.name || recepcion.roomLabel}
               </span>

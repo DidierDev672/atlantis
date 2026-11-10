@@ -50,13 +50,7 @@ export function ReservasTablaView({ items, onSelect, onSelectHuesped }: Reservas
   return (
     <>
       {/* Visualización adaptable en tarjetas para dispositivos móviles */}
-      <motion.div
-        variants={staggerContainer}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, amount: 0.05 }}
-        className="grid grid-cols-1 gap-4 md:hidden"
-      >
+      <div className="grid grid-cols-1 gap-4 md:hidden">
         {items.map((item) => (
           <ReservaCardItem
             key={`responsive-card-${item.id}`}
@@ -65,7 +59,7 @@ export function ReservasTablaView({ items, onSelect, onSelectHuesped }: Reservas
             onSelectHuesped={onSelectHuesped}
           />
         ))}
-      </motion.div>
+      </div>
 
       {/* Visualización en tabla para pantallas medianas y de escritorio */}
       <div className="hidden md:block overflow-hidden rounded-2xl border border-line bg-panel shadow-xs">
@@ -125,6 +119,8 @@ export function ReservasTablaView({ items, onSelect, onSelectHuesped }: Reservas
               <motion.tr
                 key={item.id}
                 variants={staggerItem}
+                initial="hidden"
+                animate="visible"
                 className="transition-colors hover:bg-canvas/50"
               >
                 {/* Huésped */}

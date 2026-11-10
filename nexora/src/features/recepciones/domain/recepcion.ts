@@ -114,9 +114,8 @@ export interface HabitacionInfo {
 }
 
 /**
- * Formatea la etiqueta de habitación para el dropdown según la Regla de Oro:
- * `numero habitacion - piso - edificio - sede - sub sede`
- * Garantiza que NUNCA se visualicen IDs/UUIDs crudos en la experiencia de usuario.
+ * Formatea la etiqueta de habitación para el dropdown:
+ * Única y exclusivamente número de habitación y piso (ej. "101 - Piso 1").
  */
 export function formatHabitacionDropdownOption(params: {
   roomNumber?: string | number
@@ -127,11 +126,8 @@ export function formatHabitacionDropdownOption(params: {
 }): string {
   const num = params.roomNumber ? String(params.roomNumber) : 'Habitación'
   const piso = params.floor ? `Piso ${params.floor}` : 'Piso 1'
-  const edificio = params.buildingName?.trim() || 'Edificio principal'
-  const sede = params.sedeName?.trim() || 'Sede principal'
-  const subSede = params.subSedeName?.trim() || 'Sin subsede'
 
-  return `${num} - ${piso} - ${edificio} - ${sede} - ${subSede}`
+  return `${num} - ${piso}`
 }
 
 export interface CamaInfo {
@@ -167,10 +163,13 @@ export interface ReservaInfo {
   roomId: string
   roomName: string
   personId: string
+  personIds?: string[]
   guestName: string
   guestPhone?: string
   checkInDate: string
   checkOutDate: string
+  numberOfGuests?: number
+  state?: string
   totalPrice?: number
   label: string
 }
@@ -182,6 +181,7 @@ export interface RecepcionInput {
   camaId?: string
   reservaId: string
   huespedId: string
+  huespedIds?: string[]
   checkIn: string
   checkOut: string
   metodoPago: RecepcionMetodoPago | string
@@ -212,7 +212,6 @@ export interface RecepcionPayload {
   room_id: string
   reservation_id: string
   person_ids: string[]
-  person_id?: string
   check_in_date: string
   check_out_date: string
   payment_method: string
@@ -308,8 +307,12 @@ export function validateRecepcionInput(input: RecepcionInput): RecepcionValidati
     errors.habitacionId = 'Por favor selecciona la habitación para el ingreso del huésped.'
   }
 
-  if (!input.huespedId || !input.huespedId.trim()) {
-    errors.huespedId = 'Por favor selecciona el huésped que se hospedará.'
+  const hasHuesped =
+    (Array.isArray(input.huespedIds) && input.huespedIds.length > 0) ||
+    (typeof input.huespedId === 'string' && input.huespedId.trim().length > 0)
+
+  if (!hasHuesped) {
+    errors.huespedId = 'Por favor selecciona al menos un huésped para la estadía.'
   }
 
   if (!input.checkIn || !input.checkIn.trim()) {

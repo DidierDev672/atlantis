@@ -26,6 +26,8 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   required?: boolean;
   /** Estado deshabilitado del campo (alias de `disabled`). */
   isDisabled?: boolean;
+  /** Clases CSS adicionales específicas para el elemento <input>. */
+  inputClassName?: string;
   /** Habilita/deshabilita el botón de alternar mostrar u ocultar contraseña cuando type="password". Por defecto true. */
   showPasswordToggle?: boolean;
 }
@@ -65,6 +67,7 @@ export function Input({
   isDisabled,
   disabled,
   className,
+  inputClassName,
   id,
   onFocus,
   onBlur,
@@ -159,7 +162,8 @@ export function Input({
             error
               ? 'border-danger/60 focus:border-danger'
               : 'border-line hover:border-ink-soft focus:border-primary',
-            'disabled:cursor-not-allowed disabled:opacity-50'
+            'disabled:cursor-not-allowed disabled:opacity-50',
+            inputClassName
           )}
           {...props}
         />

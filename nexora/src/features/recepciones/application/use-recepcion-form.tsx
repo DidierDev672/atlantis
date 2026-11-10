@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faCalendarDays, faPhone } from '@fortawesome/free-solid-svg-icons'
+import type { DropdownOption } from '../../recursos/ui/molecules/recursos-dropdown'
 import {
   ESTADO_OPTIONS,
   formatToIsoUtc,
@@ -22,6 +25,22 @@ import {
 } from '../domain/recepcion'
 import { RecepcionApiError } from '../domain/recepcion-error'
 import { ApiRecepcionRepository } from '../infrastructure/api-recepcion-repository'
+
+function formatReservaDateShort(dateStr?: string): string {
+  if (!dateStr) return 'Por definir'
+  try {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) {
+      return dateStr.split('T')[0] || dateStr
+    }
+    return d.toLocaleDateString('es-CO', {
+      day: 'numeric',
+      month: 'short',
+    })
+  } catch {
+    return dateStr
+  }
+}
 
 export function getCreatedByFromLocalStorage(): string {
   try {
@@ -89,6 +108,7 @@ export const initialRecepcionFormValues: RecepcionInput = {
   camaId: '',
   reservaId: '',
   huespedId: '',
+  huespedIds: [],
   checkIn: getDefaultCheckInDateTime(),
   checkOut: getDefaultCheckOutDateTime(),
   metodoPago: 'efectivo',
@@ -173,15 +193,19 @@ export function useRecepcionForm(
     }))
   }, [edificios, formValues.sedeId])
 
-  // Opciones de Habitaciones filtradas por Edificio
+  // Opciones de Habitaciones filtradas por Edificio (única y exclusivamente número de habitación y piso)
   const habitacionOptions = useMemo(() => {
     const list = formValues.edificioId
       ? habitaciones.filter((h) => h.building_id === formValues.edificioId)
       : habitaciones
-    return list.map((h) => ({
-      value: h.id,
-      label: h.label,
-    }))
+    return list.map((h) => {
+      const num = h.number ? String(h.number) : (h.name || 'Habitación')
+      const piso = h.floor ? `Piso ${h.floor}` : 'Piso 1'
+      return {
+        value: h.id,
+        label: `${num} - ${piso}`,
+      }
+    })
   }, [habitaciones, formValues.edificioId])
 
   // Opciones de Camas filtradas por Habitación
@@ -191,16 +215,58 @@ export function useRecepcionForm(
       : camas
     return list.map((c) => ({
       value: c.id,
-      label: `${c.etiquette} (${c.status === 'active' ? 'Disponible' : c.status})`,
+      label: c.etiquette,
     }))
   }, [camas, formValues.habitacionId])
 
-  const reservaDropdownOptions = useMemo(
+  const reservaDropdownOptions = useMemo<DropdownOption[]>(
     () =>
-      reservas.map((r) => ({
-        value: r.id,
-        label: r.label,
-      })),
+      reservas.map((r) => {
+        const guestCount =
+          r.numberOfGuests ?? (r.personIds && r.personIds.length > 0 ? r.personIds.length : 1)
+        const extraGuests = guestCount > 1 ? guestCount - 1 : 0
+        const phone = r.guestPhone && r.guestPhone !== 'Sin teléfono' ? r.guestPhone : null
+        const inDate = formatReservaDateShort(r.checkInDate)
+        const outDate = formatReservaDateShort(r.checkOutDate)
+        const dateSummary =
+          r.checkInDate || r.checkOutDate ? ` · ${inDate} → ${outDate}` : ''
+
+        return {
+          value: r.id,
+          label: `${r.guestName}${phone ? ` · ${phone}` : ''}${dateSummary}${extraGuests > 0 ? ` (+${extraGuests})` : ''}`,
+          customContent: (
+            <div className="flex w-full items-center justify-between gap-2.5 py-1">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-xs font-semibold text-ink">{r.guestName}</p>
+                  {extraGuests > 0 && (
+                    <span
+                      title={`${guestCount} huéspedes en total (${extraGuests} adicional${extraGuests > 1 ? 'es' : ''})`}
+                      className="inline-flex shrink-0 items-center justify-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary ring-1 ring-primary/25"
+                    >
+                      +{extraGuests}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-muted">
+                  <span className="flex items-center gap-1.5 shrink-0">
+                    <FontAwesomeIcon icon={faPhone} className="size-2.5 text-primary/70 shrink-0" aria-hidden="true" />
+                    <span className="truncate">{phone ?? 'Sin teléfono'}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5 shrink-0 font-medium text-emerald-600 dark:text-emerald-400">
+                    <FontAwesomeIcon icon={faCalendarDays} className="size-2.5 shrink-0" aria-hidden="true" />
+                    <span>Entrada: {inDate}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5 shrink-0 font-medium text-amber-600 dark:text-amber-400">
+                    <FontAwesomeIcon icon={faCalendarDays} className="size-2.5 shrink-0" aria-hidden="true" />
+                    <span>Salida: {outDate}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+          ),
+        }
+      }),
     [reservas],
   )
 
@@ -213,9 +279,26 @@ export function useRecepcionForm(
     [huespedes],
   )
 
-  const handleFieldChange = (field: keyof RecepcionInput, value: string | number) => {
+  const handleFieldChange = (
+    field: keyof RecepcionInput,
+    value: string | number | string[],
+  ) => {
     setFormValues((prev) => {
       const next = { ...prev, [field]: value }
+
+      if (field === 'huespedIds') {
+        const arr = Array.isArray(value) ? (value as string[]) : []
+        next.huespedIds = arr
+        next.huespedId = arr[0] || ''
+      }
+
+      if (field === 'huespedId') {
+        const strVal = String(value)
+        next.huespedId = strVal
+        if (strVal && (!next.huespedIds || next.huespedIds.length === 0)) {
+          next.huespedIds = [strVal]
+        }
+      }
 
       if (field === 'metodoPago') {
         next.metodoPago = normalizeMetodoPago(String(value))
@@ -254,7 +337,14 @@ export function useRecepcionForm(
       if (field === 'reservaId') {
         const found = reservas.find((r) => r.id === value)
         if (found) {
-          next.huespedId = found.personId
+          const resolvedPersonIds =
+            Array.isArray(found.personIds) && found.personIds.length > 0
+              ? found.personIds
+              : found.personId
+                ? [found.personId]
+                : []
+          next.huespedIds = resolvedPersonIds
+          next.huespedId = resolvedPersonIds[0] || found.personId || ''
           if (found.roomId) {
             next.habitacionId = found.roomId
             const matchingRoom = habitaciones.find((h) => h.id === found.roomId)
@@ -287,8 +377,11 @@ export function useRecepcionForm(
       return next
     })
 
-    if (errors[field]) {
+    if (field in errors) {
       setErrors((prev) => ({ ...prev, [field]: undefined }))
+    }
+    if (field === 'huespedIds' && errors.huespedId) {
+      setErrors((prev) => ({ ...prev, huespedId: undefined }))
     }
   }
 
@@ -312,7 +405,12 @@ export function useRecepcionForm(
     const backendStatus = STATUS_BACKEND_MAP[formValues.estado] || 'progress'
     const createdByEmail = getCreatedByFromLocalStorage()
 
-    const personIds = formValues.huespedId ? [formValues.huespedId] : []
+    const personIds =
+      Array.isArray(formValues.huespedIds) && formValues.huespedIds.length > 0
+        ? formValues.huespedIds
+        : formValues.huespedId
+          ? [formValues.huespedId]
+          : []
 
     const payload: RecepcionPayload = {
       room_id: formValues.habitacionId,

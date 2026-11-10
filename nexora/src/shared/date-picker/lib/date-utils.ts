@@ -72,7 +72,11 @@ export function parseISODate(value: string): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return null;
   const [, y, m, d] = match;
-  const date = new Date(Number(y), Number(m) - 1, Number(d));
+  const yearNum = Number(y);
+  // En JavaScript, años de 0 a 99 son convertidos por legacy a 1900-1999 (ej: '0001' -> 1901).
+  // Fechas dummy del backend (como 0001-01-01) o años <= 1900 se descartan como fecha inválida.
+  if (yearNum <= 1900) return null;
+  const date = new Date(yearNum, Number(m) - 1, Number(d));
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
