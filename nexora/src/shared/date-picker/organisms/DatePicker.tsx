@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type { DayState, DatePickerProps } from '../types';
 import { useCalendar } from '../hooks/useCalendar';
 import { useControllableState } from '../hooks/useControllableState';
@@ -82,9 +82,14 @@ export function DatePicker({
     autoFocus: open,
   });
 
-  // Sincronizar el mes visual con la fecha seleccionada cuando se abre el popover
+  // Sincronizar el mes visual con la fecha seleccionada ÚNICAMENTE cuando se abre el popover,
+  // evitando atrapar la vista en la fecha existente mientras el usuario cambia de mes o año.
+  const prevOpenRef = useRef(open);
   useEffect(() => {
-    if (open && selectedDate) {
+    const wasOpen = prevOpenRef.current;
+    prevOpenRef.current = open;
+
+    if (!wasOpen && open && selectedDate) {
       if (
         viewMonth.getFullYear() !== selectedDate.getFullYear() ||
         viewMonth.getMonth() !== selectedDate.getMonth()

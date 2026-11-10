@@ -4,6 +4,7 @@ import {
   validateStatusCode,
   type StatusCodeValidationResult,
 } from '../../../shared/lib/status-code-validator';
+import { executeBalancedRequest } from '../../reservas/infrastructure/api-load-balancer';
 import {
   type RecepcionRoomRaw,
   type RecepcionRoomItem,
@@ -201,10 +202,11 @@ export function useRecepcionRooms(): UseRecepcionRoomsReturn {
   useEffect(() => {
     let active = true;
 
-    api
-      .get('/room', {
+    executeBalancedRequest(() =>
+      api.get('/room', {
         validateStatus: () => true, // Permite procesar todos los códigos con status-code-validator
       })
+    )
       .then((response) => {
         if (!active) return;
         const validation = validateStatusCode(response.status);

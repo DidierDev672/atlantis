@@ -22,6 +22,7 @@ export function ReservasListaPage({ onNuevaReserva }: ReservasListaPageProps) {
     setViewMode,
     visibleItems,
     loading,
+    isLoadingMore,
     refreshing,
     searchQuery,
     setSearchQuery,
@@ -105,7 +106,7 @@ export function ReservasListaPage({ onNuevaReserva }: ReservasListaPageProps) {
             <ReservasListContainer
               viewMode={viewMode}
               items={visibleItems}
-              loading={isVisibleLoading}
+              loading={isVisibleLoading || isLoadingMore}
               hasMore={hasMore}
               onLoadMore={loadMore}
               onResetFilters={handleResetFilters}

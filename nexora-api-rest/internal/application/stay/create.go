@@ -56,17 +56,15 @@ func (uc *CreateStayUseCase) Create(ctx context.Context, in CreateInput) (domain
 	}
 
 	roomID := in.RoomID
+	if roomID == "" && in.ReservationID != "" && uc.reserveFinder != nil {
+		reserve, err := uc.reserveFinder.FindByID(ctx, in.ReservationID)
+		if err != nil {
+			return domain.Stay{}, err
+		}
+		roomID = reserve.RoomID
+	}
 	if roomID == "" {
-		if in.ReservationID == "" {
-			return domain.Stay{}, domain.ErrInvalidStayReservationID
-		}
-		if uc.reserveFinder != nil {
-			reserve, err := uc.reserveFinder.FindByID(ctx, in.ReservationID)
-			if err != nil {
-				return domain.Stay{}, err
-			}
-			roomID = reserve.RoomID
-		}
+		return domain.Stay{}, domain.ErrInvalidStayRoomID
 	}
 
 	stay, err := domain.NewStay(

@@ -3,6 +3,7 @@ import {
   validateStatusCode,
   type StatusCodeValidationResult,
 } from '../../../shared/lib/status-code-validator'
+import { executeBalancedRequest } from '../../reservas/infrastructure/api-load-balancer'
 import type { PersonDetail, StayItem } from '../domain/stay'
 
 export interface FetchStaysResult {
@@ -133,9 +134,11 @@ export const SAMPLE_PERSONS: Record<string, PersonDetail> = {
  */
 export async function fetchPersonById(id: string): Promise<FetchPersonResult> {
   try {
-    const response = await api.get(`/person/${encodeURIComponent(id)}`, {
-      validateStatus: () => true,
-    })
+    const response = await executeBalancedRequest(() =>
+      api.get(`/person/${encodeURIComponent(id)}`, {
+        validateStatus: () => true,
+      }),
+    )
 
     const validation = validateStatusCode(response.status)
 
@@ -257,11 +260,13 @@ export async function getStaysFromApi(): Promise<FetchStaysResult> {
   try {
     const minChance = new Promise((resolve) => setTimeout(resolve, 500))
     const [response] = await Promise.all([
-      api.get('/stays', {
-        // Evita que Axios arroje excepción en status >= 400 para permitir la validación
-        // exhaustiva y psicológica con `validateStatusCode`
-        validateStatus: () => true,
-      }),
+      executeBalancedRequest(() =>
+        api.get('/stays', {
+          // Evita que Axios arroje excepción en status >= 400 para permitir la validación
+          // exhaustiva y psicológica con `validateStatusCode`
+          validateStatus: () => true,
+        }),
+      ),
       minChance,
     ])
 

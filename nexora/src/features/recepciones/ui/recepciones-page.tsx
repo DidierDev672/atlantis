@@ -6,6 +6,8 @@ import { RecepcionPanel } from './organisms/recepcion-panel';
 import { RecepcionRoomsDashboard } from './organisms/recepcion-rooms-dashboard';
 import { useStaysList } from '../application/use-stays-list';
 import { Loading, useDelayVisibility } from '../../../shared/loading';
+import { StatusCodeAlert } from '../../../shared/lib/status-code-validator';
+import { RandomPlanet } from '../../../shared/planets';
 
 export function RecepcionesPage() {
   const [activeTab, setActiveTab] = useState<
@@ -50,6 +52,23 @@ export function RecepcionesPage() {
           }
         />
 
+        {/* Alerta cósmica (/shared/alert) para validación empática de códigos de estado de la API */}
+        {staysList.validationResult && !staysList.validationResult.isValid && (
+          <StatusCodeAlert
+            validation={staysList.validationResult}
+            dismissible
+            actions={
+              <button
+                type="button"
+                onClick={() => void staysList.reload()}
+                className="text-xs font-semibold underline hover:opacity-80 cursor-pointer"
+              >
+                Reintentar
+              </button>
+            }
+          />
+        )}
+
         {/* Barra de pestañas secundarias para alternar entre Habitaciones, Estancias y Registro */}
         <div className="border-line flex items-center justify-between border-b pb-1">
           <div className="flex items-center gap-2">
@@ -63,18 +82,7 @@ export function RecepcionesPage() {
                   : 'text-ink-muted hover:text-ink'
               }`}
             >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="size-4"
-                aria-hidden="true"
-              >
-                <path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9" />
-              </svg>
+              <RandomPlanet size={18} interactive />
               <span>Habitaciones</span>
               {activeTab === 'habitaciones' && (
                 <motion.div

@@ -8,6 +8,7 @@ import { RecepcionRoomCard } from '../molecules/recepcion-room-card'
 import { RecepcionRoomTable } from '../molecules/recepcion-room-table'
 import { Loading, useDelayVisibility } from '../../../../shared/loading'
 import { Modal } from '../../../sedes/ui/atoms/modal'
+import { StatusCodeAlert } from '../../../../shared/lib/status-code-validator'
 
 /**
  * Organismo Dashboard para Recepcionista.
@@ -123,41 +124,21 @@ export function RecepcionRoomsDashboard() {
         </div>
       </div>
 
-      {/* 2. Banner de validación empática de status code si el endpoint responde con aviso */}
-      {hasValidationError && (
-        <motion.div
-          variants={fadeUp}
-          initial="hidden"
-          animate="visible"
-          role="alert"
-          className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4 text-amber-900 dark:text-amber-200 shadow-xs"
-        >
-          <div className="flex items-start gap-3">
-            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-amber-500/20 text-amber-700 dark:text-amber-300 mt-0.5 sm:mt-0">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-5">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-            </span>
-            <div>
-              <h4 className="text-sm font-bold">
-                {validationResult.title || 'Aviso de conexión'} (Código {validationResult.status})
-              </h4>
-              <p className="text-xs mt-0.5 leading-relaxed opacity-90">
-                {validationResult.message || 'Mostrando inventario en modo de protección local.'}
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleRefresh}
-            className="shrink-0 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 px-3.5 py-1.5 text-xs font-semibold text-amber-800 dark:text-amber-200 transition cursor-pointer"
-          >
-            Reintentar consulta
-          </button>
-        </motion.div>
+      {/* 2. Alerta cósmica (/shared/alert) para validación empática de status code */}
+      {hasValidationError && validationResult && (
+        <StatusCodeAlert
+          validation={validationResult}
+          dismissible
+          actions={
+            <button
+              type="button"
+              onClick={handleRefresh}
+              className="shrink-0 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 px-3.5 py-1.5 text-xs font-semibold text-amber-800 dark:text-amber-200 transition cursor-pointer"
+            >
+              Reintentar consulta
+            </button>
+          }
+        />
       )}
 
       {/* Banner de datos locales activos si la API está offline */}

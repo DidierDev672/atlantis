@@ -75,6 +75,8 @@ export function ReservaCardItem({ item, onSelect, onSelectHuesped }: ReservaCard
   return (
     <motion.article
       variants={fadeIn}
+      initial="hidden"
+      animate="visible"
       className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-line bg-panel p-5 shadow-xs transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md"
     >
       {/* Encabezado de la card: Planeta aleatorio en esquina superior izquierda, Huésped principal y Estado */}

@@ -77,6 +77,8 @@ export function normalizeReservaState(
     norm.includes('completed') ||
     norm.includes('completada') ||
     norm.includes('finalizada') ||
+    norm.includes('confirmed') ||
+    norm.includes('confirmada') ||
     tone === 'purple' ||
     tone === 'emerald'
   ) {

@@ -55,6 +55,14 @@ export function InfiniteScroll({
     isLoadingRef.current = isLoading
   }, [onLoadMore, isLoading])
 
+  // Sanitización defensiva del threshold para prevenir RangeError en IntersectionObserver
+  const safeThreshold =
+    typeof threshold === 'number' && !Number.isNaN(threshold)
+      ? threshold >= 0 && threshold <= 1
+        ? threshold
+        : Math.min(Math.max(threshold > 1 ? 0.1 : threshold, 0), 1)
+      : 0
+
   useEffect(() => {
     const sentinel = sentinelRef.current
     if (!sentinel || !hasMore) return
@@ -71,13 +79,13 @@ export function InfiniteScroll({
           firingRef.current = false
         })
       },
-      { root: null, rootMargin, threshold },
+      { root: null, rootMargin, threshold: safeThreshold },
     )
 
     observer.observe(sentinel)
 
     return () => observer.disconnect()
-  }, [hasMore, isLoading, rootMargin, threshold])
+  }, [hasMore, isLoading, rootMargin, safeThreshold])
 
   const content = (
     <div className={!animationVariant ? className : undefined}>
@@ -90,7 +98,11 @@ export function InfiniteScroll({
           </div>
         )
       ) : hasMore ? (
-        <div ref={sentinelRef} aria-hidden="true" />
+        <div
+          ref={sentinelRef}
+          aria-hidden="true"
+          className="h-8 w-full pointer-events-none opacity-0"
+        />
       ) : (
         endMessage && (
           animationVariant ? (

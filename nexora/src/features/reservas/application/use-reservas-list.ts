@@ -13,6 +13,7 @@ export function useReservasList() {
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE)
+  const [isLoadingMore, setIsLoadingMore] = useState<boolean>(false)
   const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(null)
 
   const loadReservas = useCallback(async (isRefresh = false) => {
@@ -42,15 +43,20 @@ export function useReservasList() {
 
   const filteredItems = useMemo(() => {
     const q = searchQuery.toLowerCase().trim()
+    const filter = statusFilter.toLowerCase().trim()
+
     return items.filter((item) => {
       const matchSearch =
         !q ||
         item.personDisplayName.toLowerCase().includes(q) ||
         item.roomDisplayName.toLowerCase().includes(q)
 
+      const itemState = item.state.toLowerCase()
       const matchStatus =
-        statusFilter === 'all' ||
-        item.state.toLowerCase() === statusFilter.toLowerCase()
+        filter === 'all' ||
+        itemState === filter ||
+        ((filter === 'in progress' || filter === 'progress') &&
+          (itemState === 'in progress' || itemState === 'progress'))
 
       return matchSearch && matchStatus
     })
@@ -63,11 +69,16 @@ export function useReservasList() {
   const hasMore = visibleCount < filteredItems.length
 
   const loadMore = useCallback(async () => {
-    if (!hasMore) return
-    // Tiempo de gracia para apreciar la animación de carga balanceada progresiva
-    await new Promise((resolve) => setTimeout(resolve, 500))
-    setVisibleCount((prev) => prev + PAGE_SIZE)
-  }, [hasMore])
+    if (!hasMore || isLoadingMore) return
+    setIsLoadingMore(true)
+    try {
+      // Tiempo de gracia para apreciar la animación de carga balanceada progresiva
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      setVisibleCount((prev) => prev + PAGE_SIZE)
+    } finally {
+      setIsLoadingMore(false)
+    }
+  }, [hasMore, isLoadingMore])
 
   const clearFeedback = useCallback(() => {
     setFeedback(null)
@@ -89,6 +100,7 @@ export function useReservasList() {
     filteredItems,
     visibleItems,
     loading,
+    isLoadingMore,
     refreshing,
     searchQuery,
     setSearchQuery,

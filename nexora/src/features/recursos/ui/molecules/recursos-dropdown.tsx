@@ -161,7 +161,7 @@ export function RecursosDropdown({
   const autoId = useId();
   const fieldId = id ?? autoId;
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLButtonElement | HTMLDivElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const [computedPlacement, setComputedPlacement] = useState<'down' | 'up'>(
     'down'
@@ -722,41 +722,61 @@ export function RecursosDropdown({
 
       {/* Contenedor relativo que ancla el trigger y el popover con auto-flip */}
       <div className={cn('relative', isOpen && 'z-50')}>
-        {/* Trigger / Botón que despliega el dropdown */}
-        <button
-          ref={triggerRef}
-          type="button"
-          id={fieldId}
-          aria-haspopup="listbox"
-          aria-expanded={isOpen}
-          aria-labelledby={`${fieldId}-label`}
-          disabled={isComponentDisabled || isOptionsLoading}
-          onClick={() => {
-            if (isComponentDisabled || isOptionsLoading) return;
-            if (!isOpen) {
-              updatePlacement();
-              if (externalOptions == null) {
-                setIsOpeningProgressive(true);
+        {/* Trigger que despliega el dropdown: div en modo múltiple para evitar botones anidados ilegales (<button> dentro de <button>) y button en modo simple */}
+        {multiple ? (
+          <div
+            ref={triggerRef as React.RefObject<HTMLDivElement>}
+            id={fieldId}
+            role="combobox"
+            tabIndex={isComponentDisabled || isOptionsLoading ? -1 : 0}
+            aria-haspopup="listbox"
+            aria-expanded={isOpen}
+            aria-labelledby={`${fieldId}-label`}
+            aria-disabled={isComponentDisabled || isOptionsLoading}
+            onClick={() => {
+              if (isComponentDisabled || isOptionsLoading) return;
+              if (!isOpen) {
+                updatePlacement();
+                if (externalOptions == null) {
+                  setIsOpeningProgressive(true);
+                }
+                setVisibleCount(pageSize);
+                setIsOpen(true);
+              } else {
+                setSearchTerm('');
+                setIsOpen(false);
               }
-              setVisibleCount(pageSize);
-              setIsOpen(true);
-            } else {
-              setSearchTerm('');
-              setIsOpen(false);
-            }
-          }}
-          className={cn(
-            'bg-panel text-ink flex min-h-[42px] w-full cursor-pointer items-center justify-between gap-2 rounded-xl border px-3.5 py-2 text-left text-sm shadow-xs transition outline-none',
-            error
-              ? 'border-danger/60 ring-danger/20 ring-2'
-              : isOpen
-                ? 'border-primary ring-primary/20 ring-2'
-                : 'border-line hover:border-ink-soft',
-            isComponentDisabled && 'cursor-not-allowed opacity-50'
-          )}
-        >
-          {multiple ? (
-            // Modo Múltiple: Chips de valores seleccionados
+            }}
+            onKeyDown={(e) => {
+              if (isComponentDisabled || isOptionsLoading) return;
+              if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+                if (e.target === e.currentTarget) {
+                  e.preventDefault();
+                  if (!isOpen) {
+                    updatePlacement();
+                    if (externalOptions == null) {
+                      setIsOpeningProgressive(true);
+                    }
+                    setVisibleCount(pageSize);
+                    setIsOpen(true);
+                  } else {
+                    setSearchTerm('');
+                    setIsOpen(false);
+                  }
+                }
+              }
+            }}
+            className={cn(
+              'bg-panel text-ink flex min-h-[42px] w-full cursor-pointer items-center justify-between gap-2 rounded-xl border px-3.5 py-2 text-left text-sm shadow-xs transition outline-none',
+              error
+                ? 'border-danger/60 ring-danger/20 ring-2'
+                : isOpen
+                  ? 'border-primary ring-primary/20 ring-2'
+                  : 'border-line hover:border-ink-soft',
+              isComponentDisabled && 'cursor-not-allowed opacity-50'
+            )}
+          >
+            {/* Modo Múltiple: Chips de valores seleccionados */}
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
               {isOptionsLoading ? (
                 <Loading
@@ -799,36 +819,82 @@ export function RecursosDropdown({
                 })
               )}
             </div>
-          ) : // Modo Simple: Texto de la opción seleccionada o Loading
-          isOptionsLoading ? (
-            <Loading
-              variant="inline"
-              size="sm"
-              label="Cargando opciones…"
-              delay={0}
-            />
-          ) : (
-            <span
-              className={cn(
-                'flex-1 truncate text-xs sm:text-sm',
-                hasSingleValue ? 'text-ink font-medium' : 'text-ink-soft'
-              )}
-            >
-              {singleSelectDisplayText}
-            </span>
-          )}
 
-          <span className="text-ink-muted shrink-0 pl-2">
-            <FontAwesomeIcon
-              icon={faChevronDown}
-              className={cn(
-                'size-3.5 transition-transform duration-200',
-                isOpen && 'rotate-180'
-              )}
-              aria-hidden="true"
-            />
-          </span>
-        </button>
+            <span className="text-ink-muted shrink-0 pl-2">
+              <FontAwesomeIcon
+                icon={faChevronDown}
+                className={cn(
+                  'size-3.5 transition-transform duration-200',
+                  isOpen && 'rotate-180'
+                )}
+                aria-hidden="true"
+              />
+            </span>
+          </div>
+        ) : (
+          <button
+            ref={triggerRef as React.RefObject<HTMLButtonElement>}
+            type="button"
+            id={fieldId}
+            aria-haspopup="listbox"
+            aria-expanded={isOpen}
+            aria-labelledby={`${fieldId}-label`}
+            disabled={isComponentDisabled || isOptionsLoading}
+            onClick={() => {
+              if (isComponentDisabled || isOptionsLoading) return;
+              if (!isOpen) {
+                updatePlacement();
+                if (externalOptions == null) {
+                  setIsOpeningProgressive(true);
+                }
+                setVisibleCount(pageSize);
+                setIsOpen(true);
+              } else {
+                setSearchTerm('');
+                setIsOpen(false);
+              }
+            }}
+            className={cn(
+              'bg-panel text-ink flex min-h-[42px] w-full cursor-pointer items-center justify-between gap-2 rounded-xl border px-3.5 py-2 text-left text-sm shadow-xs transition outline-none',
+              error
+                ? 'border-danger/60 ring-danger/20 ring-2'
+                : isOpen
+                  ? 'border-primary ring-primary/20 ring-2'
+                  : 'border-line hover:border-ink-soft',
+              isComponentDisabled && 'cursor-not-allowed opacity-50'
+            )}
+          >
+            {/* Modo Simple: Texto de la opción seleccionada o Loading */}
+            {isOptionsLoading ? (
+              <Loading
+                variant="inline"
+                size="sm"
+                label="Cargando opciones…"
+                delay={0}
+              />
+            ) : (
+              <span
+                className={cn(
+                  'flex-1 truncate text-xs sm:text-sm',
+                  hasSingleValue ? 'text-ink font-medium' : 'text-ink-soft'
+                )}
+              >
+                {singleSelectDisplayText}
+              </span>
+            )}
+
+            <span className="text-ink-muted shrink-0 pl-2">
+              <FontAwesomeIcon
+                icon={faChevronDown}
+                className={cn(
+                  'size-3.5 transition-transform duration-200',
+                  isOpen && 'rotate-180'
+                )}
+                aria-hidden="true"
+              />
+            </span>
+          </button>
+        )}
 
         {/* Popover flotante con el buscador en tiempo real y las opciones */}
         <AnimatePresence>

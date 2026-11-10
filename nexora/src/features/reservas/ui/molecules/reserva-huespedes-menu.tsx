@@ -52,7 +52,7 @@ export function ReservaHuespedesMenu({
         </span>
       </div>
 
-      <div className="flex max-h-[360px] flex-col gap-1.5 overflow-y-auto pr-1">
+      <div className="flex flex-row md:flex-col gap-1.5 overflow-x-auto md:overflow-y-auto md:max-h-[360px] pb-1 md:pb-0 pr-0 md:pr-1">
         {slots.map((idx) => {
           const isTitular = idx === 0;
           const companion = !isTitular ? companions[idx - 1] : undefined;
@@ -74,7 +74,7 @@ export function ReservaHuespedesMenu({
               key={idx}
               type="button"
               onClick={() => onSelectIndex(idx)}
-              className={`group flex w-full cursor-pointer items-center gap-3 rounded-xl p-2.5 text-left transition-all ${
+              className={`group flex w-auto min-w-[190px] shrink-0 md:w-full md:shrink cursor-pointer items-center gap-2.5 sm:gap-3 rounded-xl p-2 sm:p-2.5 text-left transition-all ${
                 isActive
                   ? 'bg-primary shadow-primary/20 scale-[1.01] text-white shadow-md'
                   : isCompleted

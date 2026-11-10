@@ -64,7 +64,7 @@ const OPCIONES_TIPO_DOC: DropdownOption[] = [
 ];
 
 const OPCIONES_GENERO: DropdownOption[] = [
-  { value: 'Masculina', label: 'Masculina' },
+  { value: 'Masculino', label: 'Masculino' },
   { value: 'Femenino', label: 'Femenino' },
   { value: 'Otro', label: 'Otro' },
 ];
@@ -145,11 +145,11 @@ export function ReservaAcompananteForm({
   );
 
   // 6. Fecha de nacimiento (formato YYYY-MM-DD ej: "1997-01-07")
-  const [dateOfBirth, setDateOfBirth] = useState<string>(
-    existingCompanion?.date_of_birth
-      ? existingCompanion.date_of_birth.slice(0, 10)
-      : ''
-  );
+  const [dateOfBirth, setDateOfBirth] = useState<string>(() => {
+    const raw = existingCompanion?.date_of_birth?.slice(0, 10);
+    if (!raw || raw.startsWith('0001') || raw.startsWith('1901')) return '';
+    return raw;
+  });
 
   // Fecha parseada para el DatePicker reutilizable (/shared/date-picker)
   const parsedDob = useMemo(() => {
@@ -162,11 +162,11 @@ export function ReservaAcompananteForm({
 
   const maxBirthDate = useMemo(() => new Date(), []);
 
-  // 7. Género -> [Masculina, Femenino, Otro]
+  // 7. Género -> [Masculino, Femenino, Otro]
   const [genre, setGenre] = useState<string>(() => {
     if (existingCompanion?.gender === 'F') return 'Femenino';
     if (existingCompanion?.gender === 'O') return 'Otro';
-    return 'Masculina';
+    return 'Masculino';
   });
 
   // 8. Nacionalidad -> ej: "CO"
@@ -268,11 +268,16 @@ export function ReservaAcompananteForm({
         if (data.email) setEmail(data.email);
         if (data.phone_number) setPhoneNumber(data.phone_number);
         if (data.date_of_birth) {
-          setDateOfBirth(data.date_of_birth.slice(0, 10));
+          const rawDob = data.date_of_birth.slice(0, 10);
+          if (!rawDob.startsWith('0001') && !rawDob.startsWith('1901')) {
+            setDateOfBirth(rawDob);
+          } else {
+            setDateOfBirth('');
+          }
         }
         if (data.gender) {
           const g = data.gender.toUpperCase();
-          setGenre(g === 'F' ? 'Femenino' : g === 'O' ? 'Otro' : 'Masculina');
+          setGenre(g === 'F' ? 'Femenino' : g === 'O' ? 'Otro' : 'Masculino');
         }
         if (data.nationality) {
           setNationality(data.nationality);
@@ -820,7 +825,7 @@ export function ReservaAcompananteForm({
       </div>
 
       {/* Botones de acción */}
-      <div className="border-line flex items-center justify-end gap-3 border-t pt-3">
+      <div className="border-line bg-canvas/90 dark:bg-panel/95 sticky bottom-0 z-20 -mx-1 -mb-1 flex flex-wrap items-center justify-end gap-2.5 border-t px-2 py-3 backdrop-blur-md sm:mx-0 sm:mb-0 sm:px-0">
         {onCancel && (
           <button
             type="button"
@@ -835,7 +840,7 @@ export function ReservaAcompananteForm({
         <button
           type="submit"
           disabled={submitting}
-          className="bg-primary shadow-primary/20 hover:bg-primary-hover inline-flex cursor-pointer items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold text-white shadow-md transition active:scale-95 disabled:opacity-50"
+          className="bg-primary shadow-primary/20 hover:bg-primary-hover inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold text-white shadow-md transition active:scale-95 disabled:opacity-50"
         >
           {submitting ? (
             <>

@@ -149,7 +149,14 @@ const ESTADOS_RESERVA = [
       'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/20',
   },
   {
-    value: 'progress',
+    value: 'confirmed',
+    label: 'Confirmada',
+    dotColor: 'bg-teal-500',
+    badgeClass:
+      'bg-teal-500/10 text-teal-700 dark:text-teal-300 border-teal-500/20',
+  },
+  {
+    value: 'in progress',
     label: 'Progreso',
     dotColor: 'bg-blue-500',
     badgeClass:
@@ -1002,7 +1009,7 @@ export function ReservaInteractiveForm() {
     setGuestDirection(1);
     setCompanions([]);
     setIsAcompanantesModalOpen(false);
-    setStateValue('progress');
+    setStateValue('pending');
     setCustomTotalPrice(null);
     setErrors({});
     setPersonError(null);

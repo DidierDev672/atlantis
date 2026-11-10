@@ -92,7 +92,7 @@ func TestStayHandler_Create(t *testing.T) {
 	}
 
 	payload := map[string]interface{}{
-		"reservation_id":   "res-1",
+		"room_id":          "room-1",
 		"person_ids":       []string{"person-1"},
 		"check_in_date":    now.Format(time.RFC3339),
 		"check_out_date":   now.Add(24 * time.Hour).Format(time.RFC3339),

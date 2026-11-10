@@ -5,4 +5,5 @@ export * from './ResourceCard'
 export * from './LazyAnimatedWrapper'
 export * from '../mars-planet'
 export * from '../earth-planet'
+export * from '../alert'
 
