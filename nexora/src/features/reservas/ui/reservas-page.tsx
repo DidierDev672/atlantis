@@ -1,20 +1,19 @@
-import { useState } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faListUl, faPlus } from '@fortawesome/free-solid-svg-icons'
-import { ReservasListaPage } from './reservas-lista-page'
-import { ReservasHeader } from './molecules/reservas-header'
-import { ReservaInteractiveForm } from './organisms/reserva-interactive-form'
+import { useState } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faListUl, faPlus } from '@fortawesome/free-solid-svg-icons';
+import { ReservasListaPage } from './reservas-lista-page';
+import { ReservaInteractiveForm } from './organisms/reserva-interactive-form';
 
-type ReservasTab = 'lista' | 'nueva'
+type ReservasTab = 'lista' | 'nueva';
 
 export function ReservasPage() {
-  const [activeTab, setActiveTab] = useState<ReservasTab>('lista')
+  const [activeTab, setActiveTab] = useState<ReservasTab>('lista');
 
   return (
-    <div className="min-h-screen bg-canvas px-4 py-8 sm:px-6 lg:px-8">
+    <div className="bg-canvas min-h-screen px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-6xl space-y-6">
         {/* Pestañas de navegación de alto nivel */}
-        <div className="flex items-center justify-between border-b border-line pb-4">
+        <div className="border-line flex items-center justify-between border-b pb-4">
           <nav className="flex items-center gap-2">
             <button
               type="button"
@@ -49,11 +48,10 @@ export function ReservasPage() {
           <ReservasListaPage onNuevaReserva={() => setActiveTab('nueva')} />
         ) : (
           <div className="space-y-8">
-            <ReservasHeader />
             <ReservaInteractiveForm />
           </div>
         )}
       </div>
     </div>
-  )
+  );
 }

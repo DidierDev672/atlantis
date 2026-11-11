@@ -15,6 +15,7 @@ interface ReservasListContainerProps {
   hasMore: boolean
   onLoadMore: () => Promise<void> | void
   onResetFilters?: () => void
+  onNuevaReserva?: () => void
   onSelectReserva?: (id: string) => void
   onSelectHuesped?: (personId: string) => void
 }
@@ -26,6 +27,7 @@ export function ReservasListContainer({
   hasMore,
   onLoadMore,
   onResetFilters,
+  onNuevaReserva,
   onSelectReserva,
   onSelectHuesped,
 }: ReservasListContainerProps) {
@@ -60,15 +62,28 @@ export function ReservasListContainer({
           No hay reservas para los criterios o búsqueda ingresados. Prueba modificando los filtros
           para ver más estadías.
         </p>
-        {onResetFilters && (
-          <button
-            type="button"
-            onClick={onResetFilters}
-            className="mt-4 inline-flex items-center gap-2 rounded-xl border border-line bg-surface/60 px-3.5 py-1.5 text-xs font-semibold text-ink hover:bg-surface transition-colors"
-          >
-            <FontAwesomeIcon icon={faRotateRight} className="size-3 text-neutral" />
-            <span>Restablecer filtros</span>
-          </button>
+        {(onResetFilters || onNuevaReserva) && (
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+            {onResetFilters && (
+              <button
+                type="button"
+                onClick={onResetFilters}
+                className="inline-flex items-center gap-2 rounded-xl border border-line bg-surface/60 px-3.5 py-1.5 text-xs font-semibold text-ink hover:bg-surface transition-colors cursor-pointer"
+              >
+                <FontAwesomeIcon icon={faRotateRight} className="size-3 text-neutral" />
+                <span>Restablecer filtros</span>
+              </button>
+            )}
+            {onNuevaReserva && (
+              <button
+                type="button"
+                onClick={onNuevaReserva}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:opacity-90 transition-opacity cursor-pointer"
+              >
+                <span>Nueva reserva</span>
+              </button>
+            )}
+          </div>
         )}
       </motion.div>
     )

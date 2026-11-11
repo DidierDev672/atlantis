@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { isAxiosError } from 'axios';
 import { api } from '../../../lib/api';
 import {
   validateStatusCode,
@@ -154,6 +155,68 @@ function formatRoomPrice(price: number | null): string {
   return `$ ${Number(price).toLocaleString('es-CO')}`;
 }
 
+function mapRawRoom(raw: RecepcionRoomRaw): RecepcionRoomItem {
+  return {
+    ...raw,
+    roomTypeName: resolveRoomTypeName(raw.room_types_id, raw.floor),
+    buildingName: resolveBuildingName(raw.building_id),
+    formattedPrice: formatRoomPrice(raw.price_override),
+    statusLabel: getRoomStatusConfig(raw.status).label,
+  };
+}
+
+function extractRoomsList(payload: unknown): RecepcionRoomRaw[] {
+  if (Array.isArray(payload)) {
+    return payload as RecepcionRoomRaw[];
+  }
+  if (payload && typeof payload === 'object') {
+    const obj = payload as { data?: unknown; rooms?: unknown };
+    if (Array.isArray(obj.data)) return obj.data as RecepcionRoomRaw[];
+    if (Array.isArray(obj.rooms)) return obj.rooms as RecepcionRoomRaw[];
+  }
+  return [];
+}
+
+interface FetchRoomsOutcome {
+  rooms: RecepcionRoomItem[];
+  validation: StatusCodeValidationResult;
+  isFallback: boolean;
+}
+
+async function requestRoomsData(): Promise<FetchRoomsOutcome> {
+  try {
+    const response = await executeBalancedRequest(() =>
+      api.get('/room', {
+        validateStatus: () => true, // Permite procesar todos los códigos con status-code-validator
+      })
+    );
+
+    const validation = validateStatusCode(response.status);
+    const rawList = extractRoomsList(response.data);
+
+    if (validation.isValid && rawList.length > 0) {
+      return {
+        rooms: rawList.map(mapRawRoom),
+        validation,
+        isFallback: false,
+      };
+    }
+
+    return {
+      rooms: FALLBACK_ROOMS_DATA.map(mapRawRoom),
+      validation,
+      isFallback: true,
+    };
+  } catch (error) {
+    const errStatus = isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+    return {
+      rooms: FALLBACK_ROOMS_DATA.map(mapRawRoom),
+      validation: validateStatusCode(errStatus),
+      isFallback: true,
+    };
+  }
+}
+
 export interface UseRecepcionRoomsReturn {
   rooms: RecepcionRoomItem[];
   filteredRooms: RecepcionRoomItem[];
@@ -197,77 +260,25 @@ export function useRecepcionRooms(): UseRecepcionRoomsReturn {
     'all' | 'with' | 'without'
   >('all');
 
-  const [reloadKey, setReloadKey] = useState(0);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
+    isMountedRef.current = true;
     let active = true;
 
-    executeBalancedRequest(() =>
-      api.get('/room', {
-        validateStatus: () => true, // Permite procesar todos los códigos con status-code-validator
-      })
-    )
-      .then((response) => {
-        if (!active) return;
-        const validation = validateStatusCode(response.status);
-        setValidationResult(validation);
-
-        if (
-          validation.isValid &&
-          Array.isArray(response.data) &&
-          response.data.length > 0
-        ) {
-          const mapped: RecepcionRoomItem[] = response.data.map(
-            (raw: RecepcionRoomRaw) => ({
-              ...raw,
-              roomTypeName: resolveRoomTypeName(raw.room_types_id, raw.floor),
-              buildingName: resolveBuildingName(raw.building_id),
-              formattedPrice: formatRoomPrice(raw.price_override),
-              statusLabel: getRoomStatusConfig(raw.status).label,
-            })
-          );
-          setRooms(mapped);
-          setIsFallback(false);
-        } else {
-          // Fallback resiliente si la API responde vacío o con código no estándar
-          const mappedFallback: RecepcionRoomItem[] = FALLBACK_ROOMS_DATA.map(
-            (raw) => ({
-              ...raw,
-              roomTypeName: resolveRoomTypeName(raw.room_types_id, raw.floor),
-              buildingName: resolveBuildingName(raw.building_id),
-              formattedPrice: formatRoomPrice(raw.price_override),
-              statusLabel: getRoomStatusConfig(raw.status).label,
-            })
-          );
-          setRooms(mappedFallback);
-          setIsFallback(true);
-        }
-      })
-      .catch(() => {
-        if (!active) return;
-        // Manejo de error de red con fallback de status code 500
-        const errValidation = validateStatusCode(500);
-        setValidationResult(errValidation);
-        const mappedFallback: RecepcionRoomItem[] = FALLBACK_ROOMS_DATA.map(
-          (raw) => ({
-            ...raw,
-            roomTypeName: resolveRoomTypeName(raw.room_types_id, raw.floor),
-            buildingName: resolveBuildingName(raw.building_id),
-            formattedPrice: formatRoomPrice(raw.price_override),
-            statusLabel: getRoomStatusConfig(raw.status).label,
-          })
-        );
-        setRooms(mappedFallback);
-        setIsFallback(true);
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+    requestRoomsData().then((res) => {
+      if (!active || !isMountedRef.current) return;
+      setValidationResult(res.validation);
+      setRooms(res.rooms);
+      setIsFallback(res.isFallback);
+      setLoading(false);
+    });
 
     return () => {
       active = false;
+      isMountedRef.current = false;
     };
-  }, [reloadKey]);
+  }, []);
 
   // Filtrado reactivo en memoria
   const filteredRooms = useMemo(() => {
@@ -329,7 +340,12 @@ export function useRecepcionRooms(): UseRecepcionRoomsReturn {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    setReloadKey((k) => k + 1);
+    const res = await requestRoomsData();
+    if (!isMountedRef.current) return;
+    setValidationResult(res.validation);
+    setRooms(res.rooms);
+    setIsFallback(res.isFallback);
+    setLoading(false);
   }, []);
 
   return {

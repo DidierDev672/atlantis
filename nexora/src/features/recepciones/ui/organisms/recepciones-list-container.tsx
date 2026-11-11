@@ -10,7 +10,25 @@ import { RecepcionStayTable } from '../molecules/recepcion-stay-table'
 import { RecepcionStayDetailModal } from '../molecules/recepcion-stay-detail-modal'
 import { InfiniteScroll, InfiniteScrollEnd } from '../../../../shared/ui/InfiniteScroll'
 import { Loading } from '../../../../shared/loading'
+import {
+  RecursosDropdown,
+  type DropdownOption,
+} from '../../../recursos/ui/molecules/recursos-dropdown'
 import type { StayItem } from '../../domain/stay'
+
+const STAY_STATUS_OPTIONS: DropdownOption[] = [
+  { value: 'todos', label: 'Todos los estados' },
+  { value: 'progress', label: 'En progreso' },
+  { value: 'completed', label: 'Finalizada' },
+  { value: 'canceled', label: 'Cancelada' },
+]
+
+const STAY_PAYMENT_OPTIONS: DropdownOption[] = [
+  { value: 'todos', label: 'Todos los pagos' },
+  { value: 'cash', label: 'Efectivo' },
+  { value: 'card', label: 'Tarjeta' },
+  { value: 'transfer', label: 'Transferencia' },
+]
 
 export interface RecepcionesListContainerProps {
   onNewCheckIn?: () => void
@@ -137,37 +155,31 @@ export function RecepcionesListContainer({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Buscar por habitación, persona, ID de estancia..."
-            className="w-full rounded-xl border border-line bg-canvas pl-10 pr-4 py-2 text-xs text-ink placeholder:text-ink-muted/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            className="w-full h-[42px] rounded-xl border border-line bg-canvas pl-10 pr-4 py-2 text-xs text-ink placeholder:text-ink-muted/60 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
           />
         </div>
 
-        {/* Filtros + Switch */}
+        {/* Filtros con RecursosDropdown + Switch */}
         <div className="flex flex-wrap items-center gap-2.5">
           {/* Filtro de Estado */}
-          <select
+          <RecursosDropdown
+            label="Estado"
+            options={STAY_STATUS_OPTIONS}
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            aria-label="Filtrar por estado"
-            className="rounded-xl border border-line bg-canvas px-3 py-2 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
-          >
-            <option value="todos">Todos los estados</option>
-            <option value="progress">En progreso</option>
-            <option value="completed">Finalizada</option>
-            <option value="canceled">Cancelada</option>
-          </select>
+            onChange={setStatusFilter}
+            placeholder="Todos los estados"
+            className="w-44 sm:w-48 [&>label]:sr-only"
+          />
 
           {/* Filtro de Método de pago */}
-          <select
+          <RecursosDropdown
+            label="Método de pago"
+            options={STAY_PAYMENT_OPTIONS}
             value={paymentFilter}
-            onChange={(e) => setPaymentFilter(e.target.value)}
-            aria-label="Filtrar por método de pago"
-            className="rounded-xl border border-line bg-canvas px-3 py-2 text-xs text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
-          >
-            <option value="todos">Todos los pagos</option>
-            <option value="cash">Efectivo</option>
-            <option value="card">Tarjeta</option>
-            <option value="transfer">Transferencia</option>
-          </select>
+            onChange={setPaymentFilter}
+            placeholder="Todos los pagos"
+            className="w-44 sm:w-48 [&>label]:sr-only"
+          />
 
           {/* Switch interactivo Card / Table (Requisito explícito del usuario) */}
           <RecepcionesViewSwitch viewMode={viewMode} onChange={setViewMode} />
@@ -179,7 +191,7 @@ export function RecepcionesListContainer({
             disabled={loading}
             aria-label="Refrescar información de recepciones y estancias"
             title="Refrescar información"
-            className="flex size-9 items-center justify-center rounded-xl border border-line bg-canvas text-ink-muted hover:border-primary/40 hover:bg-panel hover:text-primary transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
+            className="flex size-[42px] items-center justify-center rounded-xl border border-line bg-canvas text-ink-muted hover:border-primary/40 hover:bg-panel hover:text-primary transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
           >
             <FontAwesomeIcon
               icon={faRotateRight}
@@ -192,7 +204,7 @@ export function RecepcionesListContainer({
             <button
               type="button"
               onClick={onNewCheckIn}
-              className="flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:opacity-90 transition cursor-pointer"
+              className="flex h-[42px] items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:opacity-90 transition cursor-pointer"
             >
               <svg
                 viewBox="0 0 24 24"

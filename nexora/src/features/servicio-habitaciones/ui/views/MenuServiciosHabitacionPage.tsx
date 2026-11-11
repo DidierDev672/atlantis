@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import {
   faUtensils,
   faBowlFood,
@@ -20,16 +21,32 @@ import { EstadoPedidoAsignacionesOrganism } from '../organisms/EstadoPedidoAsign
 import { useCarritoStore } from '../../application/carrito-store';
 import type { MenuCategoria } from '../../domain/menu-categoria';
 
+type VistaActiva =
+  | 'catalogo'
+  | 'productos'
+  | 'nuevo'
+  | 'agregar-producto'
+  | 'carrito'
+  | 'pedidos'
+  | 'estado-pedido';
+
+interface NavTabItem {
+  id: Exclude<VistaActiva, 'agregar-producto'>;
+  label: string;
+  icon: IconDefinition;
+}
+
+const NAV_ITEMS: NavTabItem[] = [
+  { id: 'catalogo', label: 'Servicio', icon: faUtensils },
+  { id: 'productos', label: 'Producto', icon: faBowlFood },
+  { id: 'carrito', label: 'Carrito', icon: faCartShopping },
+  { id: 'pedidos', label: 'Pedido', icon: faClipboardList },
+  { id: 'estado-pedido', label: 'Estado Pedido', icon: faListCheck },
+  { id: 'nuevo', label: 'Nueva Categoría', icon: faPlus },
+];
+
 export function MenuServiciosHabitacionPage() {
-  const [vistaActiva, setVistaActiva] = useState<
-    | 'catalogo'
-    | 'productos'
-    | 'nuevo'
-    | 'agregar-producto'
-    | 'carrito'
-    | 'pedidos'
-    | 'estado-pedido'
-  >('catalogo');
+  const [vistaActiva, setVistaActiva] = useState<VistaActiva>('productos');
   const [categoriaParaProducto, setCategoriaParaProducto] =
     useState<MenuCategoria | null>(null);
 
@@ -38,108 +55,48 @@ export function MenuServiciosHabitacionPage() {
     s.items.reduce((acc, curr) => acc + curr.cantidad, 0)
   );
 
+  const handleCambiarVista = (vista: VistaActiva) => {
+    if (vista !== 'agregar-producto') {
+      setCategoriaParaProducto(null);
+    }
+    setVistaActiva(vista);
+  };
+
   const handleIrAgregarProducto = (cat?: MenuCategoria) => {
     setCategoriaParaProducto(cat ?? null);
     setVistaActiva('agregar-producto');
   };
 
   return (
-    <div className="space-y-8 pb-12">
-      {/* 1. Header con animación slideIn y Copywriting Psicológico según src/agent.md */}
-      <motion.header
+    <div className="space-y-6 pb-12">
+      {/* 1. Navbar flotante sin header contenedor */}
+      <motion.nav
+        aria-label="Navegación de servicios a la habitación"
         variants={slideIn}
         initial="hidden"
         animate="visible"
-        className="border-line bg-panel relative overflow-hidden rounded-3xl border px-6 py-8 shadow-xs sm:px-10 sm:py-9"
+        className="border-line/80 bg-panel/85 sticky top-20 z-20 mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-1.5 rounded-2xl border p-1.5 shadow-lg backdrop-blur-md"
       >
-        <div
-          aria-hidden="true"
-          className="from-primary/10 via-primary/5 pointer-events-none absolute inset-0 bg-linear-to-r to-transparent"
-        />
-
-        <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
-          <div className="max-w-2xl">
-            <div className="border-primary/20 bg-primary/10 text-primary inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold tracking-[0.15em] uppercase">
-              <span className="bg-primary size-1.5 rounded-full" />
-              Gastronomía
-            </div>
-            <h1 className="text-ink mt-3 font-serif text-2xl font-bold tracking-tight sm:text-3xl lg:text-4xl">
-              {vistaActiva === 'pedidos'
-                ? 'Pedidos y Comandas de Room Service'
-                : vistaActiva === 'estado-pedido'
-                  ? 'Estado de Asignaciones y Pedidos'
-                  : vistaActiva === 'carrito'
-                    ? 'Carrito y Comanda de Room Service'
-                    : vistaActiva === 'agregar-producto'
-                      ? 'Nuevo Producto de Menú'
-                      : vistaActiva === 'nuevo'
-                        ? 'Registrar Categoría de Servicio'
-                        : vistaActiva === 'productos'
-                          ? 'Productos y Platillos de Menú'
-                          : 'Menú de Servicios a la Habitación'}
-            </h1>
-            <p className="text-ink-muted mt-2 text-xs leading-relaxed sm:text-sm">
-              {vistaActiva === 'pedidos'
-                ? 'Visualiza la lista de comandas transmitidas a cocina, con detalle de platillos, notas gastronómicas y parámetros de entrega.'
-                : vistaActiva === 'estado-pedido'
-                  ? 'Monitorea el estado y las vinculaciones de las solicitudes de servicio en tiempo real con las estadías y huéspedes.'
-                  : vistaActiva === 'carrito'
-                    ? 'Revisa y gestiona los platillos y bebidas agregados a la comanda por el recepcionista antes de enviar la orden a cocina.'
-                    : vistaActiva === 'agregar-producto'
-                      ? `Agrega y cataloga un nuevo platillo, bebida o amenidad para ${
-                          categoriaParaProducto
-                            ? `la categoría "${categoriaParaProducto.name}"`
-                            : 'la carta de habitaciones'
-                        }.`
-                      : vistaActiva === 'nuevo'
-                        ? 'Da de alta una nueva categoría gastronómica para organizar la oferta culinaria de cada sede.'
-                        : vistaActiva === 'productos'
-                          ? 'Visualiza la galería visual en cascada de los platillos, bebidas y amenidades catalogadas para room service.'
-                          : 'Visualiza y consulta la oferta de categorías culinarias, licores y amenidades catalogadas para cada sede y edificio de la red hotelera.'}
-            </p>
-          </div>
-
-          {/* Selector de Pestañas Interactivo [Servicio, Producto, Carrito, Pedido, Estado Pedido] */}
-          <div className="border-line bg-canvas flex shrink-0 flex-wrap items-center gap-2 rounded-2xl border p-1.5 shadow-2xs">
+        {NAV_ITEMS.map((item) => {
+          const isActive = vistaActiva === item.id;
+          return (
             <button
+              key={item.id}
               type="button"
-              onClick={() => setVistaActiva('catalogo')}
+              onClick={() => handleCambiarVista(item.id)}
+              aria-current={isActive ? 'page' : undefined}
               className={`inline-flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
-                vistaActiva === 'catalogo'
+                isActive
                   ? 'bg-primary text-white shadow-xs'
-                  : 'text-ink-muted hover:text-ink'
+                  : 'text-ink-muted hover:bg-canvas/70 hover:text-ink'
               }`}
             >
-              <FontAwesomeIcon icon={faUtensils} className="size-3.5" />
-              <span>Servicio</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setVistaActiva('productos')}
-              className={`inline-flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
-                vistaActiva === 'productos'
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-ink-muted hover:text-ink'
-              }`}
-            >
-              <FontAwesomeIcon icon={faBowlFood} className="size-3.5" />
-              <span>Producto</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setVistaActiva('carrito')}
-              className={`inline-flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
-                vistaActiva === 'carrito'
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-ink-muted hover:text-ink'
-              }`}
-            >
-              <FontAwesomeIcon icon={faCartShopping} className="size-3.5" />
-              <span>Carrito</span>
-              {totalArticulos > 0 && (
+              <FontAwesomeIcon icon={item.icon} className="size-3.5" />
+              <span>{item.label}</span>
+              {item.id === 'carrito' && totalArticulos > 0 && (
                 <span
                   className={`inline-flex size-5 items-center justify-center rounded-full text-[10px] font-extrabold ${
-                    vistaActiva === 'carrito'
+                    isActive
                       ? 'text-primary bg-white'
                       : 'bg-primary text-white'
                   }`}
@@ -148,53 +105,18 @@ export function MenuServiciosHabitacionPage() {
                 </span>
               )}
             </button>
-            <button
-              type="button"
-              onClick={() => setVistaActiva('pedidos')}
-              className={`inline-flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
-                vistaActiva === 'pedidos'
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-ink-muted hover:text-ink'
-              }`}
-            >
-              <FontAwesomeIcon icon={faClipboardList} className="size-3.5" />
-              <span>Pedido</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setVistaActiva('estado-pedido')}
-              className={`inline-flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
-                vistaActiva === 'estado-pedido'
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-ink-muted hover:text-ink'
-              }`}
-            >
-              <FontAwesomeIcon icon={faListCheck} className="size-3.5" />
-              <span>Estado Pedido</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setVistaActiva('nuevo')}
-              className={`inline-flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
-                vistaActiva === 'nuevo'
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-ink-muted hover:text-ink'
-              }`}
-            >
-              <FontAwesomeIcon icon={faPlus} className="size-3.5" />
-              <span>Nueva Categoría</span>
-            </button>
-            {vistaActiva === 'agregar-producto' && (
-              <button
-                type="button"
-                className="bg-primary inline-flex cursor-default items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold text-white shadow-xs"
-              >
-                <span>✨ Alta de Producto</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </motion.header>
+          );
+        })}
+
+        {vistaActiva === 'agregar-producto' && (
+          <span
+            aria-current="page"
+            className="bg-primary inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold text-white shadow-xs"
+          >
+            <span>✨ Alta de Producto</span>
+          </span>
+        )}
+      </motion.nav>
 
       {/* 2. Contenido según la vista activa */}
       <AnimatePresence mode="wait">
@@ -207,7 +129,7 @@ export function MenuServiciosHabitacionPage() {
             exit="exit"
           >
             <MenuCategoriasGrid
-              onNuevoRegistro={() => setVistaActiva('nuevo')}
+              onNuevoRegistro={() => handleCambiarVista('nuevo')}
               onAgregarProducto={(cat) => handleIrAgregarProducto(cat)}
             />
           </motion.div>
@@ -220,7 +142,8 @@ export function MenuServiciosHabitacionPage() {
             exit="exit"
           >
             <ItemMenuProductosMasonry
-              onAgregarNuevo={() => setVistaActiva('agregar-producto')}
+              onAgregarNuevo={() => handleIrAgregarProducto()}
+              onIrACarrito={() => handleCambiarVista('carrito')}
             />
           </motion.div>
         ) : vistaActiva === 'carrito' ? (
@@ -232,7 +155,7 @@ export function MenuServiciosHabitacionPage() {
             exit="exit"
           >
             <CarritoServicioHabitacionOrganism
-              onIrAProductos={() => setVistaActiva('productos')}
+              onIrAProductos={() => handleCambiarVista('productos')}
             />
           </motion.div>
         ) : vistaActiva === 'pedidos' ? (
@@ -244,9 +167,9 @@ export function MenuServiciosHabitacionPage() {
             exit="exit"
           >
             <PedidosServicioHabitacionOrganism
-              onIrAProductos={() => setVistaActiva('productos')}
-              onIrACarrito={() => setVistaActiva('carrito')}
-              onIrAEstadoPedido={() => setVistaActiva('estado-pedido')}
+              onIrAProductos={() => handleCambiarVista('productos')}
+              onIrACarrito={() => handleCambiarVista('carrito')}
+              onIrAEstadoPedido={() => handleCambiarVista('estado-pedido')}
             />
           </motion.div>
         ) : vistaActiva === 'estado-pedido' ? (
@@ -258,8 +181,8 @@ export function MenuServiciosHabitacionPage() {
             exit="exit"
           >
             <EstadoPedidoAsignacionesOrganism
-              onIrAPedidos={() => setVistaActiva('pedidos')}
-              onIrAProductos={() => setVistaActiva('productos')}
+              onIrAPedidos={() => handleCambiarVista('pedidos')}
+              onIrAProductos={() => handleCambiarVista('productos')}
             />
           </motion.div>
         ) : vistaActiva === 'nuevo' ? (
@@ -274,7 +197,7 @@ export function MenuServiciosHabitacionPage() {
             <div className="mb-4">
               <button
                 type="button"
-                onClick={() => setVistaActiva('catalogo')}
+                onClick={() => handleCambiarVista('catalogo')}
                 className="text-primary hover:text-primary/80 inline-flex cursor-pointer items-center gap-2 text-xs font-bold transition-colors"
               >
                 <span>← Volver al catálogo de menús</span>
@@ -294,7 +217,7 @@ export function MenuServiciosHabitacionPage() {
             <div className="mb-4">
               <button
                 type="button"
-                onClick={() => setVistaActiva('productos')}
+                onClick={() => handleCambiarVista('productos')}
                 className="text-primary hover:text-primary/80 inline-flex cursor-pointer items-center gap-2 text-xs font-bold transition-colors"
               >
                 <span>← Volver a productos</span>
@@ -305,7 +228,7 @@ export function MenuServiciosHabitacionPage() {
               onProductoGuardado={() => {
                 // Se mantiene en el formulario para permitir seguir registrando información
               }}
-              onCancelar={() => setVistaActiva('productos')}
+              onCancelar={() => handleCambiarVista('productos')}
             />
           </motion.div>
         )}

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { useReservasList } from '../application/use-reservas-list';
-import { ReservasListaHeader } from './molecules/reservas-lista-header';
 import { ReservasListaToolbar } from './molecules/reservas-lista-toolbar';
 import { ReservasFeedbackBanner } from './molecules/reservas-feedback-banner';
 import { ReservaDetalleModal } from './molecules/reserva-detalle-modal';
@@ -61,9 +60,6 @@ export function ReservasListaPage({ onNuevaReserva }: ReservasListaPageProps) {
 
   return (
     <div className="space-y-6">
-      {/* Header con psicología del usuario y animación slideIn */}
-      <ReservasListaHeader onNuevaReserva={onNuevaReserva} />
-
       {/* Banner de feedback si hay avisos o respuestas del servidor */}
       <AnimatePresence>
         {feedback && feedback.message && (
@@ -91,7 +87,7 @@ export function ReservasListaPage({ onNuevaReserva }: ReservasListaPageProps) {
       {/* Contenedor principal con carga balanceada y scroll infinito para tarjetas o tabla */}
       <div className="relative min-h-[300px]">
         {isVisibleLoading && visibleItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-2xl border border-line bg-panel p-16 text-center shadow-xs">
+          <div className="border-line bg-panel flex flex-col items-center justify-center rounded-2xl border p-16 text-center shadow-xs">
             <Loading
               variant="block"
               size="md"
@@ -110,6 +106,7 @@ export function ReservasListaPage({ onNuevaReserva }: ReservasListaPageProps) {
               hasMore={hasMore}
               onLoadMore={loadMore}
               onResetFilters={handleResetFilters}
+              onNuevaReserva={onNuevaReserva}
               onSelectReserva={handleOpenDetail}
             />
 
