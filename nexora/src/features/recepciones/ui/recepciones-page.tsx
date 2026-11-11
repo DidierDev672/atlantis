@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { RecepcionHeader } from './molecules/recepcion-header';
 import { RecepcionesListContainer } from './organisms/recepciones-list-container';
 import { RecepcionPanel } from './organisms/recepcion-panel';
 import { RecepcionRoomsDashboard } from './organisms/recepcion-rooms-dashboard';
@@ -24,34 +23,6 @@ export function RecepcionesPage() {
   return (
     <div className="bg-canvas min-h-screen px-4 py-8 sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-7xl space-y-8">
-        {/* Cabecera con animación slideIn y copywriting psicológico */}
-        <RecepcionHeader
-          badgeText={
-            activeTab === 'habitaciones'
-              ? 'Recepción · Habitaciones'
-              : activeTab === 'lista'
-                ? 'Recepción · Estancias'
-                : 'Recepción · Check-in'
-          }
-          title={
-            activeTab === 'habitaciones'
-              ? 'Supervisión de habitaciones para recepcionista'
-              : activeTab === 'lista'
-                ? 'Lista de recepciones y estancias'
-                : 'Nuevo registro de estancia'
-          }
-          subtitle={
-            activeTab === 'habitaciones'
-              ? 'Supervisa en tiempo real el inventario hotelero, pisos, tipos, edificios, tarifas y recepción activa.'
-              : activeTab === 'lista'
-                ? 'Supervisa la ocupación activa, consulta habitaciones, huéspedes asignados y depósitos de garantía en tiempo real.'
-                : 'Registra el ingreso de un huésped asignando sede, edificio, habitación y cama en tu inventario hotelero.'
-          }
-          onNewCheckIn={
-            activeTab !== 'nuevo' ? () => setActiveTab('nuevo') : undefined
-          }
-        />
-
         {/* Alerta cósmica (/shared/alert) para validación empática de códigos de estado de la API */}
         {staysList.validationResult && !staysList.validationResult.isValid && (
           <StatusCodeAlert
@@ -61,7 +32,7 @@ export function RecepcionesPage() {
               <button
                 type="button"
                 onClick={() => void staysList.reload()}
-                className="text-xs font-semibold underline hover:opacity-80 cursor-pointer"
+                className="cursor-pointer text-xs font-semibold underline hover:opacity-80"
               >
                 Reintentar
               </button>
