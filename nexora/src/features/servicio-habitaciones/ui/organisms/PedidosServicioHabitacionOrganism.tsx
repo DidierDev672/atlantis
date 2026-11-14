@@ -543,16 +543,14 @@ export function PedidosServicioHabitacionOrganism({
       } else if (!validationAssignment.isValid) {
         setFeedback(validationAssignment)
       } else {
-        setFeedback({
-          isValid: true,
-          status: responseAssignment.status,
-          category: 'success',
-          title: 'Orden y Asignación Actualizadas',
-          message:
+        setFeedback(
+          validateStatusCode(
+            responseAssignment.status,
             validationAssignment.message ||
-            validationPut.message ||
-            `La comanda #${orden.order_number} y su asignación de servicio se han procesado exitosamente (Estado: ${statusComment}).`,
-        })
+              validationPut.message ||
+              `La comanda #${orden.order_number} y su asignación de servicio se han procesado exitosamente (Estado: ${statusComment}).`
+          )
+        )
       }
     } catch (err) {
       console.error('Error al actualizar /service-request o /service-assignments:', err)

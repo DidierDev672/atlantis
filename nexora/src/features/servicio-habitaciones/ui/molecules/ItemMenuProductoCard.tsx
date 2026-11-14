@@ -1,85 +1,46 @@
-import { useEffect, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faMinus,
   faPlus,
+  faLeaf,
+  faSeedling,
+  faClock,
+  faStopwatch,
+  faCircleCheck,
+  faCircleXmark,
+  faReceipt,
+  faArrowUpRightFromSquare,
 } from '@fortawesome/free-solid-svg-icons'
 import {
   type ItemMenuProducto,
   formatearMonedaCOP,
-  resolverImagenProducto,
 } from '../../domain/item-menu'
 import {
   obtenerProductoKey,
   useCarritoStore,
 } from '../../application/carrito-store'
-import {
-  isImageCached,
-  loadBalancedImage,
-} from '../../infrastructure/image-load-balancer'
-import { Loading } from '../../../../shared/loading'
+import type { LayoutViewMode } from '../atoms/LayoutViewSwitch'
 
 export interface ItemMenuProductoCardProps {
   producto: ItemMenuProducto
   index?: number
+  viewMode?: LayoutViewMode
   onVerDetalle?: (producto: ItemMenuProducto) => void
 }
 
-// Relaciones de aspecto variadas para generar el ritmo asimétrico tipo Pinterest / Masonry
-const ASPECT_RATIOS = [
-  'aspect-[4/5]',
-  'aspect-[3/4]',
-  'aspect-[1/1]',
-  'aspect-[4/3]',
-  'aspect-[16/11]',
-]
-
-const FALLBACK_FOOD_IMAGE =
-  'https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg?auto=compress&cs=tinysrgb&w=800'
-
+/**
+ * Molécula: Tarjeta interactiva de producto gastronómico sin imágenes,
+ * optimizada para Grid y Masonry, visualizando de forma limpia y directa:
+ * - Nombre comercial del producto
+ * - Descripción detallada
+ * - Precio en moneda colombiana (COP)
+ * - Indicadores dietéticos, disponibilidad y controles del carrito
+ */
 export function ItemMenuProductoCard({
   producto,
-  index = 0,
+  viewMode = 'grid',
   onVerDetalle,
 }: ItemMenuProductoCardProps) {
-  const primaryUrl = resolverImagenProducto(producto)
-  const [loadedState, setLoadedState] = useState<{
-    sourceKey: string
-    resolvedUrl: string
-  } | null>(() =>
-    isImageCached(primaryUrl)
-      ? { sourceKey: primaryUrl, resolvedUrl: primaryUrl }
-      : null
-  )
-
-  useEffect(() => {
-    if (isImageCached(primaryUrl)) return
-
-    let active = true
-    void loadBalancedImage(primaryUrl, {
-      fallbackUrl: FALLBACK_FOOD_IMAGE,
-    }).then((result) => {
-      if (!active) return
-      setLoadedState({
-        sourceKey: primaryUrl,
-        resolvedUrl: result.resolvedUrl,
-      })
-    })
-
-    return () => {
-      active = false
-    }
-  }, [primaryUrl])
-
-  const cachedReady = isImageCached(primaryUrl)
-  const isImageReady =
-    cachedReady || loadedState?.sourceKey === primaryUrl
-  const activeSrc = cachedReady
-    ? primaryUrl
-    : loadedState?.sourceKey === primaryUrl
-      ? loadedState.resolvedUrl
-      : null
-
   const isVegetariano = Boolean(producto.isVegetarian ?? producto.is_vegetarian)
   const isVegano = Boolean(producto.isVegan ?? producto.is_vegan)
   const isDisponible = producto.available !== false
@@ -93,9 +54,6 @@ export function ItemMenuProductoCard({
   const agregarProducto = useCarritoStore((s) => s.agregarProducto)
   const incrementarCantidad = useCarritoStore((s) => s.incrementarCantidad)
   const decrementarCantidad = useCarritoStore((s) => s.decrementarCantidad)
-
-  // Asignar dinámicamente relación de aspecto según el índice para un Waterfall Layout orgánico
-  const aspectClass = ASPECT_RATIOS[index % ASPECT_RATIOS.length]
 
   return (
     <article
@@ -111,195 +69,181 @@ export function ItemMenuProductoCard({
           onVerDetalle?.(producto)
         }
       }}
-      className={`group relative overflow-hidden rounded-3xl border border-line bg-panel shadow-xs transition-all duration-500 hover:shadow-xl hover:-translate-y-1 cursor-pointer select-none ${aspectClass}`}
+      className={`group relative flex flex-col justify-between rounded-3xl border border-line bg-panel p-5 shadow-xs transition-all duration-300 hover:border-primary/40 hover:shadow-xl hover:-translate-y-1 cursor-pointer select-none ${
+        viewMode === 'grid' ? 'h-full min-h-[220px]' : 'break-inside-avoid mb-6'
+      }`}
     >
-      {/* Loader del balanceador de cargas de imagen (/shared/loading) */}
-      <Loading
-        visible={!isImageReady}
-        variant="overlay"
-        size="sm"
-        label="Cargando imagen…"
-        delay={0}
-        minDuration={250}
-      />
-
-      {/* 1. Visualización base: Exclusivamente la fotografía pública del producto */}
-      {activeSrc && (
-        <img
-          src={activeSrc}
-          alt={producto.name}
-          onError={() => {
-            if (activeSrc !== FALLBACK_FOOD_IMAGE) {
-              setLoadedState({
-                sourceKey: primaryUrl,
-                resolvedUrl: FALLBACK_FOOD_IMAGE,
-              })
-            }
-          }}
-          className="h-full w-full object-cover object-center transition-transform duration-700 ease-out group-hover:scale-105"
-        />
-      )}
-
-      {/* Sombra sutil permanente en el borde inferior para resaltar el volumen de la tarjeta */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/40 via-transparent to-transparent opacity-60 transition-opacity duration-300 group-hover:opacity-0"
-      />
-
-      {/* 2. Efecto HOVER: Capa de información completa requerida con glassmorphism */}
-      <div className="absolute inset-0 flex flex-col justify-between gap-2 overflow-y-auto bg-linear-to-t from-black/95 via-black/75 to-black/30 p-4 text-white opacity-0 backdrop-blur-xs transition-all duration-300 ease-in-out group-hover:opacity-100 group-focus-within:opacity-100">
-        {/* Franja Superior del Hover: Estados, Preferencias Dietéticas y Botón de Carrito arriba a la derecha */}
-        <div className="flex items-start justify-between gap-2">
+      {/* 1. Encabezado de la Tarjeta: Badges de Disponibilidad, Dieta y Acceso a Detalle */}
+      <div>
+        <div className="flex items-center justify-between gap-2 mb-3">
           <div className="flex flex-wrap items-center gap-1.5">
-            {/* Disponibilidad */}
+            {/* Disponibilidad con icono FontAwesome */}
             <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider backdrop-blur-md ${
+              className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
                 isDisponible
-                  ? 'border border-emerald-400/40 bg-emerald-500/25 text-emerald-200'
-                  : 'border border-rose-400/40 bg-rose-500/25 text-rose-200'
+                  ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                  : 'border border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400'
               }`}
             >
-              <span
-                className={`size-1.5 rounded-full ${
-                  isDisponible ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'
-                }`}
+              <FontAwesomeIcon
+                icon={isDisponible ? faCircleCheck : faCircleXmark}
+                className="size-2.5"
               />
               {isDisponible ? 'Disponible' : 'Agotado'}
             </span>
 
-            {/* Badges Dietéticos: Vegetariano / Vegano */}
+            {/* Badges Dietéticos con iconos FontAwesome */}
             {isVegetariano && (
               <span
                 title="Apto para vegetarianos"
-                className="inline-flex items-center gap-1 rounded-full border border-green-400/30 bg-green-950/60 px-2 py-0.5 text-[10px] font-semibold text-green-300 backdrop-blur-md"
+                className="inline-flex items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 py-0.5 text-[10px] font-semibold text-green-700 dark:text-green-300"
               >
-                🌱 Vegetariano
+                <FontAwesomeIcon icon={faLeaf} className="size-2.5 text-green-500" />
+                <span>Vegetariano</span>
               </span>
             )}
             {isVegano && (
               <span
                 title="Apto para veganos"
-                className="inline-flex items-center gap-1 rounded-full border border-emerald-400/30 bg-emerald-950/60 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 backdrop-blur-md"
+                className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300"
               >
-                🌿 Vegano
+                <FontAwesomeIcon icon={faSeedling} className="size-2.5 text-emerald-500" />
+                <span>Vegano</span>
               </span>
             )}
           </div>
 
-          {/* Acciones rápidas de Carrito arriba a la derecha */}
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="ml-auto shrink-0"
+          <span
+            title="Ver detalle completo"
+            className="text-ink-muted/50 transition-colors group-hover:text-primary"
           >
-            {cantidadEnCarrito === 0 ? (
+            <FontAwesomeIcon icon={faArrowUpRightFromSquare} className="size-3" />
+          </span>
+        </div>
+
+        {/* 2. Cuerpo: Nombre y Descripción del Producto */}
+        <h3 className="font-serif text-lg font-bold leading-snug text-ink transition-colors group-hover:text-primary">
+          {producto.name}
+        </h3>
+
+        {producto.description ? (
+          <p className="mt-2 text-xs leading-relaxed text-ink-muted line-clamp-3">
+            {producto.description}
+          </p>
+        ) : (
+          <p className="mt-2 text-xs italic text-ink-muted/60">
+            Sin descripción gastronómica registrada.
+          </p>
+        )}
+
+        {/* Metadatos secundarios: Tiempo de preparación, Horario e IVA */}
+        <div className="flex flex-wrap items-center gap-2 pt-3 text-[11px] text-ink-muted">
+          {producto.prep_time !== undefined && (
+            <span
+              title="Tiempo estimado en cocina"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-canvas/70 px-2 py-0.5 text-[10px] font-medium"
+            >
+              <FontAwesomeIcon icon={faStopwatch} className="size-2.5 text-amber-500" />
+              <span>{producto.prep_time} min</span>
+            </span>
+          )}
+
+          {(producto.start_time || producto.end_time) && (
+            <span
+              title="Horario del servicio"
+              className="inline-flex items-center gap-1 rounded-lg border border-line bg-canvas/70 px-2 py-0.5 text-[10px] font-medium"
+            >
+              <FontAwesomeIcon icon={faClock} className="size-2.5 text-primary" />
+              <span>
+                {producto.start_time || '00:00'} - {producto.end_time || '23:59'}
+              </span>
+            </span>
+          )}
+
+          {producto.tax_percentage !== undefined && (
+            <span
+              title="Impuesto aplicado"
+              className="inline-flex items-center gap-1 rounded-lg border border-line bg-canvas/70 px-2 py-0.5 text-[10px] font-medium"
+            >
+              <FontAwesomeIcon icon={faReceipt} className="size-2.5 text-sky-500" />
+              <span>IVA {producto.tax_percentage}%</span>
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* 3. Pie de la Tarjeta: Precio y Acciones Rápidas del Carrito */}
+      <div className="mt-5 flex items-end justify-between gap-3 border-t border-line/70 pt-3.5">
+        <div>
+          <span className="block text-[10px] uppercase font-bold tracking-wider text-ink-muted">
+            Precio al huésped
+          </span>
+          <span className="font-sans text-xl sm:text-2xl font-black tracking-tight text-primary">
+            {formatearMonedaCOP(producto.price)}
+          </span>
+        </div>
+
+        {/* Controles de Carrito con FontAwesome */}
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="shrink-0"
+        >
+          {cantidadEnCarrito === 0 ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                agregarProducto(producto, 1)
+              }}
+              disabled={!isDisponible}
+              aria-label={`Agregar ${producto.name} al carrito`}
+              title={isDisponible ? 'Agregar al carrito' : 'No disponible'}
+              className="bg-primary hover:bg-primary/90 inline-flex items-center gap-1.5 rounded-2xl px-3.5 py-2 text-xs font-bold text-white shadow-xs shadow-primary/20 transition-all hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+            >
+              <FontAwesomeIcon icon={faPlus} className="size-3" />
+              <span className="hidden sm:inline">Agregar</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5 rounded-2xl border border-line bg-canvas/80 p-1 shadow-2xs">
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation()
-                  agregarProducto(producto, 1)
+                  decrementarCantidad(productoKey)
+                }}
+                aria-label={`Descontar una unidad de ${producto.name}`}
+                title="Descontar cantidad"
+                className="inline-flex size-7 cursor-pointer items-center justify-center rounded-xl bg-panel text-ink transition-all hover:bg-rose-500 hover:text-white active:scale-95 border border-line"
+              >
+                <FontAwesomeIcon icon={faMinus} className="size-2.5" />
+              </button>
+
+              <span
+                aria-label={`${cantidadEnCarrito} unidades en el carrito`}
+                className="min-w-6 text-center text-xs font-black text-ink"
+              >
+                {cantidadEnCarrito}
+              </span>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  incrementarCantidad(productoKey)
                 }}
                 disabled={!isDisponible}
-                aria-label={`Agregar ${producto.name} al carrito`}
-                title={isDisponible ? 'Agregar al carrito' : 'No disponible'}
-                className="bg-primary hover:bg-primary/90 inline-flex size-9 cursor-pointer items-center justify-center rounded-full text-white shadow-lg ring-1 ring-white/25 transition-all hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label={`Aumentar una unidad de ${producto.name}`}
+                title="Aumentar cantidad"
+                className="bg-primary hover:bg-primary/90 inline-flex size-7 cursor-pointer items-center justify-center rounded-xl text-white shadow-2xs transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <FontAwesomeIcon icon={faPlus} className="size-4" />
+                <FontAwesomeIcon icon={faPlus} className="size-2.5" />
               </button>
-            ) : (
-              <div className="flex items-center gap-1.5 rounded-full border border-white/25 bg-black/55 p-1 shadow-lg backdrop-blur-md">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    decrementarCantidad(productoKey)
-                  }}
-                  aria-label={`Descontar una unidad de ${producto.name}`}
-                  title="Descontar cantidad"
-                  className="inline-flex size-7 cursor-pointer items-center justify-center rounded-full bg-white/15 text-white transition-all hover:bg-rose-500/85 active:scale-95"
-                >
-                  <FontAwesomeIcon icon={faMinus} className="size-3" />
-                </button>
-
-                <span
-                  aria-label={`${cantidadEnCarrito} unidades en el carrito`}
-                  className="min-w-5 text-center text-xs font-extrabold tracking-tight text-white"
-                >
-                  {cantidadEnCarrito}
-                </span>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    incrementarCantidad(productoKey)
-                  }}
-                  disabled={!isDisponible}
-                  aria-label={`Aumentar una unidad de ${producto.name}`}
-                  title="Aumentar cantidad"
-                  className="bg-primary hover:bg-primary/90 inline-flex size-7 cursor-pointer items-center justify-center rounded-full text-white shadow-xs transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <FontAwesomeIcon icon={faPlus} className="size-3" />
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Franja Inferior del Hover: Datos del Platillo, Tiempos, Impuestos y Precio */}
-        <div className="space-y-1.5">
-          {/* Horarios disponibles */}
-          {(producto.start_time || producto.end_time) && (
-            <div className="inline-flex items-center gap-1 rounded-lg bg-white/10 px-2 py-0.5 text-[10px] font-medium text-white/90 backdrop-blur-md">
-              <span>⏰ Horario:</span>
-              <span className="font-semibold">
-                {producto.start_time || '00:00'} - {producto.end_time || '23:59'}
-              </span>
             </div>
           )}
-
-          {/* Nombre comercial */}
-          <h3 className="font-serif text-lg sm:text-xl font-bold leading-snug text-white drop-shadow-sm">
-            {producto.name}
-          </h3>
-
-          {/* Descripción de notas gastronómicas */}
-          {producto.description && (
-            <p className="line-clamp-2 text-xs leading-relaxed text-zinc-200">
-              {producto.description}
-            </p>
-          )}
-
-          {/* Fila de metadatos: Tiempo de preparación + Porcentaje de impuesto */}
-          <div className="flex flex-wrap items-center gap-2 pt-0.5 text-[11px] text-zinc-300">
-            {producto.prep_time !== undefined && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-0.5">
-                ⏱️ {producto.prep_time} min
-              </span>
-            )}
-
-            {producto.tax_percentage !== undefined && (
-              <span className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-0.5">
-                IVA {producto.tax_percentage}%
-              </span>
-            )}
-          </div>
-
-          {/* Precio formateado en Moneda Colombiana (COP) */}
-          <div className="border-t border-white/15 pt-2 flex items-baseline justify-between">
-            <div>
-              <span className="block text-[10px] uppercase font-bold tracking-wider text-zinc-300">
-                Precio al huésped
-              </span>
-              <span className="text-[10px] text-white/70">
-                Ver detalle completo ↗
-              </span>
-            </div>
-            <span className="font-sans text-xl sm:text-2xl font-black tracking-tight text-emerald-300 drop-shadow-sm">
-              {formatearMonedaCOP(producto.price)}
-            </span>
-          </div>
         </div>
       </div>
     </article>
   )
 }
+
+export default ItemMenuProductoCard

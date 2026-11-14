@@ -3,14 +3,23 @@ import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import {
   faArrowsRotate,
   faCircleCheck,
-  faLeaf,
   faMagnifyingGlass,
   faPlus,
-  faSeedling,
   faXmark,
+  faUtensils,
+  faArrowUpWideShort,
+  faArrowDownShortWide,
+  faArrowDownAZ,
+  faArrowDownZA,
 } from '@fortawesome/free-solid-svg-icons'
 
-export type FiltroDieta = 'todos' | 'vegetarianos' | 'veganos' | 'disponibles'
+export type FiltroDieta =
+  | 'todos'
+  | 'precio-alto'
+  | 'precio-menor'
+  | 'orden-az'
+  | 'orden-za'
+  | 'disponibles'
 
 interface FiltroDietaOption {
   id: FiltroDieta
@@ -19,9 +28,11 @@ interface FiltroDietaOption {
 }
 
 const FILTROS_DIETA: FiltroDietaOption[] = [
-  { id: 'todos', label: 'Todos' },
-  { id: 'vegetarianos', label: 'Vegetarianos', icon: faSeedling },
-  { id: 'veganos', label: 'Veganos', icon: faLeaf },
+  { id: 'todos', label: 'Todos', icon: faUtensils },
+  { id: 'precio-alto', label: 'Precio Alto', icon: faArrowUpWideShort },
+  { id: 'precio-menor', label: 'Precio Menor', icon: faArrowDownShortWide },
+  { id: 'orden-az', label: 'Ordenar A-Z', icon: faArrowDownAZ },
+  { id: 'orden-za', label: 'Ordenar Z-A', icon: faArrowDownZA },
   { id: 'disponibles', label: 'Disponibles', icon: faCircleCheck },
 ]
 
