@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { api } from '../../../lib/api'
+import { executeBalancedRequest } from '../../reservas/infrastructure/api-load-balancer'
 import {
   validateStatusCode,
   type StatusCodeValidationResult,
@@ -73,10 +74,12 @@ export interface ObtenerMenuCategoriasRespuesta {
  */
 export async function obtenerMenuCategoriasApi(): Promise<ObtenerMenuCategoriasRespuesta> {
   try {
-    const response = await api.get('/menu-category', {
-      skipAuth: true,
-      validateStatus: () => true,
-    })
+    const response = await executeBalancedRequest(() =>
+      api.get('/menu-category', {
+        skipAuth: true,
+        validateStatus: () => true,
+      })
+    )
 
     // Validación formal con status-code-validator
     const validation = validateStatusCode(response.status)

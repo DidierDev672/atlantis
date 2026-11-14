@@ -648,14 +648,12 @@ export function ModalSeleccionarRecepcion({
         const validation = validateStatusCode(error.response.status)
         setFeedback(validation)
       } else {
-        setFeedback({
-          isValid: false,
-          status: 0,
-          message:
-            'No se pudo conectar con el servidor de estadías en este momento. Hemos cargado datos seguros para que continúes sin interrupciones.',
-          category: 'warning',
-          title: 'Servicio en modo contingencia',
-        })
+        setFeedback(
+          validateStatusCode(
+            0,
+            'No se pudo conectar con el servidor de estadías en este momento. Hemos cargado datos seguros para que continúes sin interrupciones.'
+          )
+        )
       }
 
       // Carga de contingencia inmediata

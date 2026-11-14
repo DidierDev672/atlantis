@@ -12,6 +12,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { slideIn, fadeIn } from '../../../../design-tokens/motion';
 import { MenuCategoriasGrid } from '../organisms/MenuCategoriasGrid';
+import type { LayoutViewMode } from '../atoms/LayoutViewSwitch';
 import { ItemMenuProductosMasonry } from '../organisms/ItemMenuProductosMasonry';
 import { FormularioServicioHabitacionCard } from '../organisms/FormularioServicioHabitacionCard';
 import { FormularioAgregarProductoCard } from '../organisms/FormularioAgregarProductoCard';
@@ -37,7 +38,7 @@ interface NavTabItem {
 }
 
 const NAV_ITEMS: NavTabItem[] = [
-  { id: 'catalogo', label: 'Servicio', icon: faUtensils },
+  { id: 'catalogo', label: 'Categoría', icon: faUtensils },
   { id: 'productos', label: 'Producto', icon: faBowlFood },
   { id: 'carrito', label: 'Carrito', icon: faCartShopping },
   { id: 'pedidos', label: 'Pedido', icon: faClipboardList },
@@ -47,6 +48,8 @@ const NAV_ITEMS: NavTabItem[] = [
 
 export function MenuServiciosHabitacionPage() {
   const [vistaActiva, setVistaActiva] = useState<VistaActiva>('productos');
+  const [viewModeCategorias, setViewModeCategorias] =
+    useState<LayoutViewMode>('grid');
   const [categoriaParaProducto, setCategoriaParaProducto] =
     useState<MenuCategoria | null>(null);
 
@@ -129,6 +132,8 @@ export function MenuServiciosHabitacionPage() {
             exit="exit"
           >
             <MenuCategoriasGrid
+              viewMode={viewModeCategorias}
+              onViewModeChange={setViewModeCategorias}
               onNuevoRegistro={() => handleCambiarVista('nuevo')}
               onAgregarProducto={(cat) => handleIrAgregarProducto(cat)}
             />
