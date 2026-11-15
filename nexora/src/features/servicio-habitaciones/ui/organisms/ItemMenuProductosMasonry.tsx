@@ -7,13 +7,11 @@ import {
   getImageLoadBalancerSnapshot,
   subscribeImageLoadBalancer,
 } from '../../infrastructure/image-load-balancer'
-import { useCarritoStore } from '../../application/carrito-store'
 import {
   StatusCodeAlert,
   type StatusCodeValidationResult,
 } from '../../../../shared/lib/status-code-validator'
 import { Loading, useDelayVisibility } from '../../../../shared/loading'
-import { CarritoFlotanteFab } from '../atoms/CarritoFlotanteFab'
 import { ItemMenuProductoCard } from '../molecules/ItemMenuProductoCard'
 import { ItemMenuProductoModalDetalle } from '../molecules/ItemMenuProductoModalDetalle'
 import {
@@ -23,7 +21,6 @@ import {
 import { ProductosVisualizacionNavbar } from '../molecules/ProductosVisualizacionNavbar'
 import { ItemMenuProductosEmptyState } from '../molecules/ItemMenuProductosEmptyState'
 import type { LayoutViewMode } from '../atoms/LayoutViewSwitch'
-import { CarritoProductosModal } from './CarritoProductosModal'
 import {
   LazyAnimatedWrapper,
   InfiniteScroll,
@@ -35,16 +32,13 @@ const PAGE_SIZE = 8
 
 export interface ItemMenuProductosMasonryProps {
   onAgregarNuevo?: () => void
-  onIrACarrito?: () => void
 }
 
 export function ItemMenuProductosMasonry({
   onAgregarNuevo,
-  onIrACarrito,
 }: ItemMenuProductosMasonryProps) {
   const [productos, setProductos] = useState<ItemMenuProducto[]>([])
   const [productoSeleccionado, setProductoSeleccionado] = useState<ItemMenuProducto | null>(null)
-  const [isCarritoModalOpen, setIsCarritoModalOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(null)
   const [busqueda, setBusqueda] = useState('')
@@ -53,9 +47,6 @@ export function ItemMenuProductosMasonry({
   const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE)
   const [, startTransition] = useTransition()
   const isMountedRef = useRef(true)
-  const totalArticulosCarrito = useCarritoStore((s) =>
-    s.items.reduce((acc, curr) => acc + curr.cantidad, 0)
-  )
   const [organizando, setOrganizando] = useState(false)
   const showOrganizando = useDelayVisibility(organizando, { delay: 0, minDuration: 400 })
   const showLoading = useDelayVisibility(loading, { delay: 0, minDuration: 450 })
@@ -324,18 +315,6 @@ export function ItemMenuProductosMasonry({
       <ProductosVisualizacionNavbar
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-      />
-
-      {/* Botón flotante y modal de productos agregados al carrito */}
-      <CarritoFlotanteFab
-        totalArticulos={totalArticulosCarrito}
-        onClick={() => setIsCarritoModalOpen(true)}
-      />
-
-      <CarritoProductosModal
-        isOpen={isCarritoModalOpen}
-        onClose={() => setIsCarritoModalOpen(false)}
-        onIrACarrito={onIrACarrito}
       />
     </div>
   )

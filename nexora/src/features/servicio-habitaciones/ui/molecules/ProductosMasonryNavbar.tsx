@@ -1,5 +1,4 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
 import {
   faArrowsRotate,
   faCircleCheck,
@@ -12,6 +11,10 @@ import {
   faArrowDownAZ,
   faArrowDownZA,
 } from '@fortawesome/free-solid-svg-icons'
+import {
+  RecursosDropdown,
+  type DropdownOption,
+} from '../../../recursos/ui/molecules/recursos-dropdown'
 
 export type FiltroDieta =
   | 'todos'
@@ -20,21 +23,6 @@ export type FiltroDieta =
   | 'orden-az'
   | 'orden-za'
   | 'disponibles'
-
-interface FiltroDietaOption {
-  id: FiltroDieta
-  label: string
-  icon?: IconDefinition
-}
-
-const FILTROS_DIETA: FiltroDietaOption[] = [
-  { id: 'todos', label: 'Todos', icon: faUtensils },
-  { id: 'precio-alto', label: 'Precio Alto', icon: faArrowUpWideShort },
-  { id: 'precio-menor', label: 'Precio Menor', icon: faArrowDownShortWide },
-  { id: 'orden-az', label: 'Ordenar A-Z', icon: faArrowDownAZ },
-  { id: 'orden-za', label: 'Ordenar Z-A', icon: faArrowDownZA },
-  { id: 'disponibles', label: 'Disponibles', icon: faCircleCheck },
-]
 
 export interface ProductosMasonryNavbarProps {
   busqueda: string
@@ -48,8 +36,58 @@ export interface ProductosMasonryNavbarProps {
   onAgregarNuevo?: () => void
 }
 
+const OPCIONES_ORDENAMIENTO: DropdownOption[] = [
+  {
+    value: 'precio-alto',
+    label: 'Precio: Alto a Menor',
+    customContent: (
+      <span className="flex items-center gap-2">
+        <FontAwesomeIcon
+          icon={faArrowUpWideShort}
+          className="size-3.5 text-primary"
+        />
+        <span>Precio: Alto a Menor</span>
+      </span>
+    ),
+  },
+  {
+    value: 'precio-menor',
+    label: 'Precio: Menor a Alto',
+    customContent: (
+      <span className="flex items-center gap-2">
+        <FontAwesomeIcon
+          icon={faArrowDownShortWide}
+          className="size-3.5 text-primary"
+        />
+        <span>Precio: Menor a Alto</span>
+      </span>
+    ),
+  },
+  {
+    value: 'orden-az',
+    label: 'Ordenar A-Z',
+    customContent: (
+      <span className="flex items-center gap-2">
+        <FontAwesomeIcon icon={faArrowDownAZ} className="size-3.5 text-primary" />
+        <span>Alfabético A-Z</span>
+      </span>
+    ),
+  },
+  {
+    value: 'orden-za',
+    label: 'Ordenar Z-A',
+    customContent: (
+      <span className="flex items-center gap-2">
+        <FontAwesomeIcon icon={faArrowDownZA} className="size-3.5 text-primary" />
+        <span>Alfabético Z-A</span>
+      </span>
+    ),
+  },
+]
+
 /**
- * Molécula: Barra de búsqueda, filtros dietéticos y acciones del catálogo de productos.
+ * Molécula: Barra de búsqueda, filtros dietéticos, selector desplegable
+ * de ordenamiento (con RecursosDropdown) y acciones del catálogo de productos.
  */
 export function ProductosMasonryNavbar({
   busqueda,
@@ -62,11 +100,21 @@ export function ProductosMasonryNavbar({
   onRefrescar,
   onAgregarNuevo,
 }: ProductosMasonryNavbarProps) {
+  const isOrdenActivo = [
+    'precio-alto',
+    'precio-menor',
+    'orden-az',
+    'orden-za',
+  ].includes(filtroDieta)
+
+  const valorOrdenSeleccionado = isOrdenActivo ? filtroDieta : ''
+
   return (
     <nav
       aria-label="Filtros y acciones del menú de productos"
       className="border-line bg-panel flex flex-col gap-3 rounded-3xl border p-3.5 shadow-xs lg:flex-row lg:items-center lg:justify-between"
     >
+      {/* Buscador reactivo */}
       <div className="relative w-full lg:max-w-sm lg:flex-1">
         <FontAwesomeIcon
           icon={faMagnifyingGlass}
@@ -91,33 +139,51 @@ export function ProductosMasonryNavbar({
         )}
       </div>
 
-      {/* Filtros de Dieta / Disponibilidad */}
-      <div className="border-line bg-canvas flex flex-wrap items-center gap-1.5 rounded-2xl border p-1 text-xs">
-        {FILTROS_DIETA.map((opcion) => {
-          const isActive = filtroDieta === opcion.id
-          return (
-            <button
-              key={opcion.id}
-              type="button"
-              onClick={() => onFiltroChange(opcion.id)}
-              aria-pressed={isActive}
-              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 font-bold transition-all ${
-                isActive
-                  ? 'bg-primary text-white shadow-xs'
-                  : 'text-ink-muted hover:bg-panel/80 hover:text-ink'
-              }`}
-            >
-              {opcion.icon && (
-                <FontAwesomeIcon icon={opcion.icon} className="size-3.5" />
-              )}
-              <span>
-                {opcion.id === 'todos'
-                  ? `${opcion.label} (${totalProductos})`
-                  : opcion.label}
-              </span>
-            </button>
-          )
-        })}
+      {/* Filtros rápidos (Todos, Disponibles) + Dropdown de ordenamiento con RecursosDropdown */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="border-line bg-canvas flex items-center gap-1.5 rounded-2xl border p-1 text-xs">
+          <button
+            type="button"
+            onClick={() => onFiltroChange('todos')}
+            aria-pressed={filtroDieta === 'todos'}
+            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 font-bold transition-all ${
+              filtroDieta === 'todos'
+                ? 'bg-primary text-white shadow-xs'
+                : 'text-ink-muted hover:bg-panel/80 hover:text-ink'
+            }`}
+          >
+            <FontAwesomeIcon icon={faUtensils} className="size-3.5" />
+            <span>Todos ({totalProductos})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onFiltroChange('disponibles')}
+            aria-pressed={filtroDieta === 'disponibles'}
+            className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 font-bold transition-all ${
+              filtroDieta === 'disponibles'
+                ? 'bg-primary text-white shadow-xs'
+                : 'text-ink-muted hover:bg-panel/80 hover:text-ink'
+            }`}
+          >
+            <FontAwesomeIcon icon={faCircleCheck} className="size-3.5" />
+            <span>Disponibles</span>
+          </button>
+        </div>
+
+        {/* Componente Reutilizable RecursosDropdown para selección de ordenamiento */}
+        <div className="w-48 sm:w-56">
+          <RecursosDropdown
+            value={valorOrdenSeleccionado}
+            onChange={(val) => {
+              if (val) onFiltroChange(val as FiltroDieta)
+            }}
+            options={OPCIONES_ORDENAMIENTO}
+            placeholder="Ordenar por…"
+            searchable={false}
+            className="text-xs"
+          />
+        </div>
       </div>
 
       {/* Acciones de Cabecera: Refrescar y Nuevo Producto */}
@@ -152,3 +218,4 @@ export function ProductosMasonryNavbar({
   )
 }
 
+export default ProductosMasonryNavbar

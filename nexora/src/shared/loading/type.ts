@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+
 export type LoadingSize = 'sm' | 'md' | 'lg';
 
 /**
@@ -64,5 +66,37 @@ export interface PostPayloadLoaderProps {
   /** Tiempo mínimo garantizado de visualización (por defecto 850ms) */
   minDuration?: number;
   /** Clases CSS adicionales para el contenedor */
+  className?: string;
+}
+
+export type SkeletonVariant = 'rectangular' | 'rounded' | 'circular' | 'text';
+export type SkeletonAnimation = 'shimmer' | 'pulse' | 'none';
+export type SkeletonMediaShape = 'rectangular' | 'circular';
+
+export interface SkeletonProps {
+  /** Forma geométrica del marcador de posición */
+  variant?: SkeletonVariant;
+  /** Tipo de animación: barrido lateral (`shimmer`), parpadeo (`pulse`) o estático (`none`) */
+  animation?: SkeletonAnimation;
+  /** Ancho explícito (ej. '100%', 48) */
+  width?: string | number;
+  /** Alto explícito (ej. '12rem', 48) */
+  height?: string | number;
+  /** Número de líneas cuando `variant="text"` */
+  lines?: number;
+  /** Clases CSS adicionales (Tailwind) */
+  className?: string;
+}
+
+export interface SkeletonCardProps {
+  /** Forma de la imagen o avatar superior/lateral */
+  mediaShape?: SkeletonMediaShape;
+  /** Estado booleano opcional para alternar automáticamente entre Skeleton y `children` */
+  isLoading?: boolean;
+  /** Contenido real de la tarjeta cuando `isLoading` es `false` */
+  children?: ReactNode;
+  /** Animación del skeleton (`shimmer` por defecto) */
+  animation?: SkeletonAnimation;
+  /** Clases CSS adicionales para la tarjeta */
   className?: string;
 }

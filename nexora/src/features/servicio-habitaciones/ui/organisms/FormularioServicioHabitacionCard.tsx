@@ -1,4 +1,11 @@
 import { motion, AnimatePresence } from 'motion/react'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import {
+  faDice,
+  faEraser,
+  faPaperPlane,
+  faSpinner,
+} from '@fortawesome/free-solid-svg-icons'
 import { fadeIn } from '../../../../design-tokens/motion'
 import { Input } from '../../../../shared/ui/Input'
 import { Textarea } from '../../../../shared/ui/Textarea'
@@ -44,6 +51,8 @@ export function FormularioServicioHabitacionCard() {
     feedback,
     setFeedback,
     handleSubmit,
+    limpiarFormulario,
+    resetKey,
     isLoadingEndpoints,
   } = useFormularioServicioHabitacion()
 
@@ -82,8 +91,7 @@ export function FormularioServicioHabitacionCard() {
                   Despachando Orden de Servicio
                 </h3>
                 <p className="text-xs text-white/80 leading-relaxed">
-                  Transmitiendo petición balanceada con validación de código de estado al endpoint{' '}
-                  <span className="font-mono font-bold text-primary-light">/menu-category</span>…
+                  Registrando la categoría de servicio, por favor espera un momento…
                 </p>
               </div>
             </motion.div>
@@ -138,22 +146,25 @@ export function FormularioServicioHabitacionCard() {
         {/* Formulario de Registro */}
         <form onSubmit={handleSubmit} className="mt-6 space-y-6">
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-            {/* 1. Código de orden numérico de 2 dígitos */}
+            {/* 1. Código de orden numérico de 2 dígitos generado automáticamente */}
             <div>
               <Input
                 label="Order (Código de orden)"
                 value={order}
-                onChange={(e) => setOrder(e.target.value)}
+                onChange={(e) => setOrder(e.target.value.replace(/\D/g, '').slice(0, 2))}
                 placeholder="Ej: 17"
+                maxLength={2}
+                inputMode="numeric"
                 required
-                hint="Identificador numérico de orden o secuencia (dos dígitos)."
+                hint="Código numérico de 2 dígitos generado automáticamente."
                 action={
                   <button
                     type="button"
                     onClick={generarOrderAleatorio}
-                    className="inline-flex items-center gap-1 rounded-lg bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 active:scale-95 transition-all cursor-pointer"
-                    title="Generar número aleatorio de dos dígitos"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 active:scale-95 transition-all cursor-pointer"
+                    title="Generar nuevo número de orden de dos dígitos"
                   >
+                    <FontAwesomeIcon icon={faDice} className="size-3" />
                     <span>Aleatorio</span>
                   </button>
                 }
@@ -244,14 +255,25 @@ export function FormularioServicioHabitacionCard() {
           {/* 7. Sección para cargar imagen desde cualquier dispositivo */}
           <div className="pt-2">
             <SeccionCargaImagen
+              key={resetKey}
               imageFile={imagenArchivo}
               imagePreview={imagenPreview}
               onImageChange={handleImageChange}
             />
           </div>
 
-          {/* Botón de acción principal */}
+          {/* Barra de botones de acción: Limpiar a la izquierda de Guardar */}
           <div className="flex flex-wrap items-center justify-end gap-3 pt-3">
+            <button
+              type="button"
+              onClick={limpiarFormulario}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-2xl border border-line bg-canvas px-5 py-3 text-xs font-bold text-ink shadow-2xs transition-all hover:bg-panel hover:border-primary/40 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <FontAwesomeIcon icon={faEraser} className="size-3.5" />
+              <span>Limpiar formulario</span>
+            </button>
+
             <button
               type="submit"
               disabled={saving}
@@ -259,11 +281,14 @@ export function FormularioServicioHabitacionCard() {
             >
               {saving ? (
                 <>
-                  <span className="inline-block size-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  <FontAwesomeIcon icon={faSpinner} spin className="size-3.5" />
                   <span>Guardando...</span>
                 </>
               ) : (
-                'Guardar y emitir orden de servicio'
+                <>
+                  <FontAwesomeIcon icon={faPaperPlane} className="size-3.5" />
+                  <span>Guardar y emitir orden de servicio</span>
+                </>
               )}
             </button>
           </div>

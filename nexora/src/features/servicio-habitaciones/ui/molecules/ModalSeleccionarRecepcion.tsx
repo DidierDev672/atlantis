@@ -1,113 +1,113 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
-import { isAxiosError } from 'axios'
-import { api } from '../../../../lib/api'
-import { fadeUp } from '../../../../design-tokens/motion'
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { isAxiosError } from 'axios';
+import { api } from '../../../../lib/api';
+import { fadeUp } from '../../../../design-tokens/motion';
 import {
   validateStatusCode,
   type StatusCodeValidationResult,
-} from '../../../../shared/lib/status-code-validator'
-import { HotelEdificioAnimado } from '../atoms/HotelEdificioAnimado'
+} from '../../../../shared/lib/status-code-validator';
+import { HotelEdificioAnimado } from '../atoms/HotelEdificioAnimado';
 
 /**
  * Estructura de la estadía obtenida desde GET /stays
  */
 export interface RawStayApi {
-  id: string
-  room_id: string
-  reservation_id?: string | null
-  person_ids?: string[]
-  check_in_date: string
-  check_out_date: string
-  payment_method?: string
-  security_deposit?: number
-  remarks?: string
-  status?: string
-  created_by?: string
-  created_at?: string
-  updated_at?: string
+  id: string;
+  room_id: string;
+  reservation_id?: string | null;
+  person_ids?: string[];
+  check_in_date: string;
+  check_out_date: string;
+  payment_method?: string;
+  security_deposit?: number;
+  remarks?: string;
+  status?: string;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 /**
  * Estructura de la habitación obtenida desde GET /room/{id}
  */
 export interface RoomDetailApi {
-  id: string
-  number: string
-  floor: number
-  room_types_id: string
-  building_id: string
-  price_override?: number
-  status: string
-  has_reception: boolean
-  created_by?: string
-  created_at?: string
-  updated_at?: string
+  id: string;
+  number: string;
+  floor: number;
+  room_types_id: string;
+  building_id: string;
+  price_override?: number;
+  status: string;
+  has_reception: boolean;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 /**
  * Estructura de la reserva obtenida desde GET /reserve/{id}
  */
 export interface ReserveDetailApi {
-  id: string
-  room_id: string
-  person_id: string
-  check_in_date: string
-  check_out_date: string
-  number_of_guests: number
-  state: string
-  total_price?: number
-  created_by?: string
-  created_at?: string
-  updated_at?: string
+  id: string;
+  room_id: string;
+  person_id: string;
+  check_in_date: string;
+  check_out_date: string;
+  number_of_guests: number;
+  state: string;
+  total_price?: number;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 /**
  * Estructura de la persona obtenida desde GET /persons/{id}
  */
 export interface PersonDetailApi {
-  id: string
-  document_type: string
-  document_number: string
-  name: string
-  phone_number: string
-  email: string
-  date_of_birth: string
-  gender: string
-  nationality?: string
-  roles?: string[]
-  created_by?: string
-  created_at?: string
-  updated_at?: string
+  id: string;
+  document_type: string;
+  document_number: string;
+  name: string;
+  phone_number: string;
+  email: string;
+  date_of_birth: string;
+  gender: string;
+  nationality?: string;
+  roles?: string[];
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 /**
  * Modelo enriquecido y adaptado para la UI sin renderizar IDs crudos
  */
 export interface RecepcionSeleccionada {
-  id: string
-  label: string
-  huespedNombre: string
-  habitacionNumero: string
-  habitacionNombre?: string
-  tieneReserva: boolean
-  cantidadHuespedes: number
-  checkInFormateado: string
-  checkOutFormateado: string
-  roomId: string
-  reservationId?: string | null
-  personIds?: string[]
-  sedeNombre?: string
-  room?: RoomDetailApi
-  reserve?: ReserveDetailApi | null
-  person?: PersonDetailApi
+  id: string;
+  label: string;
+  huespedNombre: string;
+  habitacionNumero: string;
+  habitacionNombre?: string;
+  tieneReserva: boolean;
+  cantidadHuespedes: number;
+  checkInFormateado: string;
+  checkOutFormateado: string;
+  roomId: string;
+  reservationId?: string | null;
+  personIds?: string[];
+  sedeNombre?: string;
+  room?: RoomDetailApi;
+  reserve?: ReserveDetailApi | null;
+  person?: PersonDetailApi;
 }
 
 interface ModalSeleccionarRecepcionProps {
-  isOpen: boolean
-  onClose: () => void
-  onSelect: (recepcion: RecepcionSeleccionada) => void
-  selectedId?: string
+  isOpen: boolean;
+  onClose: () => void;
+  onSelect: (recepcion: RecepcionSeleccionada) => void;
+  selectedId?: string;
 }
 
 // ==========================================
@@ -116,57 +116,57 @@ interface ModalSeleccionarRecepcionProps {
 // ==========================================
 
 function formatearFecha(isoString?: string): string {
-  if (!isoString) return 'Por definir'
+  if (!isoString) return 'Por definir';
   try {
-    const d = new Date(isoString)
-    if (isNaN(d.getTime())) return 'Por definir'
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return 'Por definir';
     return d.toLocaleDateString('es-ES', {
       day: '2-digit',
       month: 'short',
       year: 'numeric',
-    })
+    });
   } catch {
-    return 'Por definir'
+    return 'Por definir';
   }
 }
 
 function formatearFechaHora(isoString?: string): string {
-  if (!isoString) return 'Por definir'
+  if (!isoString) return 'Por definir';
   try {
-    const d = new Date(isoString)
-    if (isNaN(d.getTime())) return 'Por definir'
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return 'Por definir';
     return d.toLocaleDateString('es-ES', {
       day: '2-digit',
       month: 'short',
       hour: '2-digit',
       minute: '2-digit',
-    })
+    });
   } catch {
-    return 'Por definir'
+    return 'Por definir';
   }
 }
 
 function formatDocType(type?: string): string {
   switch (type?.toLowerCase()) {
     case 'id_card':
-      return 'DNI / Cédula'
+      return 'DNI / Cédula';
     case 'passport':
-      return 'Pasaporte'
+      return 'Pasaporte';
     case 'foreign_card':
-      return 'Carné de Extranjería'
+      return 'Carné de Extranjería';
     default:
-      return 'Doc. Identidad'
+      return 'Doc. Identidad';
   }
 }
 
 function formatGender(gender?: string): string {
   switch (gender?.toUpperCase()) {
     case 'M':
-      return 'Masculino'
+      return 'Masculino';
     case 'F':
-      return 'Femenino'
+      return 'Femenino';
     default:
-      return 'No especificado'
+      return 'No especificado';
   }
 }
 
@@ -174,72 +174,72 @@ const ROOM_TYPES_CATALOG: Record<string, string> = {
   'type-1': 'Suite Presidencial',
   'type-2': 'Doble Superior',
   'type-3': 'Master Suite Ejecutiva',
-}
+};
 
 function formatRoomType(roomTypeId?: string): string {
-  if (!roomTypeId) return 'Estándar'
-  return ROOM_TYPES_CATALOG[roomTypeId] || 'Suite Confort'
+  if (!roomTypeId) return 'Estándar';
+  return ROOM_TYPES_CATALOG[roomTypeId] || 'Suite Confort';
 }
 
 const BUILDINGS_CATALOG: Record<string, string> = {
   'building-1': 'Torre Panorámica A',
   'building-2': 'Torre Ejecutiva B',
-}
+};
 
 function formatBuilding(buildingId?: string): string {
-  if (!buildingId) return 'Edificio Principal'
-  return BUILDINGS_CATALOG[buildingId] || 'Torre Central'
+  if (!buildingId) return 'Edificio Principal';
+  return BUILDINGS_CATALOG[buildingId] || 'Torre Central';
 }
 
 function formatRoomStatus(status?: string): string {
   switch (status?.toLowerCase()) {
     case 'available':
-      return 'Disponible'
+      return 'Disponible';
     case 'occupied':
-      return 'Ocupada'
+      return 'Ocupada';
     case 'maintenance':
-      return 'Mantenimiento'
+      return 'Mantenimiento';
     default:
-      return 'Activa'
+      return 'Activa';
   }
 }
 
 function getRoomStatusColor(status?: string): string {
   switch (status?.toLowerCase()) {
     case 'available':
-      return 'text-emerald-600 dark:text-emerald-400'
+      return 'text-emerald-600 dark:text-emerald-400';
     case 'occupied':
-      return 'text-amber-600 dark:text-amber-400'
+      return 'text-amber-600 dark:text-amber-400';
     case 'maintenance':
-      return 'text-rose-600 dark:text-rose-400'
+      return 'text-rose-600 dark:text-rose-400';
     default:
-      return 'text-ink-muted'
+      return 'text-ink-muted';
   }
 }
 
 function formatReserveState(state?: string): string {
   switch (state?.toLowerCase()) {
     case 'confirmed':
-      return 'Confirmada'
+      return 'Confirmada';
     case 'pending':
-      return 'Pendiente'
+      return 'Pendiente';
     case 'cancelled':
-      return 'Cancelada'
+      return 'Cancelada';
     default:
-      return 'En curso'
+      return 'En curso';
   }
 }
 
 function getReserveStateBadge(state?: string): string {
   switch (state?.toLowerCase()) {
     case 'confirmed':
-      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/60'
+      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/60';
     case 'pending':
-      return 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 border-amber-200 dark:border-amber-900/60'
+      return 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 border-amber-200 dark:border-amber-900/60';
     case 'cancelled':
-      return 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 border-rose-200 dark:border-rose-900/60'
+      return 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 border-rose-200 dark:border-rose-900/60';
     default:
-      return 'bg-canvas text-ink-muted border-line'
+      return 'bg-canvas text-ink-muted border-line';
   }
 }
 
@@ -293,7 +293,7 @@ const STAYS_FALLBACK: RawStayApi[] = [
     created_at: '2026-10-03T16:30:00Z',
     updated_at: '2026-10-03T16:30:00Z',
   },
-]
+];
 
 const ROOMS_FALLBACK: Record<string, RoomDetailApi> = {
   'room-1': {
@@ -335,7 +335,7 @@ const ROOMS_FALLBACK: Record<string, RoomDetailApi> = {
     created_at: '2026-10-01T15:04:05Z',
     updated_at: '2026-10-01T15:04:05Z',
   },
-}
+};
 
 const RESERVES_FALLBACK: Record<string, ReserveDetailApi> = {
   'res-1': {
@@ -364,7 +364,7 @@ const RESERVES_FALLBACK: Record<string, ReserveDetailApi> = {
     created_at: '2026-10-01T15:04:05Z',
     updated_at: '2026-10-01T15:04:05Z',
   },
-}
+};
 
 const PERSONS_FALLBACK: Record<string, PersonDetailApi> = {
   'person-1': {
@@ -412,7 +412,7 @@ const PERSONS_FALLBACK: Record<string, PersonDetailApi> = {
     created_at: '2026-10-01T15:04:05Z',
     updated_at: '2026-10-01T15:04:05Z',
   },
-}
+};
 
 export function ModalSeleccionarRecepcion({
   isOpen,
@@ -420,75 +420,74 @@ export function ModalSeleccionarRecepcion({
   onSelect,
   selectedId,
 }: ModalSeleccionarRecepcionProps) {
-  const [recepciones, setRecepciones] = useState<RecepcionSeleccionada[]>([])
-  const [loading, setLoading] = useState<boolean>(false)
-  const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(null)
-  const [busqueda, setBusqueda] = useState<string>('')
-  const [selectedRecepcion, setSelectedRecepcion] = useState<RecepcionSeleccionada | null>(null)
+  const [recepciones, setRecepciones] = useState<RecepcionSeleccionada[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(
+    null
+  );
+  const [busqueda, setBusqueda] = useState<string>('');
+  const [selectedRecepcion, setSelectedRecepcion] =
+    useState<RecepcionSeleccionada | null>(null);
 
-  // Al abrir/cerrar sincronizar selección o reiniciar
-  useEffect(() => {
-    if (!isOpen) {
-      setSelectedRecepcion(null)
-    }
-  }, [isOpen])
+  const activeSelectedRecepcion = isOpen ? selectedRecepcion : null;
 
   const handleSelectCard = (r: RecepcionSeleccionada) => {
-    setSelectedRecepcion(r)
-    onSelect(r)
-    onClose()
-  }
+    setSelectedRecepcion(null);
+    onSelect(r);
+    onClose();
+  };
 
   const handleConfirmar = () => {
-    if (selectedRecepcion) {
-      onSelect(selectedRecepcion)
-      onClose()
+    if (activeSelectedRecepcion) {
+      onSelect(activeSelectedRecepcion);
+      setSelectedRecepcion(null);
+      onClose();
     }
-  }
+  };
 
   // Efecto de Profundidad 3D en Pantalla de Fondo (#root) estilo iOS Sheet
   useEffect(() => {
-    if (!isOpen) return
-    const rootEl = document.getElementById('root')
-    if (!rootEl) return
+    if (!isOpen) return;
+    const rootEl = document.getElementById('root');
+    if (!rootEl) return;
 
-    const prevTransition = rootEl.style.transition
-    const prevTransform = rootEl.style.transform
-    const prevBorderRadius = rootEl.style.borderRadius
-    const prevTransformOrigin = rootEl.style.transformOrigin
-    const prevOverflow = rootEl.style.overflow
-    const prevBodyOverflow = document.body.style.overflow
-    const prevBodyBg = document.body.style.backgroundColor
+    const prevTransition = rootEl.style.transition;
+    const prevTransform = rootEl.style.transform;
+    const prevBorderRadius = rootEl.style.borderRadius;
+    const prevTransformOrigin = rootEl.style.transformOrigin;
+    const prevOverflow = rootEl.style.overflow;
+    const prevBodyOverflow = document.body.style.overflow;
+    const prevBodyBg = document.body.style.backgroundColor;
 
     rootEl.style.transition =
-      'transform 0.4s cubic-bezier(0.32, 0.72, 0, 1), border-radius 0.4s cubic-bezier(0.32, 0.72, 0, 1)'
-    rootEl.style.transformOrigin = 'center center'
-    rootEl.style.transform = 'scale(0.93)'
-    rootEl.style.borderRadius = '24px'
-    rootEl.style.overflow = 'hidden'
-    document.body.style.overflow = 'hidden'
-    document.body.style.backgroundColor = '#000000'
+      'transform 0.4s cubic-bezier(0.32, 0.72, 0, 1), border-radius 0.4s cubic-bezier(0.32, 0.72, 0, 1)';
+    rootEl.style.transformOrigin = 'center center';
+    rootEl.style.transform = 'scale(0.93)';
+    rootEl.style.borderRadius = '24px';
+    rootEl.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    document.body.style.backgroundColor = '#000000';
 
     return () => {
-      rootEl.style.transition = prevTransition
-      rootEl.style.transform = prevTransform
-      rootEl.style.borderRadius = prevBorderRadius
-      rootEl.style.transformOrigin = prevTransformOrigin
-      rootEl.style.overflow = prevOverflow
-      document.body.style.overflow = prevBodyOverflow
-      document.body.style.backgroundColor = prevBodyBg
-    }
-  }, [isOpen])
+      rootEl.style.transition = prevTransition;
+      rootEl.style.transform = prevTransform;
+      rootEl.style.borderRadius = prevBorderRadius;
+      rootEl.style.transformOrigin = prevTransformOrigin;
+      rootEl.style.overflow = prevOverflow;
+      document.body.style.overflow = prevBodyOverflow;
+      document.body.style.backgroundColor = prevBodyBg;
+    };
+  }, [isOpen]);
 
   // Soporte para cerrar con la tecla Escape
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   // ========================================================
   // CONSUMO DE ENDPOINTS CON AXIOS Y VALIDACIÓN DE STATUS CODE
@@ -497,129 +496,154 @@ export function ModalSeleccionarRecepcion({
   /**
    * Obtiene la habitación mediante GET /room/{id} validando status code
    */
-  const fetchRoom = useCallback(async (roomId: string): Promise<RoomDetailApi> => {
-    try {
-      const response = await api.get<RoomDetailApi>(`/room/${roomId}`, {
-        validateStatus: () => true,
-      })
-      const validation = validateStatusCode(response.status)
-      if (validation.isValid && response.status === 200 && response.data) {
-        return response.data
+  const fetchRoom = useCallback(
+    async (roomId: string): Promise<RoomDetailApi> => {
+      try {
+        const response = await api.get<RoomDetailApi>(`/room/${roomId}`, {
+          validateStatus: () => true,
+        });
+        const validation = validateStatusCode(response.status);
+        if (validation.isValid && response.status === 200 && response.data) {
+          return response.data;
+        }
+      } catch {
+        // Fallback ante fallo
       }
-    } catch {
-      // Fallback ante fallo
-    }
-    return (
-      ROOMS_FALLBACK[roomId] || {
-        id: roomId,
-        number: roomId.replace(/\D/g, '') || '101',
-        floor: 1,
-        room_types_id: 'type-1',
-        building_id: 'building-1',
-        status: 'available',
-        has_reception: true,
-      }
-    )
-  }, [])
+      return (
+        ROOMS_FALLBACK[roomId] || {
+          id: roomId,
+          number: roomId.replace(/\D/g, '') || '101',
+          floor: 1,
+          room_types_id: 'type-1',
+          building_id: 'building-1',
+          status: 'available',
+          has_reception: true,
+        }
+      );
+    },
+    []
+  );
 
   /**
    * Obtiene la reserva mediante GET /reserve/{id} validando status code
    */
   const fetchReserve = useCallback(
     async (reserveId?: string | null): Promise<ReserveDetailApi | null> => {
-      if (!reserveId) return null
+      if (!reserveId) return null;
       try {
-        const response = await api.get<ReserveDetailApi>(`/reserve/${reserveId}`, {
-          validateStatus: () => true,
-        })
-        const validation = validateStatusCode(response.status)
+        const response = await api.get<ReserveDetailApi>(
+          `/reserve/${reserveId}`,
+          {
+            validateStatus: () => true,
+          }
+        );
+        const validation = validateStatusCode(response.status);
         if (validation.isValid && response.status === 200 && response.data) {
-          return response.data
+          return response.data;
         }
       } catch {
         // Fallback ante fallo
       }
-      return RESERVES_FALLBACK[reserveId] || null
+      return RESERVES_FALLBACK[reserveId] || null;
     },
     []
-  )
+  );
 
   /**
    * Obtiene la persona mediante GET /persons/{id} validando status code
    */
-  const fetchPerson = useCallback(async (personId: string): Promise<PersonDetailApi> => {
-    try {
-      const response = await api.get<PersonDetailApi>(`/persons/${personId}`, {
-        validateStatus: () => true,
-      })
-      const validation = validateStatusCode(response.status)
-      if (validation.isValid && response.status === 200 && response.data) {
-        return response.data
+  const fetchPerson = useCallback(
+    async (personId: string): Promise<PersonDetailApi> => {
+      try {
+        const response = await api.get<PersonDetailApi>(
+          `/persons/${personId}`,
+          {
+            validateStatus: () => true,
+          }
+        );
+        const validation = validateStatusCode(response.status);
+        if (validation.isValid && response.status === 200 && response.data) {
+          return response.data;
+        }
+      } catch {
+        // Fallback ante fallo
       }
-    } catch {
-      // Fallback ante fallo
-    }
-    return (
-      PERSONS_FALLBACK[personId] || {
-        id: personId,
-        document_type: 'id_card',
-        document_number: '12345678',
-        name: 'Huésped Registrado',
-        phone_number: '999888777',
-        email: 'huesped@nexora.com',
-        date_of_birth: '1990-05-15T00:00:00Z',
-        gender: 'M',
-      }
-    )
-  }, [])
+      return (
+        PERSONS_FALLBACK[personId] || {
+          id: personId,
+          document_type: 'id_card',
+          document_number: '12345678',
+          name: 'Huésped Registrado',
+          phone_number: '999888777',
+          email: 'huesped@nexora.com',
+          date_of_birth: '1990-05-15T00:00:00Z',
+          gender: 'M',
+        }
+      );
+    },
+    []
+  );
 
   /**
    * Orquestación de estadías: consume GET /stays y luego enriquece con
    * /room/{id}, /reserve/{id} y /persons/{id}
    */
   const fetchStays = useCallback(async () => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const response = await api.get<RawStayApi[] | { data?: RawStayApi[] }>('/stays', {
-        validateStatus: () => true,
-      })
+      const response = await api.get<RawStayApi[] | { data?: RawStayApi[] }>(
+        '/stays',
+        {
+          validateStatus: () => true,
+        }
+      );
 
-      const validation = validateStatusCode(response.status)
+      const validation = validateStatusCode(response.status);
 
-      let rawList: RawStayApi[] = STAYS_FALLBACK
+      let rawList: RawStayApi[] = STAYS_FALLBACK;
 
       if (validation.isValid && response.status === 200) {
-        setFeedback(null)
-        const raw = response.data
+        setFeedback(null);
+        const raw = response.data;
         const lista = Array.isArray(raw)
           ? raw
-          : raw && typeof raw === 'object' && 'data' in raw && Array.isArray(raw.data)
+          : raw &&
+              typeof raw === 'object' &&
+              'data' in raw &&
+              Array.isArray(raw.data)
             ? raw.data
-            : []
-        if (lista.length > 0) rawList = lista
+            : [];
+        if (lista.length > 0) rawList = lista;
       } else {
-        setFeedback(validation)
+        setFeedback(validation);
       }
 
       // Enriquecimiento en paralelo de cada estadía con habitación, reserva y persona
       const enriquecidas: RecepcionSeleccionada[] = await Promise.all(
         rawList.map(async (stay) => {
-          const roomPromise = fetchRoom(stay.room_id)
-          const reservePromise = fetchReserve(stay.reservation_id)
+          const roomPromise = fetchRoom(stay.room_id);
+          const reservePromise = fetchReserve(stay.reservation_id);
 
-          const [roomData, reserveData] = await Promise.all([roomPromise, reservePromise])
+          const [roomData, reserveData] = await Promise.all([
+            roomPromise,
+            reservePromise,
+          ]);
 
           const personIdTarget =
             reserveData?.person_id ||
-            (stay.person_ids && stay.person_ids.length > 0 ? stay.person_ids[0] : 'person-1')
+            (stay.person_ids && stay.person_ids.length > 0
+              ? stay.person_ids[0]
+              : 'person-1');
 
-          const personData = await fetchPerson(personIdTarget)
+          const personData = await fetchPerson(personIdTarget);
 
-          const checkIn = reserveData?.check_in_date || stay.check_in_date
-          const checkOut = reserveData?.check_out_date || stay.check_out_date
+          const checkIn = reserveData?.check_in_date || stay.check_in_date;
+          const checkOut = reserveData?.check_out_date || stay.check_out_date;
           const numGuests =
             reserveData?.number_of_guests ||
-            (stay.person_ids && stay.person_ids.length > 0 ? stay.person_ids.length : 1)
+            (stay.person_ids && stay.person_ids.length > 0
+              ? stay.person_ids.length
+              : 1);
 
           return {
             id: stay.id,
@@ -638,68 +662,85 @@ export function ModalSeleccionarRecepcion({
             room: roomData,
             reserve: reserveData,
             person: personData,
-          }
+          };
         })
-      )
+      );
 
-      setRecepciones(enriquecidas)
+      setRecepciones(enriquecidas);
     } catch (error: unknown) {
       if (isAxiosError(error) && error.response) {
-        const validation = validateStatusCode(error.response.status)
-        setFeedback(validation)
+        const validation = validateStatusCode(error.response.status);
+        setFeedback(validation);
       } else {
         setFeedback(
           validateStatusCode(
             0,
             'No se pudo conectar con el servidor de estadías en este momento. Hemos cargado datos seguros para que continúes sin interrupciones.'
           )
-        )
+        );
       }
 
       // Carga de contingencia inmediata
-      const fallbackList: RecepcionSeleccionada[] = STAYS_FALLBACK.map((stay) => {
-        const r = ROOMS_FALLBACK[stay.room_id]
-        const res = stay.reservation_id ? RESERVES_FALLBACK[stay.reservation_id] : null
-        const p = PERSONS_FALLBACK[stay.person_ids?.[0] || 'person-1']
+      const fallbackList: RecepcionSeleccionada[] = STAYS_FALLBACK.map(
+        (stay) => {
+          const r = ROOMS_FALLBACK[stay.room_id];
+          const res = stay.reservation_id
+            ? RESERVES_FALLBACK[stay.reservation_id]
+            : null;
+          const p = PERSONS_FALLBACK[stay.person_ids?.[0] || 'person-1'];
 
-        return {
-          id: stay.id,
-          label: `Habitación ${r.number} · ${p.name}`,
-          huespedNombre: p.name,
-          habitacionNumero: r.number,
-          habitacionNombre: `Habitación ${r.number}`,
-          tieneReserva: Boolean(stay.reservation_id),
-          cantidadHuespedes: res?.number_of_guests || 1,
-          checkInFormateado: formatearFechaHora(res?.check_in_date || stay.check_in_date),
-          checkOutFormateado: formatearFechaHora(res?.check_out_date || stay.check_out_date),
-          roomId: stay.room_id,
-          reservationId: stay.reservation_id ?? null,
-          personIds: stay.person_ids,
-          sedeNombre: formatBuilding(r.building_id),
-          room: r,
-          reserve: res,
-          person: p,
+          return {
+            id: stay.id,
+            label: `Habitación ${r.number} · ${p.name}`,
+            huespedNombre: p.name,
+            habitacionNumero: r.number,
+            habitacionNombre: `Habitación ${r.number}`,
+            tieneReserva: Boolean(stay.reservation_id),
+            cantidadHuespedes: res?.number_of_guests || 1,
+            checkInFormateado: formatearFechaHora(
+              res?.check_in_date || stay.check_in_date
+            ),
+            checkOutFormateado: formatearFechaHora(
+              res?.check_out_date || stay.check_out_date
+            ),
+            roomId: stay.room_id,
+            reservationId: stay.reservation_id ?? null,
+            personIds: stay.person_ids,
+            sedeNombre: formatBuilding(r.building_id),
+            room: r,
+            reserve: res,
+            person: p,
+          };
         }
-      })
-      setRecepciones(fallbackList)
+      );
+      setRecepciones(fallbackList);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }, [fetchRoom, fetchReserve, fetchPerson])
+  }, [fetchRoom, fetchReserve, fetchPerson]);
 
   useEffect(() => {
-    if (isOpen) {
-      void fetchStays()
-    }
-  }, [isOpen, fetchStays])
+    if (!isOpen) return;
+    let active = true;
+    const run = async () => {
+      await Promise.resolve();
+      if (active) {
+        await fetchStays();
+      }
+    };
+    void run();
+    return () => {
+      active = false;
+    };
+  }, [isOpen, fetchStays]);
 
   // Filtro de búsqueda múltiple (sin IDs en pantalla)
   const filtradas = useMemo(() => {
-    const q = busqueda.toLowerCase().trim()
-    if (!q) return recepciones
+    const q = busqueda.toLowerCase().trim();
+    if (!q) return recepciones;
     return recepciones.filter((r) => {
-      const p = r.person
-      const rm = r.room
+      const p = r.person;
+      const rm = r.room;
       return (
         p?.name?.toLowerCase().includes(q) ||
         p?.document_number?.toLowerCase().includes(q) ||
@@ -707,13 +748,15 @@ export function ModalSeleccionarRecepcion({
         p?.email?.toLowerCase().includes(q) ||
         rm?.number?.toLowerCase().includes(q) ||
         (rm?.floor !== undefined && String(rm.floor).includes(q)) ||
-        (rm?.building_id && formatBuilding(rm.building_id).toLowerCase().includes(q)) ||
-        (rm?.room_types_id && formatRoomType(rm.room_types_id).toLowerCase().includes(q)) ||
+        (rm?.building_id &&
+          formatBuilding(rm.building_id).toLowerCase().includes(q)) ||
+        (rm?.room_types_id &&
+          formatRoomType(rm.room_types_id).toLowerCase().includes(q)) ||
         r.huespedNombre.toLowerCase().includes(q) ||
         r.habitacionNumero.toLowerCase().includes(q)
-      )
-    })
-  }, [recepciones, busqueda])
+      );
+    });
+  }, [recepciones, busqueda]);
 
   return (
     <AnimatePresence>
@@ -749,32 +792,33 @@ export function ModalSeleccionarRecepcion({
               mass: 0.85,
             }}
             onClick={(e) => e.stopPropagation()}
-            className="relative z-10 flex flex-col w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-3xl border border-line bg-panel p-6 sm:p-8 shadow-2xl transition-all"
+            className="border-line bg-panel relative z-10 flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border p-6 shadow-2xl transition-all sm:p-8"
           >
             {/* Tirador táctil / Handle iOS centrado */}
-            <div className="mx-auto -mt-2 mb-3 h-1.5 w-12 rounded-full bg-line/80" />
+            <div className="bg-line/80 mx-auto -mt-2 mb-3 h-1.5 w-12 rounded-full" />
 
             {/* Header del modal con Icono Animado al Hover */}
-            <div className="flex items-start justify-between border-b border-line pb-4">
+            <div className="border-line flex items-start justify-between border-b pb-4">
               <div>
                 <div className="flex items-center gap-2.5">
                   <HotelEdificioAnimado size="md" />
                   <h3
                     id="modal-recepciones-title"
-                    className="font-serif text-lg font-bold text-ink"
+                    className="text-ink font-serif text-lg font-bold"
                   >
                     Recepciones Registradas
                   </h3>
                 </div>
-                <p className="mt-1 text-xs text-ink-muted">
-                  Selecciona la estancia activa que recibirá el servicio de habitación.
+                <p className="text-ink-muted mt-1 text-xs">
+                  Selecciona la estancia activa que recibirá el servicio de
+                  habitación.
                 </p>
               </div>
 
               <button
                 type="button"
                 onClick={onClose}
-                className="grid size-8 place-items-center rounded-xl text-ink-soft hover:bg-canvas hover:text-ink transition-colors cursor-pointer"
+                className="text-ink-soft hover:bg-canvas hover:text-ink grid size-8 cursor-pointer place-items-center rounded-xl transition-colors"
                 aria-label="Cerrar modal"
               >
                 ✕
@@ -804,7 +848,7 @@ export function ModalSeleccionarRecepcion({
                 <button
                   type="button"
                   onClick={() => setFeedback(null)}
-                  className="ml-2 text-ink-soft hover:text-ink cursor-pointer"
+                  className="text-ink-soft hover:text-ink ml-2 cursor-pointer"
                   aria-label="Cerrar aviso"
                 >
                   ✕
@@ -815,7 +859,7 @@ export function ModalSeleccionarRecepcion({
             {/* Buscador de recepciones */}
             <div className="mt-4 shrink-0">
               <div className="relative">
-                <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-ink-soft text-xs">
+                <span className="text-ink-soft pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-xs">
                   🔍
                 </span>
                 <input
@@ -823,14 +867,14 @@ export function ModalSeleccionarRecepcion({
                   value={busqueda}
                   onChange={(e) => setBusqueda(e.target.value)}
                   placeholder="Buscar por huésped, documento, teléfono, habitación o piso..."
-                  className="w-full rounded-xl border border-line bg-canvas py-2.5 pl-9 pr-8 text-xs text-ink placeholder:text-ink-soft outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="border-line bg-canvas text-ink placeholder:text-ink-soft focus:border-primary focus:ring-primary/20 w-full rounded-xl border py-2.5 pr-8 pl-9 text-xs transition-all outline-none focus:ring-2"
                   autoFocus
                 />
                 {busqueda && (
                   <button
                     type="button"
                     onClick={() => setBusqueda('')}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-xs text-ink-soft hover:text-ink cursor-pointer"
+                    className="text-ink-soft hover:text-ink absolute inset-y-0 right-0 flex cursor-pointer items-center pr-3 text-xs"
                     aria-label="Limpiar búsqueda"
                   >
                     ✕
@@ -840,7 +884,7 @@ export function ModalSeleccionarRecepcion({
             </div>
 
             {/* Lista scrolleable de recepciones con diseño en cascada y sin avatar */}
-            <div className="mt-4 flex-1 space-y-3 overflow-y-auto pr-1 min-h-0">
+            <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
               {loading ? (
                 <motion.div
                   variants={fadeUp}
@@ -851,90 +895,105 @@ export function ModalSeleccionarRecepcion({
                   {[1, 2, 3].map((n) => (
                     <div
                       key={n}
-                      className="h-28 animate-pulse rounded-2xl border border-line bg-canvas/60"
+                      className="border-line bg-canvas/60 h-28 animate-pulse rounded-2xl border"
                     />
                   ))}
                 </motion.div>
               ) : filtradas.length === 0 ? (
-                <div className="py-12 text-center text-xs text-ink-muted">
-                  No encontramos estancias activas que coincidan con "{busqueda}".
+                <div className="text-ink-muted py-12 text-center text-xs">
+                  No encontramos estancias activas que coincidan con "{busqueda}
+                  ".
                 </div>
               ) : (
                 filtradas.map((r) => {
-                  const isSelected = selectedRecepcion
-                    ? selectedRecepcion.id === r.id
-                    : selectedId === r.id
+                  const isSelected = activeSelectedRecepcion
+                    ? activeSelectedRecepcion.id === r.id
+                    : selectedId === r.id;
                   return (
                     <button
                       key={r.id}
                       type="button"
                       onClick={() => handleSelectCard(r)}
                       title={`Seleccionar ${r.person?.name || r.huespedNombre} (Habitación ${r.room?.number || r.habitacionNumero})`}
-                      className={`group w-full rounded-2xl border p-4 text-left transition-all cursor-pointer ${
+                      className={`group w-full cursor-pointer rounded-2xl border p-4 text-left transition-all ${
                         isSelected
-                          ? 'border-primary bg-primary/5 ring-2 ring-primary/20 shadow-xs'
+                          ? 'border-primary bg-primary/5 ring-primary/20 shadow-xs ring-2'
                           : 'border-line bg-panel hover:border-primary/40 hover:bg-canvas'
                       }`}
                     >
                       <div className="flex items-center justify-between gap-3 sm:gap-4">
                         {/* Contenido en Cascada Estructurada (Sin Avatar, Sin IDs crudos) */}
-                        <div className="flex-1 min-w-0 flex flex-col gap-3">
+                        <div className="flex min-w-0 flex-1 flex-col gap-3">
                           {/* 1. Cascada Superior: Datos del Huésped / Persona */}
                           <div>
                             <div className="flex items-start justify-between gap-2">
                               <div>
-                                <h4 className="text-sm font-bold text-ink group-hover:text-primary transition-colors">
+                                <h4 className="text-ink group-hover:text-primary text-sm font-bold transition-colors">
                                   {r.person?.name || r.huespedNombre}
                                 </h4>
-                                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-muted">
+                                <div className="text-ink-muted mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
                                   <span>
                                     {formatDocType(r.person?.document_type)}:{' '}
-                                    <strong className="font-medium text-ink">
+                                    <strong className="text-ink font-medium">
                                       {r.person?.document_number || '12345678'}
                                     </strong>
                                   </span>
                                   <span>·</span>
-                                  <span>Género: {formatGender(r.person?.gender)}</span>
+                                  <span>
+                                    Género: {formatGender(r.person?.gender)}
+                                  </span>
                                   <span>·</span>
-                                  <span>Nac.: {formatearFecha(r.person?.date_of_birth)}</span>
+                                  <span>
+                                    Nac.:{' '}
+                                    {formatearFecha(r.person?.date_of_birth)}
+                                  </span>
                                 </div>
                               </div>
 
                               {/* Badge de Estado de la Reserva */}
                               {r.reserve ? (
                                 <span
-                                  className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-semibold shrink-0 ${getReserveStateBadge(
+                                  className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[10px] font-semibold ${getReserveStateBadge(
                                     r.reserve.state
                                   )}`}
                                 >
                                   {formatReserveState(r.reserve.state)}
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center rounded-full border border-line bg-canvas px-2.5 py-0.5 text-[10px] font-medium text-ink-muted shrink-0">
+                                <span className="border-line bg-canvas text-ink-muted inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[10px] font-medium">
                                   Sin reserva
                                 </span>
                               )}
                             </div>
 
                             {/* Contacto del Huésped */}
-                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-ink-soft">
-                              <span>📞 {r.person?.phone_number || '999888777'}</span>
-                              <span>✉️ {r.person?.email || 'contacto@nexora.com'}</span>
+                            <div className="text-ink-soft mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px]">
+                              <span>
+                                📞 {r.person?.phone_number || '999888777'}
+                              </span>
+                              <span>
+                                ✉️ {r.person?.email || 'contacto@nexora.com'}
+                              </span>
                             </div>
                           </div>
 
                           {/* 2. Cascada Intermedia: Datos de la Habitación (/room/{id}) */}
-                          <div className="rounded-xl border border-line/60 bg-canvas/70 p-2.5 text-xs">
+                          <div className="border-line/60 bg-canvas/70 rounded-xl border p-2.5 text-xs">
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <div className="flex items-center gap-1.5 font-semibold text-primary">
+                              <div className="text-primary flex items-center gap-1.5 font-semibold">
                                 <span>🚪</span>
-                                <span>Habitación {r.room?.number || r.habitacionNumero}</span>
+                                <span>
+                                  Habitación{' '}
+                                  {r.room?.number || r.habitacionNumero}
+                                </span>
                                 <span className="text-ink-soft">·</span>
-                                <span className="text-ink font-medium">Piso {r.room?.floor ?? 1}</span>
+                                <span className="text-ink font-medium">
+                                  Piso {r.room?.floor ?? 1}
+                                </span>
                               </div>
 
                               <div className="flex items-center gap-2">
-                                <span className="rounded-md bg-panel px-2 py-0.5 text-[10px] font-medium border border-line text-ink-muted">
+                                <span className="bg-panel border-line text-ink-muted rounded-md border px-2 py-0.5 text-[10px] font-medium">
                                   {formatRoomType(r.room?.room_types_id)}
                                 </span>
                                 <span
@@ -947,8 +1006,10 @@ export function ModalSeleccionarRecepcion({
                               </div>
                             </div>
 
-                            <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1 text-[11px] text-ink-muted">
-                              <span>🏢 {formatBuilding(r.room?.building_id)}</span>
+                            <div className="text-ink-muted mt-1.5 flex flex-wrap items-center justify-between gap-1 text-[11px]">
+                              <span>
+                                🏢 {formatBuilding(r.room?.building_id)}
+                              </span>
                               <span className="text-ink-soft">
                                 {r.room?.has_reception
                                   ? '🏨 Con recepción propia'
@@ -959,43 +1020,55 @@ export function ModalSeleccionarRecepcion({
 
                           {/* 3. Cascada Inferior: Datos de la Reserva (/reserve/{id}) */}
                           {r.reserve ? (
-                            <div className="flex flex-wrap items-center justify-between gap-y-1 border-t border-line/40 pt-2 text-[11px] text-ink-soft">
+                            <div className="border-line/40 text-ink-soft flex flex-wrap items-center justify-between gap-y-1 border-t pt-2 text-[11px]">
                               <div className="flex items-center gap-2">
                                 <span>📅</span>
-                                <span className="font-medium text-ink-muted">Entrada:</span>
-                                <span>{formatearFechaHora(r.reserve.check_in_date)}</span>
+                                <span className="text-ink-muted font-medium">
+                                  Entrada:
+                                </span>
+                                <span>
+                                  {formatearFechaHora(r.reserve.check_in_date)}
+                                </span>
                                 <span>·</span>
-                                <span className="font-medium text-ink-muted">Salida:</span>
-                                <span>{formatearFechaHora(r.reserve.check_out_date)}</span>
+                                <span className="text-ink-muted font-medium">
+                                  Salida:
+                                </span>
+                                <span>
+                                  {formatearFechaHora(r.reserve.check_out_date)}
+                                </span>
                               </div>
 
                               <div className="flex items-center gap-2">
-                                <span className="rounded-full bg-line/60 px-2 py-0.5 text-[10px] font-medium text-ink-muted">
+                                <span className="bg-line/60 text-ink-muted rounded-full px-2 py-0.5 text-[10px] font-medium">
                                   👥 {r.reserve.number_of_guests}{' '}
-                                  {r.reserve.number_of_guests === 1 ? 'huésped' : 'huéspedes'}
+                                  {r.reserve.number_of_guests === 1
+                                    ? 'huésped'
+                                    : 'huéspedes'}
                                 </span>
                               </div>
                             </div>
                           ) : (
-                            <div className="flex items-center justify-between border-t border-line/40 pt-2 text-[11px] text-ink-soft">
-                              <span>Ingreso directo (Walk-in sin reserva previa)</span>
+                            <div className="border-line/40 text-ink-soft flex items-center justify-between border-t pt-2 text-[11px]">
+                              <span>
+                                Ingreso directo (Walk-in sin reserva previa)
+                              </span>
                             </div>
                           )}
                         </div>
 
                         {/* Indicador interactivo y botón de selección rápida */}
-                        <div className="shrink-0 flex items-center justify-center gap-2.5 pl-1 sm:pl-2">
-                          <span className="hidden sm:inline-flex items-center gap-1 rounded-xl bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary group-hover:bg-primary group-hover:text-white transition-all shadow-2xs">
+                        <div className="flex shrink-0 items-center justify-center gap-2.5 pl-1 sm:pl-2">
+                          <span className="bg-primary/10 text-primary group-hover:bg-primary hidden items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-2xs transition-all group-hover:text-white sm:inline-flex">
                             Seleccionar
                           </span>
                           <div
                             role="checkbox"
                             aria-checked={isSelected}
                             aria-label={`Seleccionar recepción para ${r.person?.name || r.huespedNombre} en habitación ${r.room?.number || r.habitacionNumero}`}
-                            className={`grid size-6 sm:size-7 place-items-center rounded-lg sm:rounded-xl border transition-all duration-200 cursor-pointer ${
+                            className={`grid size-6 cursor-pointer place-items-center rounded-lg border transition-all duration-200 sm:size-7 sm:rounded-xl ${
                               isSelected
-                                ? 'border-primary bg-primary text-white shadow-xs scale-105 ring-2 ring-primary/20'
-                                : 'border-line/80 bg-canvas/80 text-transparent hover:border-primary/60 group-hover:border-primary/50'
+                                ? 'border-primary bg-primary ring-primary/20 scale-105 text-white shadow-xs ring-2'
+                                : 'border-line/80 bg-canvas/80 hover:border-primary/60 group-hover:border-primary/50 text-transparent'
                             }`}
                           >
                             <AnimatePresence mode="wait">
@@ -1005,7 +1078,11 @@ export function ModalSeleccionarRecepcion({
                                   initial={{ scale: 0, opacity: 0 }}
                                   animate={{ scale: 1, opacity: 1 }}
                                   exit={{ scale: 0, opacity: 0 }}
-                                  transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+                                  transition={{
+                                    type: 'spring',
+                                    stiffness: 500,
+                                    damping: 25,
+                                  }}
                                   viewBox="0 0 16 16"
                                   fill="none"
                                   stroke="currentColor"
@@ -1022,25 +1099,27 @@ export function ModalSeleccionarRecepcion({
                         </div>
                       </div>
                     </button>
-                  )
+                  );
                 })
               )}
             </div>
 
             {/* Footer del modal con selección consciente */}
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-t border-line pt-4 shrink-0">
-              <div className="text-xs text-ink-muted">
-                {selectedRecepcion ? (
+            <div className="border-line mt-4 flex shrink-0 flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="text-ink-muted text-xs">
+                {activeSelectedRecepcion ? (
                   <span className="flex items-center gap-1.5">
-                    <span className="size-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                    <span className="size-2 shrink-0 animate-pulse rounded-full bg-emerald-500" />
                     <span>Estancia seleccionada:</span>
                     <strong className="text-ink font-semibold">
-                      {selectedRecepcion.habitacionNombre} · {selectedRecepcion.huespedNombre}
+                      {activeSelectedRecepcion.habitacionNombre} ·{' '}
+                      {activeSelectedRecepcion.huespedNombre}
                     </strong>
                   </span>
                 ) : (
                   <span className="text-ink-soft">
-                    Ninguna estancia seleccionada. Marca la casilla de la recepción que deseas elegir.
+                    Ninguna estancia seleccionada. Marca la casilla de la
+                    recepción que deseas elegir.
                   </span>
                 )}
               </div>
@@ -1049,15 +1128,15 @@ export function ModalSeleccionarRecepcion({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="rounded-xl border border-line bg-panel px-4 py-2 text-xs font-semibold text-ink hover:bg-canvas transition-colors cursor-pointer"
+                  className="border-line bg-panel text-ink hover:bg-canvas cursor-pointer rounded-xl border px-4 py-2 text-xs font-semibold transition-colors"
                 >
                   Cancelar
                 </button>
                 <button
                   type="button"
-                  disabled={!selectedRecepcion}
+                  disabled={!activeSelectedRecepcion}
                   onClick={handleConfirmar}
-                  className="rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shadow-xs active:scale-95"
+                  className="bg-primary hover:bg-primary/90 cursor-pointer rounded-xl px-4 py-2 text-xs font-semibold text-white shadow-xs transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Confirmar selección
                 </button>
@@ -1067,5 +1146,5 @@ export function ModalSeleccionarRecepcion({
         </div>
       )}
     </AnimatePresence>
-  )
+  );
 }

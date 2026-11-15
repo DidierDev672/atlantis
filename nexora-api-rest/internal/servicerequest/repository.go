@@ -7,7 +7,6 @@ import (
 // ListFilter define los criterios de búsqueda para listar órdenes de servicio.
 type ListFilter struct {
 	StayID   string
-	RoomID   string
 	PersonID string
 	Status   string
 	Channel  string
