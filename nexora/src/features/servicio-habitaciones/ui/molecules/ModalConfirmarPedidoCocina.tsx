@@ -11,17 +11,23 @@ import {
 } from '@fortawesome/free-solid-svg-icons'
 import { fadeUp } from '../../../../design-tokens/motion'
 import { Input, Textarea } from '../../../../shared/ui'
+import { Loading } from '../../../../shared/loading'
+import { Rocket } from '../../../../shared/rocket/organisms/Rocket'
 import { api } from '../../../../lib/api'
 import { validateStatusCode } from '../../../../shared/lib/status-code-validator'
+import { executeBalancedRequest } from '../../../reservas/infrastructure/api-load-balancer'
 import {
   RecursosDropdown,
   type DropdownOption,
 } from '../../../recursos/ui/molecules/recursos-dropdown'
-import { Loader } from '../../../tema/ui/atoms/loader'
 import { useCarritoStore } from '../../application/carrito-store'
 import { readAuthTokenEmail } from '../../../../shared/auth-storage'
 import { formatearMonedaCOP } from '../../domain/item-menu'
-
+import {
+  OPCIONES_CANAL,
+  OPCIONES_METODO_PAGO,
+  generarNumeroOrdenAleatorio,
+} from '../../domain/confirmar-pedido-cocina.constants'
 import { type RawStayApi } from './ModalSeleccionarRecepcion'
 
 /**
@@ -74,19 +80,16 @@ export interface ServiceRequestItemPayload {
 }
 
 export interface ServiceRequestPayload {
-  order_number: string
   stay_id: string
-  room_id: string
   person_id: string
   channel: string
   payment_method: string
   general_notes: string
   delivery_instructions: string
-  scheduled_for: string
   currency: string
   tip: number
-  items: ServiceRequestItemPayload[]
   created_by: string
+  items: ServiceRequestItemPayload[]
 }
 
 export interface ModalConfirmarPedidoCocinaProps {
@@ -131,163 +134,21 @@ export interface BuildingApi {
 }
 
 /**
- * Datos de respaldo para /stays si el servidor se encuentra en mantenimiento
+ * Contrato de persona / huésped retornado por GET /persons
  */
-const FALLBACK_STAYS: RawStayApi[] = [
-  {
-    id: 'stay-1',
-    room_id: 'room-1',
-    reservation_id: 'res-1',
-    person_ids: ['person-1', 'person-2'],
-    check_in_date: '2026-10-01T15:04:05Z',
-    check_out_date: '2026-10-02T15:04:05Z',
-    payment_method: 'cash',
-    security_deposit: 150000,
-    remarks: '',
-    status: 'progress',
-    created_by: 'recepcion',
-    created_at: '2026-10-01T15:04:05Z',
-    updated_at: '2026-10-01T15:04:05Z',
-  },
-  {
-    id: 'stay-2',
-    room_id: 'room-2',
-    reservation_id: 'res-2',
-    person_ids: ['person-3'],
-    check_in_date: '2026-10-01T15:04:05Z',
-    check_out_date: '2026-10-03T15:04:05Z',
-    payment_method: 'credit_card',
-    security_deposit: 200000,
-    remarks: '',
-    status: 'progress',
-    created_by: 'recepcion',
-    created_at: '2026-10-01T15:04:05Z',
-    updated_at: '2026-10-01T15:04:05Z',
-  },
-  {
-    id: 'stay-3',
-    room_id: 'room-3',
-    reservation_id: 'res-3',
-    person_ids: ['person-4'],
-    check_in_date: '2026-10-02T12:00:00Z',
-    check_out_date: '2026-10-04T12:00:00Z',
-    payment_method: 'transfer',
-    security_deposit: 100000,
-    remarks: '',
-    status: 'progress',
-    created_by: 'recepcion',
-    created_at: '2026-10-02T12:00:00Z',
-    updated_at: '2026-10-02T12:00:00Z',
-  },
-]
-
-/**
- * Datos de respaldo para /room/{id}
- */
-const FALLBACK_ROOMS: Record<string, RoomApi> = {
-  'room-1': {
-    id: 'room-1',
-    number: '101',
-    floor: 1,
-    room_types_id: 'type-1',
-    building_id: 'building-1',
-    price_override: 450.0,
-    status: 'available',
-    has_reception: true,
-    created_by: 'admin',
-    created_at: '2026-10-01T15:04:05Z',
-    updated_at: '2026-10-01T15:04:05Z',
-  },
-  'room-2': {
-    id: 'room-2',
-    number: '204',
-    floor: 2,
-    room_types_id: 'type-2',
-    building_id: 'building-1',
-    price_override: 520.0,
-    status: 'available',
-    has_reception: true,
-    created_by: 'admin',
-    created_at: '2026-10-01T15:04:05Z',
-    updated_at: '2026-10-01T15:04:05Z',
-  },
-  'room-3': {
-    id: 'room-3',
-    number: '305',
-    floor: 3,
-    room_types_id: 'type-3',
-    building_id: 'building-2',
-    price_override: 600.0,
-    status: 'available',
-    has_reception: true,
-    created_by: 'admin',
-    created_at: '2026-10-02T12:00:00Z',
-    updated_at: '2026-10-02T12:00:00Z',
-  },
+export interface PersonApi {
+  id: string
+  document_type: string
+  document_number: string
+  name: string
+  phone_number: string
+  email: string
+  date_of_birth: string
+  gender: string
+  nationality: string
+  roles: string[]
+  created_by: string
 }
-
-/**
- * Datos de respaldo para /building/{id}
- */
-const FALLBACK_BUILDINGS: Record<string, BuildingApi> = {
-  'building-1': {
-    id: 'building-1',
-    name: 'Edificio A',
-    floor_number: 3,
-    headquarters_id: 'hq-1',
-    sub_headquarters_id: 'sub-1',
-    status: 'active',
-    created_by: 'admin',
-    created_at: '2026-10-01T15:04:05Z',
-    updated_at: '2026-10-01T15:04:05Z',
-  },
-  'building-2': {
-    id: 'building-2',
-    name: 'Torre B',
-    floor_number: 5,
-    headquarters_id: 'hq-1',
-    sub_headquarters_id: 'sub-1',
-    status: 'active',
-    created_by: 'admin',
-    created_at: '2026-10-02T12:00:00Z',
-    updated_at: '2026-10-02T12:00:00Z',
-  },
-}
-
-/**
- * Opciones por defecto para el selector de Recepción / Habitación en formato: name - floor - number
- */
-export const OPCIONES_RECEPCION_DEFAULT: ReadonlyArray<DropdownOption> = [
-  { value: 'Edificio A - 1 - 101', label: 'Edificio A - 1 - 101' },
-  { value: 'Edificio A - 2 - 204', label: 'Edificio A - 2 - 204' },
-  { value: 'Torre B - 3 - 305', label: 'Torre B - 3 - 305' },
-]
-
-/**
- * Opciones para compatibilidad retrospectiva
- */
-export const OPCIONES_RECEPCION = OPCIONES_RECEPCION_DEFAULT.map((o) => o.value)
-
-/**
- * Opciones para el selector de Canal de solicitud utilizando RecursosDropdown
- */
-export const OPCIONES_CANAL: ReadonlyArray<DropdownOption> = [
-  { value: 'room_tablet', label: 'Tablet' },
-  { value: 'mobile_app', label: 'Movil' },
-  { value: 'phone', label: 'Telefono' },
-  { value: 'front_desk', label: 'Recepcion' },
-  { value: 'qr_code', label: 'Codigo QR' },
-]
-
-/**
- * Opciones para el selector de Método de pago utilizando RecursosDropdown
- */
-export const OPCIONES_METODO_PAGO: ReadonlyArray<DropdownOption> = [
-  { value: 'room_charge', label: 'Cargo a la habitacion' },
-  { value: 'cash', label: 'Efectivo' },
-  { value: 'card', label: 'Tarjeta' },
-  { value: 'bank_transfer', label: 'Transferencia bancaria' },
-]
 
 /**
  * Genera la fecha y hora por defecto (momento actual + 35 minutos de elaboración y despacho)
@@ -301,14 +162,6 @@ function calcularHorarioEntregaPorDefecto(): string {
   const hours = String(d.getHours()).padStart(2, '0')
   const minutes = String(d.getMinutes()).padStart(2, '0')
   return `${year}-${month}-${day}T${hours}:${minutes}`
-}
-
-/**
- * Genera un número de orden aleatorio de 2 dígitos (ej. '17', '42', '85')
- */
-export function generarNumeroOrdenAleatorio(): string {
-  const num = Math.floor(10 + Math.random() * 90)
-  return String(num)
 }
 
 export interface RecepcionMetadata {
@@ -329,27 +182,19 @@ export function ModalConfirmarPedidoCocina({
 
   // Estados del Formulario
   const [numeroOrden, setNumeroOrden] = useState(generarNumeroOrdenAleatorio)
-  const [opcionesRecepcion, setOpcionesRecepcion] = useState<ReadonlyArray<DropdownOption>>(
-    OPCIONES_RECEPCION_DEFAULT
-  )
-  const [recepcionesMetaMap, setRecepcionesMetaMap] = useState<Map<string, RecepcionMetadata>>(
-    () =>
-      new Map([
-        ['Edificio A - 1 - 101', { stay_id: 'stay-1', room_id: 'room-1', person_id: 'person-1' }],
-        ['Edificio A - 2 - 204', { stay_id: 'stay-2', room_id: 'room-2', person_id: 'person-3' }],
-        ['Torre B - 3 - 305', { stay_id: 'stay-3', room_id: 'room-3', person_id: 'person-4' }],
-      ])
-  )
-  const [loadingRecepciones, setLoadingRecepciones] = useState(false)
-  const [errorRecepciones, setErrorRecepciones] = useState<string | null>(null)
+  const [opcionesHuespedes, setOpcionesHuespedes] = useState<ReadonlyArray<DropdownOption>>([])
+  const [huespedIdMap, setHuespedIdMap] = useState<Map<string, string>>(() => new Map())
+  const [loadingHuespedes, setLoadingHuespedes] = useState(false)
+  const [errorHuespedes, setErrorHuespedes] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
-  const [recepcion, setRecepcion] = useState(
-    recepcionInicial && recepcionInicial.trim().length > 0
-      ? recepcionInicial
-      : OPCIONES_RECEPCION_DEFAULT[0].value
-  )
+  const [huespedSeleccionado, setHuespedSeleccionado] = useState('')
+  const huespedActual =
+    huespedSeleccionado.trim() ||
+    opcionesHuespedes[0]?.value ||
+    recepcionInicial?.trim() ||
+    ''
   const [canal, setCanal] = useState(OPCIONES_CANAL[0].value)
   const [metodoPago, setMetodoPago] = useState(OPCIONES_METODO_PAGO[0].value)
   const [propina, setPropina] = useState<string>('0')
@@ -361,193 +206,85 @@ export function ModalConfirmarPedidoCocina({
   const totalConPropina = totalGeneral + propinaNumerica
 
   /**
-   * Carga las recepciones y habitaciones orquestando GET /stays, GET /room/{id} y GET /building/{id}
-   * con validación rigurosa de status codes mediante validateStatusCode
+   * Carga la lista de huéspedes consumiendo GET /persons con balanceador de carga
+   * (executeBalancedRequest) y validación de status codes (validateStatusCode)
    */
-  const cargarOpcionesRecepcion = useCallback(async () => {
-    setLoadingRecepciones(true)
-    setErrorRecepciones(null)
-
-    const roomsCache = new Map<string, RoomApi>()
-    const buildingsCache = new Map<string, BuildingApi>()
+  const cargarOpcionesHuespedes = useCallback(async () => {
+    setLoadingHuespedes(true)
+    setErrorHuespedes(null)
 
     try {
-      // 1. GET /stays
-      const staysRes = await api.get<RawStayApi[] | { data?: RawStayApi[] }>('/stays', {
-        validateStatus: () => true,
-      })
+      const personsRes = await executeBalancedRequest(() =>
+        api.get<PersonApi[] | { data?: PersonApi[] }>('/persons', {
+          validateStatus: () => true,
+        })
+      )
 
-      const staysValidation = validateStatusCode(staysRes.status)
+      const validation = validateStatusCode(personsRes.status)
 
-      let listaStays: RawStayApi[] = FALLBACK_STAYS
-
-      if (staysValidation.isValid && staysRes.status === 200) {
-        const raw = staysRes.data
+      if (validation.isValid) {
+        const raw = personsRes.data
         const dataArr = Array.isArray(raw)
           ? raw
           : raw && typeof raw === 'object' && 'data' in raw && Array.isArray(raw.data)
             ? raw.data
             : []
-        if (dataArr.length > 0) {
-          listaStays = dataArr
-        }
-      } else if (staysValidation.message) {
-        setErrorRecepciones(staysValidation.message)
-      }
 
-      // 2. Extraer IDs únicos de habitaciones para consultar en paralelo
-      const roomIds = Array.from(new Set(listaStays.map((s) => s.room_id).filter(Boolean)))
+        const opcionesMap = new Map<string, DropdownOption>()
+        const idMap = new Map<string, string>()
 
-      await Promise.all(
-        roomIds.map(async (roomId) => {
-          try {
-            const roomRes = await api.get<RoomApi | { data?: RoomApi }>(
-              `/room/${encodeURIComponent(roomId)}`,
-              { validateStatus: () => true }
-            )
-            const roomValidation = validateStatusCode(roomRes.status)
-            if (roomValidation.isValid && (roomRes.status === 200 || roomRes.status === 201)) {
-              const raw = roomRes.data
-              const data =
-                raw && typeof raw === 'object' && 'data' in raw && raw.data
-                  ? raw.data
-                  : (raw as RoomApi)
-              roomsCache.set(roomId, data)
-            } else {
-              roomsCache.set(roomId, FALLBACK_ROOMS[roomId] || {
-                id: roomId,
-                number: roomId.replace('room-', ''),
-                floor: 1,
-                room_types_id: 'type-1',
-                building_id: 'building-1',
-                status: 'available',
-              })
-            }
-          } catch {
-            roomsCache.set(roomId, FALLBACK_ROOMS[roomId] || {
-              id: roomId,
-              number: roomId.replace('room-', ''),
-              floor: 1,
-              room_types_id: 'type-1',
-              building_id: 'building-1',
-              status: 'available',
+        for (const person of dataArr) {
+          const nombre = person?.name?.trim()
+          if (!nombre) continue
+          const docNumero = person?.document_number?.trim() || ''
+
+          if (!opcionesMap.has(nombre)) {
+            opcionesMap.set(nombre, {
+              id: person.id,
+              value: nombre,
+              label: nombre,
+              rawName: docNumero ? `${nombre} ${docNumero}` : nombre,
             })
-          }
-        })
-      )
-
-      // 3. Extraer IDs únicos de edificios para consultar en paralelo
-      const buildingIds = Array.from(
-        new Set(
-          Array.from(roomsCache.values())
-            .map((r) => r.building_id)
-            .filter(Boolean)
-        )
-      )
-
-      await Promise.all(
-        buildingIds.map(async (bId) => {
-          try {
-            const bRes = await api.get<BuildingApi | { data?: BuildingApi }>(
-              `/building/${encodeURIComponent(bId)}`,
-              { validateStatus: () => true }
-            )
-            const bValidation = validateStatusCode(bRes.status)
-            if (bValidation.isValid && (bRes.status === 200 || bRes.status === 201)) {
-              const raw = bRes.data
-              const data =
-                raw && typeof raw === 'object' && 'data' in raw && raw.data
-                  ? raw.data
-                  : (raw as BuildingApi)
-              buildingsCache.set(bId, data)
-            } else {
-              buildingsCache.set(bId, FALLBACK_BUILDINGS[bId] || {
-                id: bId,
-                name: 'Edificio A',
-                status: 'active',
-              })
+            if (person.id) {
+              idMap.set(nombre, person.id)
             }
-          } catch {
-            buildingsCache.set(bId, FALLBACK_BUILDINGS[bId] || {
-              id: bId,
-              name: 'Edificio A',
-              status: 'active',
-            })
           }
-        })
-      )
-
-      // 4. Construir opciones en formato: name - floor - number y asociar metadatos (stay_id, room_id, person_id)
-      const opcionesMap = new Map<string, DropdownOption>()
-      const metaMap = new Map<string, RecepcionMetadata>()
-
-      for (const stay of listaStays) {
-        const room = roomsCache.get(stay.room_id) || FALLBACK_ROOMS[stay.room_id]
-        if (!room) continue
-
-        const building =
-          buildingsCache.get(room.building_id) || FALLBACK_BUILDINGS[room.building_id]
-        const buildingName = building?.name || 'Edificio A'
-        const floor = room.floor ?? 1
-        const roomNumber = room.number ?? '101'
-
-        // Formato estricto solicitado: name - floor - number
-        const itemFormateado = `${buildingName} - ${floor} - ${roomNumber}`
-
-        const personIdTarget =
-          (stay.person_ids && stay.person_ids.length > 0 ? stay.person_ids[0] : null) || 'person-1'
-
-        if (!metaMap.has(itemFormateado)) {
-          metaMap.set(itemFormateado, {
-            stay_id: stay.id,
-            room_id: stay.room_id,
-            person_id: personIdTarget,
-          })
         }
 
-        if (!opcionesMap.has(itemFormateado)) {
-          opcionesMap.set(itemFormateado, {
-            value: itemFormateado,
-            label: itemFormateado,
-          })
-        }
-      }
-
-      setRecepcionesMetaMap(metaMap)
-
-      const opcionesFinales = Array.from(opcionesMap.values())
-      if (opcionesFinales.length > 0) {
-        setOpcionesRecepcion(opcionesFinales)
+        setHuespedIdMap(idMap)
+        setOpcionesHuespedes(Array.from(opcionesMap.values()))
       } else {
-        setOpcionesRecepcion(OPCIONES_RECEPCION_DEFAULT)
+        setOpcionesHuespedes([])
+        setErrorHuespedes(
+          validation.message || 'No fue posible obtener la lista de huéspedes.'
+        )
       }
     } catch {
-      setOpcionesRecepcion(OPCIONES_RECEPCION_DEFAULT)
+      const errorValidation = validateStatusCode(500)
+      setOpcionesHuespedes([])
+      setErrorHuespedes(
+        errorValidation.message || 'Error de conexión al cargar los huéspedes.'
+      )
     } finally {
-      setLoadingRecepciones(false)
+      setLoadingHuespedes(false)
     }
   }, [])
 
-  // Cargar opciones al abrir el modal
+  // Cargar huéspedes al abrir el modal
   useEffect(() => {
-    if (isOpen) {
-      cargarOpcionesRecepcion()
+    if (!isOpen) return
+    let active = true
+    const run = async () => {
+      await Promise.resolve()
+      if (active) {
+        await cargarOpcionesHuespedes()
+      }
     }
-  }, [isOpen, cargarOpcionesRecepcion])
-
-  // Sincronizar recepción inicial si cambia mientras está abierto o cuando cargan las opciones
-  useEffect(() => {
-    if (recepcionInicial && recepcionInicial.trim().length > 0) {
-      setRecepcion(recepcionInicial)
-    } else if (opcionesRecepcion.length > 0) {
-      setRecepcion((prev) => {
-        if (prev && opcionesRecepcion.some((o) => o.value === prev)) {
-          return prev
-        }
-        return opcionesRecepcion[0].value
-      })
+    void run()
+    return () => {
+      active = false
     }
-  }, [recepcionInicial, opcionesRecepcion])
+  }, [isOpen, cargarOpcionesHuespedes])
 
   // Cierre con la tecla Escape
   useEffect(() => {
@@ -577,66 +314,76 @@ export function ModalConfirmarPedidoCocina({
     setSubmitError(null)
     setIsSubmitting(true)
 
-    // Asegura que siempre se envíe un número de 2 dígitos
     const ordenFinal = numeroOrden.trim()
       ? numeroOrden.trim().padStart(2, '0').slice(-2)
       : generarNumeroOrdenAleatorio()
 
-    const recepcionFinal =
-      recepcion.trim() || opcionesRecepcion[0]?.value || OPCIONES_RECEPCION_DEFAULT[0].value
+    const recepcionFinal = huespedActual
+    const personIdFinal =
+      huespedIdMap.get(huespedActual) || 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
 
-    // Metadatos obtenidos de la selección de "Recepción / Habitación" (stay_id, room_id, person_id)
-    const meta = recepcionesMetaMap.get(recepcionFinal)
-    const stayIdFinal = meta?.stay_id || 'e8b8abd74ee52a63'
-    const roomIdFinal = meta?.room_id || '2a45ac749faa2848'
-    const personIdFinal = meta?.person_id || '64765b959a658887'
-
-    // Formato ISO para scheduled_for
-    let scheduledForISO = '2026-10-10T15:00:00Z'
     try {
-      const parsedDate = new Date(horarioEntrega)
-      if (!isNaN(parsedDate.getTime())) {
-        scheduledForISO = parsedDate.toISOString()
+      // Resolver stay_id en segundo plano consultando GET /stays balanceado
+      let stayIdFinal = 'c7a8b9d0-1234-5678-90ab-cdef12345678'
+      try {
+        const staysRes = await executeBalancedRequest(() =>
+          api.get<RawStayApi[] | { data?: RawStayApi[] }>('/stays', {
+            validateStatus: () => true,
+          })
+        )
+        const staysValidation = validateStatusCode(staysRes.status)
+        if (staysValidation.isValid) {
+          const raw = staysRes.data
+          const staysArr = Array.isArray(raw)
+            ? raw
+            : raw && typeof raw === 'object' && 'data' in raw && Array.isArray(raw.data)
+              ? raw.data
+              : []
+          const matchedStay =
+            staysArr.find(
+              (s) => Array.isArray(s.person_ids) && s.person_ids.includes(personIdFinal)
+            ) || staysArr[0]
+          if (matchedStay?.id) {
+            stayIdFinal = matchedStay.id
+          }
+        }
+      } catch {
+        // Respaldo si /stays no responde
       }
-    } catch {
-      scheduledForISO = new Date().toISOString()
-    }
 
-    // Ítems obtenidos desde la store de Zustand del carrito adaptados al contrato del endpoint
-    const cartItems = useCarritoStore.getState().items
-    const itemsPayload: ServiceRequestItemPayload[] = cartItems.map((ci) => ({
-      item_menu_id: ci.producto.id ?? '',
-      name_snapshot: ci.producto.name,
-      price_unit: Number(ci.producto.price) || 0,
-      tax_rate: Number(ci.producto.tax_percentage ?? 0) || 0,
-      amount: Number(ci.cantidad) || 1,
-      note: ci.notas?.trim() || '',
-    }))
+      // Ítems obtenidos desde la store de Zustand del carrito adaptados al contrato del endpoint
+      const cartItems = useCarritoStore.getState().items
+      const itemsPayload: ServiceRequestItemPayload[] = cartItems.map((ci) => ({
+        item_menu_id: ci.producto.id ?? '',
+        name_snapshot: ci.producto.name,
+        price_unit: Number(ci.producto.price) || 0,
+        tax_rate: Number(ci.producto.tax_percentage ?? 0) || 0,
+        amount: Number(ci.cantidad) || 1,
+        note: ci.notas?.trim() || '',
+      }))
 
-    // Creador obtenido desde localStorage (auth_token -> Email)
-    const createdBy = obtenerCreatedBy()
+      // Creador obtenido desde localStorage (auth_token -> Email)
+      const createdBy = obtenerCreatedBy()
 
-    // Construcción del payload para /service-request
-    const payload: ServiceRequestPayload = {
-      order_number: ordenFinal,
-      stay_id: stayIdFinal,
-      room_id: roomIdFinal,
-      person_id: personIdFinal,
-      channel: canal,
-      payment_method: metodoPago,
-      general_notes: notasGenerales.trim(),
-      delivery_instructions: instruccionesDelivery.trim(),
-      scheduled_for: scheduledForISO,
-      currency: 'COP',
-      tip: propinaNumerica,
-      items: itemsPayload,
-      created_by: createdBy,
-    }
+      // Construcción en segundo plano del payload exacto para POST /service-request
+      const payload: ServiceRequestPayload = {
+        stay_id: stayIdFinal,
+        person_id: personIdFinal,
+        channel: canal,
+        payment_method: metodoPago,
+        general_notes: notasGenerales.trim(),
+        delivery_instructions: instruccionesDelivery.trim(),
+        currency: 'COP',
+        tip: propinaNumerica,
+        created_by: createdBy,
+        items: itemsPayload,
+      }
 
-    try {
-      const response = await api.post('/service-request', payload, {
-        validateStatus: () => true,
-      })
+      const response = await executeBalancedRequest(() =>
+        api.post('/service-request', payload, {
+          validateStatus: () => true,
+        })
+      )
 
       const validation = validateStatusCode(response.status)
 
@@ -695,13 +442,13 @@ export function ModalConfirmarPedidoCocina({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-primary">
-                  <span>Transmisión a Cocina · Room Service</span>
+                  <span>Solicitud de Pedido</span>
                 </div>
                 <h3 className="mt-2 font-serif text-xl sm:text-2xl font-bold text-ink">
-                  Confirmar y Enviar Pedido a Cocina
+                  Confirmar y Enviar Pedido
                 </h3>
                 <p className="mt-1 text-xs sm:text-sm text-ink-muted">
-                  Completa los parámetros de servicio y facturación para despachar los {totalArticulos} artículos de la comanda.
+                  Completa los datos para registrar los {totalArticulos} artículos del pedido.
                 </p>
               </div>
 
@@ -780,7 +527,7 @@ export function ModalConfirmarPedidoCocina({
                     <span>Generar</span>
                   </button>
                 }
-                hint="Número de comanda de 2 dígitos. Pulsa 'Generar' para asignar uno al azar."
+                hint="2 dígitos. Usa 'Generar' para asignar uno."
               />
 
               {/* Campo: Horario de Entrega (Datetime) */}
@@ -805,28 +552,42 @@ export function ModalConfirmarPedidoCocina({
                   />
                 </div>
                 <p className="mt-1.5 text-xs text-ink-soft">
-                  Fecha y hora programada para que el mayordomo entregue el pedido.
+                  Fecha y hora programada de entrega.
                 </p>
               </div>
             </div>
 
-            {/* 2. Recepción / Habitación -> RecursosDropdown */}
+            {/* 2. Huéspedes -> RecursosDropdown */}
             <div className="w-full">
               <RecursosDropdown
-                label="Recepción / Habitación"
-                value={recepcion}
-                onChange={(val) => setRecepcion(val)}
-                options={opcionesRecepcion}
+                label="Huéspedes"
+                value={huespedActual}
+                onChange={(val) => setHuespedSeleccionado(val)}
+                options={opcionesHuespedes}
+                searchable
+                searchPlaceholder="Buscar por nombre o documento…"
+                isLoading={loadingHuespedes}
                 placeholder={
-                  loadingRecepciones
-                    ? 'Cargando habitaciones…'
-                    : 'Selecciona una recepción o habitación…'
+                  loadingHuespedes
+                    ? 'Cargando huéspedes…'
+                    : 'Selecciona un huésped…'
                 }
-                error={errorRecepciones ?? undefined}
+                error={errorHuespedes ?? undefined}
                 required
               />
+              {loadingHuespedes && (
+                <div className="mt-2">
+                  <Loading
+                    variant="inline"
+                    size="sm"
+                    label="Cargando huéspedes…"
+                    delay={0}
+                    visible={loadingHuespedes}
+                  />
+                </div>
+              )}
               <p className="mt-1.5 text-xs text-ink-soft">
-                Punto de entrega o habitación del huésped asignada para este despacho (formato: Edificio - Piso - Habitación).
+                Huésped que solicita el pedido.
               </p>
             </div>
 
@@ -839,11 +600,11 @@ export function ModalConfirmarPedidoCocina({
                   value={canal}
                   onChange={(val) => setCanal(val)}
                   options={OPCIONES_CANAL}
-                  placeholder="Selecciona el canal de pedido…"
+                  placeholder="Selecciona el canal…"
                   required
                 />
                 <p className="mt-1.5 text-xs text-ink-soft">
-                  Vía por la cual el huésped se comunicó para ordenar.
+                  Medio de solicitud.
                 </p>
               </div>
 
@@ -854,11 +615,11 @@ export function ModalConfirmarPedidoCocina({
                   value={metodoPago}
                   onChange={(val) => setMetodoPago(val)}
                   options={OPCIONES_METODO_PAGO}
-                  placeholder="Selecciona el método de pago…"
+                  placeholder="Selecciona el método…"
                   required
                 />
                 <p className="mt-1.5 text-xs text-ink-soft">
-                  Forma en que se liquidará el consumo del servicio.
+                  Forma de pago del pedido.
                 </p>
               </div>
             </div>
@@ -888,7 +649,7 @@ export function ModalConfirmarPedidoCocina({
                         </button>
                       ) : undefined
                     }
-                    hint="Aporte voluntario de propina para el personal de servicio (COP)."
+                    hint="Propina opcional (COP)."
                   />
                 </div>
 
@@ -918,7 +679,7 @@ export function ModalConfirmarPedidoCocina({
               label="Instrucciones para el delivery"
               value={instruccionesDelivery}
               onChange={(e) => setInstruccionesDelivery(e.target.value)}
-              placeholder="Ej: Tocar el timbre suavemente dos veces. Dejar la bandeja sobre la mesa auxiliar de la terraza."
+              placeholder="Ej: Llamar antes de entregar."
               rows={2}
               resize="none"
               maxLength={200}
@@ -930,10 +691,10 @@ export function ModalConfirmarPedidoCocina({
               label="Notas generales"
               value={notasGenerales}
               onChange={(e) => setNotasGenerales(e.target.value)}
-              placeholder="Ej: Huésped alérgico al marisco. Preparar bebidas con hielo por separado. Servicio de alta prioridad VIP."
+              placeholder="Ej: Cubiertos adicionales o indicaciones."
               rows={2}
               resize="none"
-              hint="Observaciones culinarias especiales o requerimientos de atención del cliente."
+              hint="Observaciones adicionales del pedido."
               maxLength={300}
               showCount
             />
@@ -946,7 +707,7 @@ export function ModalConfirmarPedidoCocina({
                 disabled={isSubmitting}
                 className="w-full sm:w-auto rounded-xl border border-line bg-panel px-5 py-2.5 text-xs font-bold text-ink hover:bg-canvas transition-colors cursor-pointer shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Cancelar y Volver al Carrito
+                Cancelar
               </button>
               <button
                 type="submit"
@@ -954,18 +715,55 @@ export function ModalConfirmarPedidoCocina({
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-xs font-bold text-white shadow-md hover:bg-primary/90 transition-all cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <FontAwesomeIcon icon={faCheck} className="size-3.5" />
-                <span>{isSubmitting ? 'Transmitiendo...' : 'Confirmar y Enviar a Cocina'}</span>
+                <span>{isSubmitting ? 'Enviando...' : 'Confirmar y Enviar Pedido'}</span>
               </button>
             </div>
           </form>
 
-          {/* Loader visible durante el envío a cocina */}
-          <Loader
-            overlay
-            visible={isSubmitting}
-            size={42}
-            label="Transmitiendo pedido a cocina..."
-          />
+          {/* Animación Rocket visible mientras se construye y envía el payload a POST /service-request */}
+          <AnimatePresence>
+            {isSubmitting && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                className="fixed inset-0 z-60 flex flex-col items-center justify-center bg-black/75 p-4 backdrop-blur-md select-none text-center"
+              >
+                <motion.div
+                  initial={{ scale: 0.9, y: 16 }}
+                  animate={{ scale: 1, y: 0 }}
+                  exit={{ scale: 0.9, y: 16 }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+                  className="flex flex-col items-center"
+                >
+                  <div className="relative rounded-3xl border border-white/20 bg-panel/90 p-3 shadow-2xl backdrop-blur-xl">
+                    <Rocket
+                      launch={true}
+                      autoLaunch={true}
+                      interactive={false}
+                      size="md"
+                      showStars={true}
+                      showPad={true}
+                    />
+                  </div>
+
+                  <div className="mt-5 space-y-1.5 max-w-sm">
+                    <h3 className="font-serif text-lg font-bold text-white tracking-wide">
+                      Enviando Pedido
+                    </h3>
+                    <p className="text-xs text-white/80 leading-relaxed">
+                      Procesando solicitud en{' '}
+                      <span className="font-mono font-bold text-primary-light">
+                        /service-request
+                      </span>
+                      …
+                    </p>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       </div>
     </AnimatePresence>

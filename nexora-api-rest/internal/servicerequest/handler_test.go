@@ -32,7 +32,6 @@ func TestHandler_HTTPFlow(t *testing.T) {
 	body := []byte(`{
 		"order_number": "ORD-2026-888",
 		"stay_id": "stay-44",
-		"room_id": "room-302",
 		"person_id": "guest-11",
 		"channel": "room_tablet",
 		"payment_method": "room_charge",

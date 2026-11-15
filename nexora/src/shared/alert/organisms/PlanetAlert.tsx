@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { AlertGlowLine } from '../atoms/AlertGlowLine'
 import { AlertDescription } from '../atoms/AlertDescription'
@@ -107,12 +107,14 @@ export function PlanetAlert({
             'backdrop-blur-md',
             className
           )}
-          style={{
-            borderColor: theme.border,
-            boxShadow: `0 4px 24px -2px ${theme.border}`,
-            // Inyectamos variables para adaptación limpia claro/oscuro
-            ['--alert-details-bg' as any]: theme.detailsBgDark,
-          }}
+          style={
+            {
+              borderColor: theme.border,
+              boxShadow: `0 4px 24px -2px ${theme.border}`,
+              // Inyectamos variables para adaptación limpia claro/oscuro
+              '--alert-details-bg': theme.detailsBgDark,
+            } as CSSProperties
+          }
         >
           {/* Fondo adaptativo claro y oscuro */}
           <div
@@ -120,7 +122,7 @@ export function PlanetAlert({
             style={{ background: theme.bgLight }}
           />
           <div
-            className="pointer-events-none absolute inset-0 -z-10 transition-opacity duration-300 hidden dark:block"
+            className="pointer-events-none absolute inset-0 -z-10 transition-opacity duration-300 not-dark:hidden"
             style={{ background: theme.bgDark }}
           />
 

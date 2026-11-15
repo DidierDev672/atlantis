@@ -65,7 +65,6 @@ type CreateItemInput struct {
 type CreateInput struct {
 	OrderNumber          string
 	StayID               string
-	RoomID               string
 	PersonID             string
 	Channel              Channel
 	PaymentMethod        PaymentMethod
@@ -145,7 +144,6 @@ func (uc *UseCase) Create(ctx context.Context, in CreateInput) (ServiceRequest, 
 		id,
 		orderNum,
 		in.StayID,
-		in.RoomID,
 		in.PersonID,
 		in.Channel,
 		in.PaymentMethod,

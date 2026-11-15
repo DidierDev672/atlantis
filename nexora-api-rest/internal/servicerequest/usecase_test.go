@@ -43,9 +43,6 @@ func (m *mockSRRepo) List(ctx context.Context, filter servicerequest.ListFilter)
 		if filter.StayID != "" && req.StayID != filter.StayID {
 			continue
 		}
-		if filter.RoomID != "" && req.RoomID != filter.RoomID {
-			continue
-		}
 		res = append(res, req)
 	}
 	return res, nil
@@ -107,7 +104,6 @@ func TestUseCase_Lifecycle(t *testing.T) {
 	created, err := uc.Create(ctx, servicerequest.CreateInput{
 		OrderNumber:   "ORD-2026-001",
 		StayID:        "stay-101",
-		RoomID:        "room-505",
 		PersonID:      "guest-77",
 		Channel:       servicerequest.ChannelRoomTablet,
 		PaymentMethod: servicerequest.PaymentMethodRoomCharge,

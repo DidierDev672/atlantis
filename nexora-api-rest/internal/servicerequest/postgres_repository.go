@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS service_requests (
     id                      VARCHAR(36) PRIMARY KEY,
     order_number            VARCHAR(50) NOT NULL UNIQUE,
     stay_id                 VARCHAR(36) NOT NULL,
-    room_id                 VARCHAR(36) NOT NULL,
     person_id               VARCHAR(36) NOT NULL,
     status                  VARCHAR(30) NOT NULL DEFAULT 'pending',
     channel                 VARCHAR(30) NOT NULL DEFAULT 'room_tablet',
@@ -39,8 +38,8 @@ CREATE TABLE IF NOT EXISTS service_requests (
     created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE service_requests DROP COLUMN IF EXISTS room_id;
 CREATE INDEX IF NOT EXISTS idx_service_requests_stay_id ON service_requests(stay_id);
-CREATE INDEX IF NOT EXISTS idx_service_requests_room_id ON service_requests(room_id);
 CREATE INDEX IF NOT EXISTS idx_service_requests_status ON service_requests(status);
 
 CREATE TABLE IF NOT EXISTS service_request_items (
@@ -97,7 +96,7 @@ func (r *PostgresRepository) EnsureTable(ctx context.Context) error {
 }
 
 const serviceRequestColumns = `
-	id, order_number, stay_id, room_id, person_id, status, channel, payment_method,
+	id, order_number, stay_id, person_id, status, channel, payment_method,
 	general_notes, delivery_instructions, scheduled_for, currency, subtotal, taxes, tip, total,
 	grade, guest_comment, reason_for_cancellation, created_by, confirmed_at, delivered_at,
 	canceled_at, created_at, updated_at
@@ -118,14 +117,13 @@ func (r *PostgresRepository) Create(ctx context.Context, req ServiceRequest) err
 
 	insertHeader := fmt.Sprintf(`
 		INSERT INTO service_requests (%s)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
 	`, serviceRequestColumns)
 
 	_, err = tx.Exec(ctx, insertHeader,
 		string(req.ID),
 		req.OrderNumber,
 		req.StayID,
-		req.RoomID,
 		req.PersonID,
 		string(req.Status),
 		string(req.Channel),
@@ -247,14 +245,13 @@ func (r *PostgresRepository) List(ctx context.Context, filter ListFilter) ([]Ser
 		SELECT %s
 		FROM service_requests
 		WHERE ($1 = '' OR stay_id = $1)
-		  AND ($2 = '' OR room_id = $2)
-		  AND ($3 = '' OR person_id = $3)
-		  AND ($4 = '' OR status = $4)
-		  AND ($5 = '' OR channel = $5)
+		  AND ($2 = '' OR person_id = $2)
+		  AND ($3 = '' OR status = $3)
+		  AND ($4 = '' OR channel = $4)
 		ORDER BY created_at DESC
 	`, serviceRequestColumns)
 
-	rows, err := r.pool.Query(ctx, query, filter.StayID, filter.RoomID, filter.PersonID, filter.Status, filter.Channel)
+	rows, err := r.pool.Query(ctx, query, filter.StayID, filter.PersonID, filter.Status, filter.Channel)
 	if err != nil {
 		return nil, fmt.Errorf("query service_requests: %w", err)
 	}
@@ -388,7 +385,6 @@ func scanServiceRequestHeader(row pgx.Row) (ServiceRequest, error) {
 		&idStr,
 		&s.OrderNumber,
 		&s.StayID,
-		&s.RoomID,
 		&s.PersonID,
 		&statusStr,
 		&channelStr,

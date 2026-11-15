@@ -5,30 +5,32 @@ import { faCartShopping } from '@fortawesome/free-solid-svg-icons'
 export interface CarritoFlotanteFabProps {
   totalArticulos: number
   onClick: () => void
+  className?: string
 }
 
 /**
- * Átomo: Botón flotante del carrito con insignia dinámica del número de productos agregados.
+ * Átomo: Botón superior del carrito con insignia dinámica del número de productos agregados.
  */
 export function CarritoFlotanteFab({
   totalArticulos,
   onClick,
+  className = '',
 }: CarritoFlotanteFabProps) {
   return (
     <motion.button
       type="button"
       onClick={onClick}
-      whileHover={{ scale: 1.05, y: -2 }}
-      whileTap={{ scale: 0.95 }}
+      whileHover={{ scale: 1.03, y: -1 }}
+      whileTap={{ scale: 0.96 }}
       aria-label={`Abrir carrito (${totalArticulos} productos agregados)`}
       title="Ver productos agregados al carrito"
-      className="bg-primary shadow-primary/35 hover:bg-primary/95 fixed right-6 bottom-6 z-40 inline-flex cursor-pointer items-center gap-3 rounded-full px-4 py-3.5 text-white shadow-xl ring-2 ring-white/25 backdrop-blur-md transition-colors"
+      className={`bg-primary shadow-primary/25 hover:bg-primary/95 inline-flex cursor-pointer items-center gap-2.5 rounded-2xl px-4 py-2.5 text-white shadow-lg ring-1 ring-white/20 backdrop-blur-md transition-colors ${className}`}
     >
-      <span className="relative flex size-6 items-center justify-center">
-        <FontAwesomeIcon icon={faCartShopping} className="size-5" />
+      <span className="relative flex size-4 items-center justify-center">
+        <FontAwesomeIcon icon={faCartShopping} className="size-4" />
       </span>
 
-      <span className="hidden text-xs font-extrabold tracking-wide sm:inline">
+      <span className="text-xs font-extrabold tracking-wide">
         Carrito
       </span>
 
@@ -39,7 +41,7 @@ export function CarritoFlotanteFab({
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.6, opacity: 0 }}
           transition={{ duration: 0.18 }}
-          className="text-primary inline-flex min-w-6 items-center justify-center rounded-full bg-white px-2 py-0.5 text-xs font-black shadow-xs"
+          className="text-primary inline-flex min-w-5 items-center justify-center rounded-full bg-white px-1.5 py-0.5 text-[11px] font-black shadow-xs"
         >
           {totalArticulos}
         </motion.span>

@@ -84,7 +84,6 @@ var (
 	ErrNotFound           = errors.New("service request not found")
 	ErrInvalidID          = errors.New("id is required")
 	ErrInvalidStayID      = errors.New("stay_id is required")
-	ErrInvalidRoomID      = errors.New("room_id is required")
 	ErrInvalidPersonID    = errors.New("person_id is required")
 	ErrInvalidOrderNumber = errors.New("order_number is required")
 	ErrEmptyItems         = errors.New("service request must contain at least one item")
@@ -130,7 +129,6 @@ type ServiceRequest struct {
 	ID                    ID
 	OrderNumber           string
 	StayID                string
-	RoomID                string
 	PersonID              string
 	Status                Status
 	Channel               Channel
@@ -161,7 +159,6 @@ func NewServiceRequest(
 	id ID,
 	orderNumber string,
 	stayID string,
-	roomID string,
 	personID string,
 	channel Channel,
 	paymentMethod PaymentMethod,
@@ -187,11 +184,6 @@ func NewServiceRequest(
 	trimmedStayID := strings.TrimSpace(stayID)
 	if trimmedStayID == "" {
 		return ServiceRequest{}, ErrInvalidStayID
-	}
-
-	trimmedRoomID := strings.TrimSpace(roomID)
-	if trimmedRoomID == "" {
-		return ServiceRequest{}, ErrInvalidRoomID
 	}
 
 	trimmedPersonID := strings.TrimSpace(personID)
@@ -268,7 +260,6 @@ func NewServiceRequest(
 		ID:                   trimmedID,
 		OrderNumber:          trimmedOrderNum,
 		StayID:               trimmedStayID,
-		RoomID:               trimmedRoomID,
 		PersonID:             trimmedPersonID,
 		Status:               StatusPending,
 		Channel:              channel,

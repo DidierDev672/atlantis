@@ -1,14 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import type { StatusCodeValidationResult } from '../../../shared/lib/status-code-validator'
+import { validateStatusCode, type StatusCodeValidationResult } from '../../../shared/lib/status-code-validator'
 import {
   fetchSedesApi,
   fetchSubSedesApi,
   fetchEdificiosApi,
   guardarMenuCategoriaApi,
   obtenerEmailCreador,
-  FALLBACK_SEDES,
-  FALLBACK_SUB_SEDES,
-  FALLBACK_EDIFICIOS,
   type SedeOption,
   type SubSedeOption,
   type EdificioOption,
@@ -32,34 +29,33 @@ function generarNumeroDosDigitos(): string {
  * para el registro de categorías y servicios gastronómicos de habitación.
  */
 export function useFormularioServicioHabitacion() {
-  // 1. Order (código de orden numérico de 2 dígitos)
-  const [order, setOrder] = useState('17')
+  // 1. Order (código de orden numérico de 2 dígitos generado automáticamente)
+  const [order, setOrder] = useState<string>(generarNumeroDosDigitos)
 
-  // 2. Sede
-  const [sedeId, setSedeId] = useState('857476d852c2d215')
-  const [sedes, setSedes] = useState<SedeOption[]>(FALLBACK_SEDES)
+  // 2. Sede (sin selección por defecto)
+  const [sedeId, setSedeId] = useState('')
+  const [sedes, setSedes] = useState<SedeOption[]>([])
   const [loadingSedes, setLoadingSedes] = useState(true)
 
-  // 3. Sub Sede
-  const [subSedeId, setSubSedeId] = useState('3964a679462f9efc')
-  const [subSedes, setSubSedes] = useState<SubSedeOption[]>(FALLBACK_SUB_SEDES)
+  // 3. Sub Sede (sin selección por defecto)
+  const [subSedeId, setSubSedeId] = useState('')
+  const [subSedes, setSubSedes] = useState<SubSedeOption[]>([])
   const [loadingSubSedes, setLoadingSubSedes] = useState(false)
 
-  // 4. Edificio
-  const [edificioId, setEdificioId] = useState('161ecb4a52a33a52')
-  const [edificios, setEdificios] = useState<EdificioOption[]>(FALLBACK_EDIFICIOS)
+  // 4. Edificio (sin selección por defecto)
+  const [edificioId, setEdificioId] = useState('')
+  const [edificios, setEdificios] = useState<EdificioOption[]>([])
   const [loadingEdificios, setLoadingEdificios] = useState(true)
 
-  // 5. Nombre y descripción
-  const [nombreServicio, setNombreServicio] = useState('Bebidas y Cocteleria')
-  const [descripcion, setDescripcion] = useState(
-    'Seleccion de cocteles de autor, vinos, cervezas y bebidas refrescantes'
-  )
+  // 5. Nombre y descripción (vacíos inicialmente)
+  const [nombreServicio, setNombreServicio] = useState('')
+  const [descripcion, setDescripcion] = useState('')
 
   // 6. Imagen y asset
   const [imagenArchivo, setImagenArchivo] = useState<File | null>(null)
   const [imagenPreview, setImagenPreview] = useState<string | null>(null)
   const [assetUrl, setAssetUrl] = useState<string>(DEFAULT_ASSET_URL)
+  const [resetKey, setResetKey] = useState(0)
 
   // 7. Estados de envío y validación de status code
   const [saving, setSaving] = useState(false)
@@ -76,40 +72,24 @@ export function useFormularioServicioHabitacion() {
     try {
       const res = await fetchSubSedesApi(headquarterId)
       setSubSedes(res.subSedes)
-      if (res.subSedes.length > 0) {
-        setSubSedeId(res.subSedes[0].id)
-      }
     } finally {
       setLoadingSubSedes(false)
     }
   }, [])
 
-  // Montaje inicial con balanceador de carga asíncrono sin setState síncrono en effect
+  // Montaje inicial con balanceador de carga asíncrono sin seleccionar opciones por defecto
   useEffect(() => {
     let active = true
 
     void fetchSedesApi().then((res) => {
       if (!active) return
       setSedes(res.sedes)
-      if (res.sedes.length > 0) {
-        setSedeId(res.sedes[0].id)
-        void fetchSubSedesApi(res.sedes[0].id).then((subRes) => {
-          if (!active) return
-          setSubSedes(subRes.subSedes)
-          if (subRes.subSedes.length > 0) {
-            setSubSedeId(subRes.subSedes[0].id)
-          }
-        })
-      }
       setLoadingSedes(false)
     })
 
     void fetchEdificiosApi().then((res) => {
       if (!active) return
       setEdificios(res.edificios)
-      if (res.edificios.length > 0) {
-        setEdificioId(res.edificios[0].id)
-      }
       setLoadingEdificios(false)
     })
 
@@ -140,6 +120,24 @@ export function useFormularioServicioHabitacion() {
   const generarOrderAleatorio = () => {
     setOrder(generarNumeroDosDigitos())
   }
+
+  const limpiarFormulario = useCallback(() => {
+    if (imagenPreview && imagenPreview.startsWith('blob:')) {
+      URL.revokeObjectURL(imagenPreview)
+    }
+    setOrder(generarNumeroDosDigitos())
+    setSedeId('')
+    setSubSedeId('')
+    setSubSedes([])
+    setEdificioId('')
+    setNombreServicio('')
+    setDescripcion('')
+    setImagenArchivo(null)
+    setImagenPreview(null)
+    setAssetUrl(DEFAULT_ASSET_URL)
+    setFeedback(null)
+    setResetKey((prev) => prev + 1)
+  }, [imagenPreview])
 
   const handleImageChange = (file: File | null, previewUrl: string | null) => {
     setImagenArchivo(file)
@@ -178,6 +176,16 @@ export function useFormularioServicioHabitacion() {
     e.preventDefault()
     if (saving) return
 
+    if (!sedeId || !subSedeId || !edificioId || !nombreServicio.trim()) {
+      setFeedback({
+        ...validateStatusCode(400),
+        title: 'Campos obligatorios pendientes',
+        message:
+          'Selecciona una sede, sub sede y edificio, e ingresa el nombre del servicio antes de guardar.',
+      })
+      return
+    }
+
     setSaving(true)
     setFeedback(null)
 
@@ -196,21 +204,18 @@ export function useFormularioServicioHabitacion() {
       }
     }
 
-    const resolvedBuildingId = edificioId || edificios[0]?.id || '161ecb4a52a33a52'
-    const resolvedHeadquarterId = sedeId || sedes[0]?.id || '857476d852c2d215'
-    const resolvedSubHeadquarterId = subSedeId || subSedes[0]?.id || '3964a679462f9efc'
-
     const orderNumber = Number(order)
-    const resolvedOrder = Number.isFinite(orderNumber) ? orderNumber : 1
+    const resolvedOrder =
+      Number.isFinite(orderNumber) && orderNumber > 0
+        ? orderNumber
+        : Number(generarNumeroDosDigitos())
 
     const payload = {
-      headquartes_id: resolvedHeadquarterId,
-      sub_headquartes_id: resolvedSubHeadquarterId,
-      building_id: resolvedBuildingId,
-      name: nombreServicio.trim() || 'Bebidas y Cocteleria',
-      description:
-        descripcion.trim() ||
-        'Seleccion de cocteles de autor, vinos, cervezas y bebidas refrescantes',
+      headquartes_id: sedeId,
+      sub_headquartes_id: subSedeId,
+      building_id: edificioId,
+      name: nombreServicio.trim(),
+      description: descripcion.trim(),
       order: resolvedOrder,
       asset: finalAssetUrl,
       created_by: obtenerEmailCreador(),
@@ -257,6 +262,8 @@ export function useFormularioServicioHabitacion() {
     feedback,
     setFeedback,
     handleSubmit,
+    limpiarFormulario,
+    resetKey,
     isLoadingEndpoints,
   }
 }

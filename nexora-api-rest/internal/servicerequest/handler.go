@@ -55,7 +55,6 @@ type CreateItemRequest struct {
 type CreateRequest struct {
 	OrderNumber          string              `json:"order_number"`
 	StayID               string              `json:"stay_id"`
-	RoomID               string              `json:"room_id"`
 	PersonID             string              `json:"person_id"`
 	Channel              string              `json:"channel"`
 	PaymentMethod        string              `json:"payment_method"`
@@ -121,7 +120,6 @@ type Response struct {
 	ID                    string            `json:"id"`
 	OrderNumber           string            `json:"order_number"`
 	StayID                string            `json:"stay_id"`
-	RoomID                string            `json:"room_id"`
 	PersonID              string            `json:"person_id"`
 	Status                string            `json:"status"`
 	Channel               string            `json:"channel"`
@@ -185,7 +183,6 @@ func newResponse(s ServiceRequest) Response {
 		ID:                    string(s.ID),
 		OrderNumber:           s.OrderNumber,
 		StayID:                s.StayID,
-		RoomID:                s.RoomID,
 		PersonID:              s.PersonID,
 		Status:                string(s.Status),
 		Channel:               string(s.Channel),
@@ -251,7 +248,6 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	created, err := h.uc.Create(r.Context(), CreateInput{
 		OrderNumber:          req.OrderNumber,
 		StayID:               req.StayID,
-		RoomID:               req.RoomID,
 		PersonID:             req.PersonID,
 		Channel:              channel,
 		PaymentMethod:        paymentMethod,
@@ -293,7 +289,6 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 
 	items, err := h.uc.List(r.Context(), ListFilter{
 		StayID:   query.Get("stay_id"),
-		RoomID:   query.Get("room_id"),
 		PersonID: query.Get("person_id"),
 		Status:   query.Get("status"),
 		Channel:  query.Get("channel"),
@@ -383,7 +378,6 @@ func (h *Handler) handleDomainError(w http.ResponseWriter, err error) {
 		httpjson.WriteError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrInvalidID),
 		errors.Is(err, ErrInvalidStayID),
-		errors.Is(err, ErrInvalidRoomID),
 		errors.Is(err, ErrInvalidPersonID),
 		errors.Is(err, ErrInvalidOrderNumber),
 		errors.Is(err, ErrEmptyItems),

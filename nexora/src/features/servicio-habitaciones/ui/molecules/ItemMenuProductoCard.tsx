@@ -20,6 +20,7 @@ import {
   useCarritoStore,
 } from '../../application/carrito-store'
 import type { LayoutViewMode } from '../atoms/LayoutViewSwitch'
+import { ItemMenuProductoMasonryCard } from './ItemMenuProductoMasonryCard'
 
 export interface ItemMenuProductoCardProps {
   producto: ItemMenuProducto
@@ -38,6 +39,7 @@ export interface ItemMenuProductoCardProps {
  */
 export function ItemMenuProductoCard({
   producto,
+  index = 0,
   viewMode = 'grid',
   onVerDetalle,
 }: ItemMenuProductoCardProps) {
@@ -54,6 +56,16 @@ export function ItemMenuProductoCard({
   const agregarProducto = useCarritoStore((s) => s.agregarProducto)
   const incrementarCantidad = useCarritoStore((s) => s.incrementarCantidad)
   const decrementarCantidad = useCarritoStore((s) => s.decrementarCantidad)
+
+  if (viewMode === 'masonry') {
+    return (
+      <ItemMenuProductoMasonryCard
+        producto={producto}
+        index={index}
+        onVerDetalle={onVerDetalle}
+      />
+    )
+  }
 
   return (
     <article
