@@ -59,16 +59,6 @@ const (
 	ChannelQRCode     Channel = "qr_code"
 )
 
-// PaymentMethod representa el medio de pago acordado para el servicio.
-type PaymentMethod string
-
-const (
-	PaymentMethodRoomCharge   PaymentMethod = "room_charge"
-	PaymentMethodCash         PaymentMethod = "cash"
-	PaymentMethodCard         PaymentMethod = "card"
-	PaymentMethodBankTransfer PaymentMethod = "bank_transfer"
-)
-
 // ActorType identifica quién realizó una transición de estado en el historial.
 type ActorType string
 
@@ -132,14 +122,12 @@ type ServiceRequest struct {
 	PersonID              string
 	Status                Status
 	Channel               Channel
-	PaymentMethod         PaymentMethod
 	GeneralNotes          string
 	DeliveryInstructions  string
 	ScheduledFor          *time.Time
 	Currency              string
 	Subtotal              float64
 	Taxes                 float64
-	Tip                   *float64
 	Total                 float64
 	Grade                 *int
 	GuestComment          *string
@@ -161,12 +149,10 @@ func NewServiceRequest(
 	stayID string,
 	personID string,
 	channel Channel,
-	paymentMethod PaymentMethod,
 	generalNotes string,
 	deliveryInstructions string,
 	scheduledFor *time.Time,
 	currency string,
-	tip *float64,
 	items []OrderItem,
 	createdBy string,
 	now time.Time,
@@ -232,14 +218,7 @@ func NewServiceRequest(
 		validatedItems[i] = it
 	}
 
-	var tipVal float64
-	if tip != nil {
-		if *tip < 0 {
-			return ServiceRequest{}, errors.New("tip cannot be negative")
-		}
-		tipVal = *tip
-	}
-	total := subtotal + taxes + tipVal
+	total := subtotal + taxes
 
 	// Registro inicial en el historial
 	initialHistory := []OrderStatusHistory{
@@ -263,14 +242,12 @@ func NewServiceRequest(
 		PersonID:             trimmedPersonID,
 		Status:               StatusPending,
 		Channel:              channel,
-		PaymentMethod:        paymentMethod,
 		GeneralNotes:         strings.TrimSpace(generalNotes),
 		DeliveryInstructions: strings.TrimSpace(deliveryInstructions),
 		ScheduledFor:         scheduledFor,
 		Currency:             strings.ToUpper(strings.TrimSpace(currency)),
 		Subtotal:             subtotal,
 		Taxes:                taxes,
-		Tip:                  tip,
 		Total:                total,
 		CreatedBy:            strings.TrimSpace(createdBy),
 		Items:                validatedItems,

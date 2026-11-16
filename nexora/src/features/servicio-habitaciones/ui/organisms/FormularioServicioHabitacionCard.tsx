@@ -1,7 +1,6 @@
 import { motion, AnimatePresence } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
-  faDice,
   faEraser,
   faPaperPlane,
   faSpinner,
@@ -27,7 +26,6 @@ export function FormularioServicioHabitacionCard() {
   const {
     order,
     setOrder,
-    generarOrderAleatorio,
     sedeId,
     handleSedeChange,
     sedeOptions,
@@ -157,17 +155,6 @@ export function FormularioServicioHabitacionCard() {
                 inputMode="numeric"
                 required
                 hint="Código numérico de 2 dígitos generado automáticamente."
-                action={
-                  <button
-                    type="button"
-                    onClick={generarOrderAleatorio}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 active:scale-95 transition-all cursor-pointer"
-                    title="Generar nuevo número de orden de dos dígitos"
-                  >
-                    <FontAwesomeIcon icon={faDice} className="size-3" />
-                    <span>Aleatorio</span>
-                  </button>
-                }
               />
             </div>
 

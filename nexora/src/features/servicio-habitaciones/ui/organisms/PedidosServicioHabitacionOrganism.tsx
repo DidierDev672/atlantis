@@ -2,39 +2,49 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { motion, type Variants } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
-  faReceipt,
-  faUtensils,
-  faClock,
-  faCreditCard,
-  faMoneyBillWave,
-  faPhone,
-  faTruck,
-  faCheck,
-  faUser,
-  faDoorOpen,
-  faHotel,
   faBellConcierge,
+  faCheck,
   faRotateRight,
   faCircleExclamation,
   faMagnifyingGlass,
   faMobileScreen,
-  faTabletScreenButton,
-  faQrcode,
   faClipboardList,
-  faListCheck,
-  faTriangleExclamation,
-  faFire,
-  faChevronDown,
+  faTabletScreenButton,
 } from '@fortawesome/free-solid-svg-icons'
 import { fadeIn } from '../../../../design-tokens/motion'
 import { api } from '../../../../lib/api'
 import { validateStatusCode, type StatusCodeValidationResult } from '../../../../shared/lib/status-code-validator'
 import { InfiniteScroll, InfiniteScrollEnd } from '../../../../shared/ui'
-import { formatearMonedaCOP } from '../../domain/item-menu'
 import { Loader } from '../../../tema/ui/atoms/loader'
 import { readAuthUser } from '../../../../shared/auth-storage'
-import type { RawStayApi } from '../molecules/ModalSeleccionarRecepcion'
-import type { RoomApi, BuildingApi } from '../molecules/ModalConfirmarPedidoCocina'
+import { obtenerMapaHabitacionesEstadias } from '../../infrastructure/api-estadias-recepcion-repository'
+import {
+  RecursosDropdown,
+  type DropdownOption,
+} from '../../../recursos/ui/molecules/recursos-dropdown'
+import { PedidoServicioHabitacionCard } from '../molecules/PedidoServicioHabitacionCard'
+import {
+  calcularPrioridadComanda,
+  type ServiceRequestItem,
+  type ServiceRequestOrder,
+  type UpdateServiceRequestPayload,
+  type CreateServiceAssignmentPayload,
+  type NivelPrioridad,
+  type PrioridadInfo,
+  type EstadoPedido,
+  type EstadoPedidoConfig,
+} from '../../domain/pedidos-servicio-habitacion'
+
+export type {
+  ServiceRequestItem,
+  ServiceRequestOrder,
+  UpdateServiceRequestPayload,
+  CreateServiceAssignmentPayload,
+  NivelPrioridad,
+  PrioridadInfo,
+  EstadoPedido,
+  EstadoPedidoConfig,
+}
 
 /**
  * Variantes de orquestación para Stagger Reveal (revelado escalonado) de comandas de cocina
@@ -70,373 +80,89 @@ const KITCHEN_TICKET_CARD_VARIANTS: Variants = {
   },
 }
 
-export interface ServiceRequestItem {
-  item_menu_id: string
-  name_snapshot: string
-  price_unit: number
-  tax_rate?: number
-  amount: number
-  note?: string
-}
+const OPCIONES_PRIORIDAD: ReadonlyArray<DropdownOption> = [
+  { value: 'todos', label: 'Todos' },
+  {
+    value: 'urgente',
+    label: 'Urgentes',
+    customContent: (
+      <span className="flex items-center gap-2">
+        <span className="size-2 rounded-full bg-red-500 shrink-0" />
+        <span>Urgentes</span>
+      </span>
+    ),
+  },
+  {
+    value: 'atencion',
+    label: 'En cola',
+    customContent: (
+      <span className="flex items-center gap-2">
+        <span className="size-2 rounded-full bg-amber-500 shrink-0" />
+        <span>En cola</span>
+      </span>
+    ),
+  },
+  {
+    value: 'normal',
+    label: 'A tiempo',
+    customContent: (
+      <span className="flex items-center gap-2">
+        <span className="size-2 rounded-full bg-emerald-500 shrink-0" />
+        <span>A tiempo</span>
+      </span>
+    ),
+  },
+]
 
-export interface ServiceRequestOrder {
-  id?: string
-  order_number: string
-  stay_id: string
-  room_id: string
-  person_id: string
-  channel?: string
-  payment_method?: string
-  general_notes?: string
-  delivery_instructions?: string
-  scheduled_for?: string
-  currency?: string
-  tip?: number
-  items: ServiceRequestItem[]
-  created_by?: string
-  created_at?: string
-  status?: string
-}
-
-export interface UpdateServiceRequestPayload {
-  id: string
-  status: string
-  actor_type: string
-  actor_id: string
-  status_comment: string
-  grade: number
-  guest_comment: string
-  general_notes: string | null
-  delivery_instructions: string | null
-}
-
-export interface CreateServiceAssignmentPayload {
-  service_request_id: string
-  stay_id: string
-  person_id: string
-  is_active: boolean
-}
+const OPCIONES_CANAL_FILTRO: ReadonlyArray<DropdownOption> = [
+  { value: 'todos', label: 'Todos' },
+  {
+    value: 'front_desk',
+    label: 'Recepción',
+    customContent: (
+      <span className="flex items-center gap-2">
+        <FontAwesomeIcon icon={faBellConcierge} className="size-3.5 text-primary" />
+        <span>Recepción</span>
+      </span>
+    ),
+  },
+  {
+    value: 'room_tablet',
+    label: 'Tablet',
+    customContent: (
+      <span className="flex items-center gap-2">
+        <FontAwesomeIcon icon={faTabletScreenButton} className="size-3.5 text-primary" />
+        <span>Tablet</span>
+      </span>
+    ),
+  },
+  {
+    value: 'mobile_app',
+    label: 'Móvil',
+    customContent: (
+      <span className="flex items-center gap-2">
+        <FontAwesomeIcon icon={faMobileScreen} className="size-3.5 text-primary" />
+        <span>Móvil</span>
+      </span>
+    ),
+  },
+]
 
 export interface PedidosServicioHabitacionOrganismProps {
   onIrAProductos?: () => void
   onIrACarrito?: () => void
-  onIrAEstadoPedido?: () => void
-}
-
-export type NivelPrioridad = 'urgente' | 'atencion' | 'normal'
-
-export interface PrioridadInfo {
-  nivel: NivelPrioridad
-  etiqueta: string
-  tiempoTexto: string
-  bordeClase: string
-  bgHeaderClase: string
-  textHeaderClase: string
-  badgeClase: string
-  icon: typeof faFire
-}
-
-export type EstadoPedido =
-  | 'en_cola'
-  | 'en_preparacion'
-  | 'en_camino'
-  | 'entregado'
-  | 'cancelado'
-
-export interface EstadoPedidoConfig {
-  id: EstadoPedido
-  label: string
-  colorBadge: string
-  dotColor: string
-  icon: typeof faClock
-}
-
-export const ESTADOS_PEDIDO_CONFIG: Record<EstadoPedido, EstadoPedidoConfig> = {
-  en_cola: {
-    id: 'en_cola',
-    label: 'EN COLA',
-    colorBadge: 'bg-amber-500/20 text-amber-800 dark:text-amber-200 border border-amber-500/30',
-    dotColor: 'bg-amber-400',
-    icon: faClock,
-  },
-  en_preparacion: {
-    id: 'en_preparacion',
-    label: 'EN PREPARACIÓN',
-    colorBadge: 'bg-orange-500/20 text-orange-800 dark:text-orange-200 border border-orange-500/30',
-    dotColor: 'bg-orange-400',
-    icon: faFire,
-  },
-  en_camino: {
-    id: 'en_camino',
-    label: 'EN CAMINO',
-    colorBadge: 'bg-sky-500/20 text-sky-800 dark:text-sky-200 border border-sky-500/30',
-    dotColor: 'bg-sky-400',
-    icon: faTruck,
-  },
-  entregado: {
-    id: 'entregado',
-    label: 'ENTREGADO',
-    colorBadge: 'bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 border border-emerald-500/30',
-    dotColor: 'bg-emerald-400',
-    icon: faCheck,
-  },
-  cancelado: {
-    id: 'cancelado',
-    label: 'CANCELADO',
-    colorBadge: 'bg-rose-500/20 text-rose-800 dark:text-rose-200 border border-rose-500/30',
-    dotColor: 'bg-rose-400',
-    icon: faCircleExclamation,
-  },
-}
-
-/**
- * Calcula dinámicamente la prioridad de la comanda de cocina basándose en urgencia,
- * notas críticas y tiempo de espera hasta la entrega programada.
- */
-export function calcularPrioridadComanda(orden: ServiceRequestOrder): PrioridadInfo {
-  const textoCompleto = `${orden.general_notes || ''} ${orden.delivery_instructions || ''} ${orden.items?.map((i) => i.note || '').join(' ') || ''}`.toLowerCase()
-
-  const esUrgentePorTexto =
-    textoCompleto.includes('urgente') ||
-    textoCompleto.includes('inmediat') ||
-    textoCompleto.includes('alergia') ||
-    textoCompleto.includes('alérgico') ||
-    textoCompleto.includes('sin gluten') ||
-    textoCompleto.includes('rapido') ||
-    textoCompleto.includes('rápido')
-
-  let diferenciaMinutos: number | null = null
-  if (orden.scheduled_for) {
-    try {
-      const fecha = new Date(orden.scheduled_for).getTime()
-      if (!isNaN(fecha)) {
-        const ahora = Date.now()
-        diferenciaMinutos = Math.round((fecha - ahora) / (1000 * 60))
-      }
-    } catch {
-      // Silencioso
-    }
-  }
-
-  // 1. Prioridad Crítica / Urgente (Borde y Alerta en Rojo)
-  if (esUrgentePorTexto || (diferenciaMinutos !== null && diferenciaMinutos <= 15)) {
-    return {
-      nivel: 'urgente',
-      etiqueta: 'PRIORIDAD CRÍTICA · RUSH',
-      tiempoTexto:
-        diferenciaMinutos !== null && diferenciaMinutos < 0
-          ? `ENTREGA DEMORADA (+${Math.abs(diferenciaMinutos)} MIN)`
-          : diferenciaMinutos !== null
-            ? `ENTREGA EN ${diferenciaMinutos} MIN`
-            : 'ENTREGA INMEDIATA',
-      bordeClase:
-        'border-2 border-red-500 shadow-[0_0_24px_rgba(239,68,68,0.22)] ring-1 ring-red-500/40 bg-red-500/[0.02]',
-      bgHeaderClase: 'bg-red-600 dark:bg-red-700',
-      textHeaderClase: 'text-white',
-      badgeClase:
-        'bg-red-600 text-white font-mono font-black animate-pulse shadow-sm',
-      icon: faFire,
-    }
-  }
-
-  // 2. Prioridad Media / Atención (Borde y Alerta en Ámbar / Amarillo)
-  if (diferenciaMinutos !== null && diferenciaMinutos <= 40) {
-    return {
-      nivel: 'atencion',
-      etiqueta: 'TIEMPO MEDIO · EN PREPARACIÓN',
-      tiempoTexto: `ENTREGA EN ~${diferenciaMinutos} MIN`,
-      bordeClase:
-        'border-2 border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.18)] ring-1 ring-amber-500/30 bg-amber-500/[0.02]',
-      bgHeaderClase: 'bg-amber-500 dark:bg-amber-600',
-      textHeaderClase: 'text-zinc-950 font-black',
-      badgeClase:
-        'bg-amber-500 text-zinc-950 font-mono font-black shadow-sm',
-      icon: faClock,
-    }
-  }
-
-  // 3. Prioridad Normal / En tiempo (Borde en Verde Esmeralda)
-  return {
-    nivel: 'normal',
-    etiqueta: 'A TIEMPO · COLA REGULAR',
-    tiempoTexto:
-      diferenciaMinutos !== null
-        ? `ENTREGA EN ${diferenciaMinutos} MIN`
-        : 'ENTREGA EN COLA',
-      bordeClase:
-        'border-2 border-emerald-500/60 shadow-[0_0_15px_rgba(16,185,129,0.12)] hover:border-emerald-500 bg-emerald-500/[0.01]',
-    bgHeaderClase: 'bg-emerald-600 dark:bg-emerald-700',
-    textHeaderClase: 'text-white font-bold',
-    badgeClase:
-      'bg-emerald-600 text-white font-mono font-bold shadow-sm',
-    icon: faCheck,
-  }
-}
-
-/**
- * Pedidos demo con diferentes niveles de prioridad para validar visualmente el sistema KDS
- */
-export const DEMO_PEDIDOS_CONTINGENCIA: ServiceRequestOrder[] = [
-  {
-    id: 'sr-1',
-    order_number: '71',
-    stay_id: 'e8b8abd74ee52a63',
-    room_id: '2a45ac749faa2848',
-    person_id: '64765b959a658887',
-    channel: 'front_desk',
-    payment_method: 'room_charge',
-    general_notes: 'Sin azucar, por faavor. Alergia a los mariscos.',
-    delivery_instructions: 'Tocar el timbre antes de llegar el pedido',
-    scheduled_for: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-    currency: 'COP',
-    tip: 5000,
-    items: [
-      {
-        item_menu_id: '37ff6263dfa31f45',
-        name_snapshot: 'Infusión de Frutos Rojos',
-        price_unit: 6000,
-        tax_rate: 0,
-        amount: 1,
-        note: 'Sin azúcar, bien caliente',
-      },
-      {
-        item_menu_id: '240ac84df5b8d345',
-        name_snapshot: 'Espresso Doble',
-        price_unit: 5500,
-        tax_rate: 0,
-        amount: 2,
-        note: '',
-      },
-    ],
-    created_by: 'ariasdev672@gmail.com',
-  },
-  {
-    order_number: '18',
-    stay_id: 'stay-2',
-    room_id: 'room-2',
-    person_id: 'person-3',
-    channel: 'room_tablet',
-    payment_method: 'room_charge',
-    general_notes: 'Huésped VIP. Enviar cubiertos de plata adicionales.',
-    delivery_instructions: 'Dejar sobre mesa auxiliar',
-    scheduled_for: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-    currency: 'COP',
-    tip: 10000,
-    items: [
-      {
-        item_menu_id: 'item-89',
-        name_snapshot: 'Salmón Grillé con Finas Hierbas',
-        price_unit: 42000,
-        tax_rate: 0,
-        amount: 1,
-        note: 'Término medio, salsa por separado',
-      },
-      {
-        item_menu_id: 'item-90',
-        name_snapshot: 'Copa de Vino Tinto Reserva',
-        price_unit: 24000,
-        tax_rate: 0,
-        amount: 1,
-        note: '',
-      },
-    ],
-    created_by: 'ariasdev672@gmail.com',
-  },
-  {
-    order_number: '05',
-    stay_id: 'stay-3',
-    room_id: 'room-3',
-    person_id: 'person-4',
-    channel: 'mobile_app',
-    payment_method: 'card',
-    general_notes: '',
-    delivery_instructions: 'Llamar antes de subir',
-    scheduled_for: new Date(Date.now() + 75 * 60 * 1000).toISOString(),
-    currency: 'COP',
-    tip: 2000,
-    items: [
-      {
-        item_menu_id: 'item-12',
-        name_snapshot: 'Club Sándwich Tradicional',
-        price_unit: 18000,
-        tax_rate: 0,
-        amount: 2,
-        note: '',
-      },
-    ],
-    created_by: 'ariasdev672@gmail.com',
-  },
-]
-
-function formatearFechaHoraLegible(isoString?: string): string {
-  if (!isoString) return 'ENTREGA INMEDIATA'
-  try {
-    const d = new Date(isoString)
-    if (isNaN(d.getTime())) return isoString
-    return d.toLocaleString('es-ES', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return isoString
-  }
-}
-
-function formatearCanal(channel?: string) {
-  switch (channel?.toLowerCase()) {
-    case 'front_desk':
-    case 'recepcion':
-      return { label: 'Recepción', icon: faBellConcierge }
-    case 'mobile_app':
-    case 'movil':
-      return { label: 'Móvil', icon: faMobileScreen }
-    case 'room_tablet':
-    case 'tablet':
-      return { label: 'Tablet', icon: faTabletScreenButton }
-    case 'qr_code':
-    case 'codigo_qr':
-      return { label: 'Código QR', icon: faQrcode }
-    case 'phone':
-    case 'telefono':
-      return { label: 'Teléfono', icon: faPhone }
-    default:
-      return { label: channel || 'Recepción', icon: faBellConcierge }
-  }
-}
-
-function formatearMetodoPago(method?: string) {
-  switch (method?.toLowerCase()) {
-    case 'room_charge':
-    case 'cargo_habitacion':
-      return { label: 'Cargo a Habitación', icon: faHotel }
-    case 'cash':
-    case 'efectivo':
-      return { label: 'Efectivo', icon: faMoneyBillWave }
-    case 'card':
-    case 'tarjeta':
-      return { label: 'Tarjeta Bancaria', icon: faCreditCard }
-    case 'bank_transfer':
-    case 'transferencia':
-      return { label: 'Transferencia', icon: faCreditCard }
-    default:
-      return { label: method || 'Pago en Entrega', icon: faMoneyBillWave }
-  }
 }
 
 export function PedidosServicioHabitacionOrganism({
   onIrAProductos,
   onIrACarrito,
-  onIrAEstadoPedido,
 }: PedidosServicioHabitacionOrganismProps) {
   const [pedidos, setPedidos] = useState<ServiceRequestOrder[]>([])
   const [loading, setLoading] = useState(true)
   const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(null)
   const [busqueda, setBusqueda] = useState('')
   const [filtroPrioridad, setFiltroPrioridad] = useState<'todos' | NivelPrioridad>('todos')
-  const [filtroCanal, setFiltroCanal] = useState<string>('todos')
+  const [filtroCanales, setFiltroCanales] = useState<string[]>([])
 
   // Estados mutables para cada pedido (control de ciclo de vida del KDS)
   const [estadosPorPedido, setEstadosPorPedido] = useState<Record<string, EstadoPedido>>({})
@@ -543,14 +269,15 @@ export function PedidosServicioHabitacionOrganism({
       } else if (!validationAssignment.isValid) {
         setFeedback(validationAssignment)
       } else {
-        setFeedback(
-          validateStatusCode(
-            responseAssignment.status,
+        const baseValidation = validateStatusCode(responseAssignment.status)
+        setFeedback({
+          ...baseValidation,
+          title: baseValidation.title || 'Comanda Actualizada',
+          message:
             validationAssignment.message ||
-              validationPut.message ||
-              `La comanda #${orden.order_number} y su asignación de servicio se han procesado exitosamente (Estado: ${statusComment}).`
-          )
-        )
+            validationPut.message ||
+            `La comanda #${orden.order_number} y su asignación de servicio se han procesado exitosamente (Estado: ${statusComment}).`,
+        })
       }
     } catch (err) {
       console.error('Error al actualizar /service-request o /service-assignments:', err)
@@ -565,93 +292,27 @@ export function PedidosServicioHabitacionOrganism({
   const [roomsMap, setRoomsMap] = useState<Map<string, string>>(new Map())
 
   /**
-   * Resuelve habitaciones y estadías para mostrar etiquetas amigables ("Habitación 101 · Edificio A")
+   * Resuelve habitaciones y estadías mediante repositorio balanceado sin consultas N+1
    * cumpliendo estrictamente con la Regla de Oro: NUNCA mostrar IDs crudos en la interfaz.
    */
-  const cargarMetadatosHabitaciones = useCallback(async () => {
-    try {
-      const staysRes = await api.get<RawStayApi[] | { data?: RawStayApi[] }>('/stays', {
-        validateStatus: () => true,
-      })
-      const staysValidation = validateStatusCode(staysRes.status)
-      if (!staysValidation.isValid || (staysRes.status !== 200 && staysRes.status !== 201)) {
-        return
-      }
-
-      const rawStays = staysRes.data
-      const staysList: RawStayApi[] = Array.isArray(rawStays)
-        ? rawStays
-        : rawStays && typeof rawStays === 'object' && 'data' in rawStays && Array.isArray(rawStays.data)
-          ? rawStays.data
-          : []
-
-      const mapa = new Map<string, string>()
-
-      await Promise.all(
-        staysList.slice(0, 10).map(async (stay) => {
-          try {
-            const rRes = await api.get<RoomApi | { data?: RoomApi }>(
-              `/room/${encodeURIComponent(stay.room_id)}`,
-              { validateStatus: () => true }
-            )
-            const rVal = validateStatusCode(rRes.status)
-            if (rVal.isValid && (rRes.status === 200 || rRes.status === 201)) {
-              const rData =
-                rRes.data && typeof rRes.data === 'object' && 'data' in rRes.data && rRes.data.data
-                  ? rRes.data.data
-                  : (rRes.data as RoomApi)
-
-              let edificio = 'Torre A'
-              try {
-                const bRes = await api.get<BuildingApi | { data?: BuildingApi }>(
-                  `/building/${encodeURIComponent(rData.building_id)}`,
-                  { validateStatus: () => true }
-                )
-                if (bRes.status === 200 || bRes.status === 201) {
-                  const bData =
-                    bRes.data && typeof bRes.data === 'object' && 'data' in bRes.data && bRes.data.data
-                      ? bRes.data.data
-                      : (bRes.data as BuildingApi)
-                  edificio = bData.name || edificio
-                }
-              } catch {
-                // Silencioso
-              }
-
-              mapa.set(
-                stay.room_id,
-                `Habitación ${rData.number || '101'} · Piso ${rData.floor ?? 1} (${edificio})`
-              )
-              mapa.set(stay.id, `Habitación ${rData.number || '101'} (${edificio})`)
-            }
-          } catch {
-            // Silencioso
-          }
-        })
-      )
-
-      if (mapa.size > 0) {
-        setRoomsMap(mapa)
-      }
-    } catch {
-      // Metadatos opcionales
-    }
-  }, [])
+  const cargarMetadatosHabitaciones = useCallback(
+    () => obtenerMapaHabitacionesEstadias(),
+    []
+  )
 
   /**
-   * Consume GET /service-request con Axios y valida mediante validateStatusCode
+   * Consulta GET /service-request y retorna el listado junto con la validación de status code.
    */
-  const cargarPedidos = useCallback(async () => {
-    setLoading(true)
-    setFeedback(null)
-
+  const obtenerPedidosServiceRequest = useCallback(async (): Promise<{
+    lista: ServiceRequestOrder[]
+    validation: StatusCodeValidationResult
+  }> => {
     try {
       const response = await api.get('/service-request', {
         validateStatus: () => true,
       })
 
       const validation = validateStatusCode(response.status)
-      setFeedback(validation)
 
       if (validation.isValid) {
         const raw = response.data
@@ -668,24 +329,41 @@ export function PedidosServicioHabitacionOrganism({
         }
 
         // Si el endpoint devuelve un array vacío, se establece [] para mostrar el mensaje al usuario
-        setPedidos(lista)
-      } else {
-        setPedidos([])
+        return { lista, validation }
       }
+
+      return { lista: [], validation }
     } catch (err) {
       console.error('Error al consultar /service-request:', err)
-      const errValidation = validateStatusCode(500)
-      setFeedback(errValidation)
-      setPedidos([])
-    } finally {
-      setLoading(false)
+      return { lista: [], validation: validateStatusCode(500) }
     }
   }, [])
 
+  const cargarPedidos = useCallback(async () => {
+    setLoading(true)
+    setFeedback(null)
+    const { lista, validation } = await obtenerPedidosServiceRequest()
+    setPedidos(lista)
+    setFeedback(validation)
+    setLoading(false)
+  }, [obtenerPedidosServiceRequest])
+
   useEffect(() => {
-    void cargarPedidos()
-    void cargarMetadatosHabitaciones()
-  }, [cargarPedidos, cargarMetadatosHabitaciones])
+    let activo = true
+    void obtenerPedidosServiceRequest().then(({ lista, validation }) => {
+      if (!activo) return
+      setPedidos(lista)
+      setFeedback(validation)
+      setLoading(false)
+    })
+    void cargarMetadatosHabitaciones().then((mapa) => {
+      if (!activo || !mapa) return
+      setRoomsMap(mapa)
+    })
+    return () => {
+      activo = false
+    }
+  }, [obtenerPedidosServiceRequest, cargarMetadatosHabitaciones])
 
   // Filtrado reactivo de comandas por búsqueda, prioridad y canal
   const pedidosFiltrados = useMemo(() => {
@@ -701,9 +379,13 @@ export function PedidosServicioHabitacionOrganism({
         if (!coincideOrden && !coincideProducto && !coincideNotas) return false
       }
 
-      // 2. Filtro por canal
-      if (filtroCanal !== 'todos') {
-        if (p.channel?.toLowerCase() !== filtroCanal.toLowerCase()) {
+      // 2. Filtro por canal (selección múltiple)
+      if (filtroCanales.length > 0) {
+        const canalPedido = p.channel?.toLowerCase()
+        const coincideCanal = filtroCanales.some(
+          (canal) => canal.toLowerCase() === canalPedido
+        )
+        if (!coincideCanal) {
           return false
         }
       }
@@ -718,15 +400,37 @@ export function PedidosServicioHabitacionOrganism({
 
       return true
     })
-  }, [pedidos, busqueda, filtroCanal, filtroPrioridad])
+  }, [pedidos, busqueda, filtroCanales, filtroPrioridad])
 
   // Paginación reactiva para InfiniteScroll (src/agent.md)
   const PAGE_SIZE_PEDIDOS = 6
   const [visibleCountPedidos, setVisibleCountPedidos] = useState<number>(PAGE_SIZE_PEDIDOS)
 
-  useEffect(() => {
+  const handleActualizarBusqueda = useCallback((valor: string) => {
+    setBusqueda(valor)
     setVisibleCountPedidos(PAGE_SIZE_PEDIDOS)
-  }, [busqueda, filtroCanal, filtroPrioridad])
+  }, [])
+
+  const handleActualizarFiltroPrioridad = useCallback((valor: 'todos' | NivelPrioridad) => {
+    setFiltroPrioridad(valor)
+    setVisibleCountPedidos(PAGE_SIZE_PEDIDOS)
+  }, [])
+
+  const handleActualizarFiltroCanal = useCallback((valores: string[]) => {
+    if (valores.includes('todos')) {
+      setFiltroCanales([])
+    } else {
+      setFiltroCanales(valores)
+    }
+    setVisibleCountPedidos(PAGE_SIZE_PEDIDOS)
+  }, [])
+
+  const handleRestablecerFiltros = useCallback(() => {
+    setBusqueda('')
+    setFiltroPrioridad('todos')
+    setFiltroCanales([])
+    setVisibleCountPedidos(PAGE_SIZE_PEDIDOS)
+  }, [])
 
   const visiblePedidos = useMemo(
     () => pedidosFiltrados.slice(0, visibleCountPedidos),
@@ -740,12 +444,12 @@ export function PedidosServicioHabitacionOrganism({
   return (
     <div className="space-y-6">
       {/* 1. Barra de Control de Cocina: Búsqueda y Filtros de Prioridad */}
-      <div className="flex flex-col gap-4 rounded-3xl border border-line bg-panel p-4 shadow-xs sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative flex-1 max-w-md">
+      <div className="flex flex-col gap-4 rounded-3xl border border-line bg-panel p-4 shadow-xs lg:flex-row lg:items-end lg:justify-between">
+        <div className="relative w-full lg:flex-1">
           <input
             type="text"
             value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
+            onChange={(e) => handleActualizarBusqueda(e.target.value)}
             placeholder="Buscar comanda #, plato o nota especial..."
             className="w-full rounded-2xl border border-line bg-canvas py-2.5 pl-10 pr-4 text-xs font-mono font-medium text-ink placeholder:text-ink-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary transition-all"
           />
@@ -756,7 +460,7 @@ export function PedidosServicioHabitacionOrganism({
           {busqueda && (
             <button
               type="button"
-              onClick={() => setBusqueda('')}
+              onClick={() => handleActualizarBusqueda('')}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-ink-muted hover:text-ink cursor-pointer"
             >
               ×
@@ -764,86 +468,52 @@ export function PedidosServicioHabitacionOrganism({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* Filtro por Código de Colores de Prioridad (Requisito 3) */}
-          <div className="flex items-center gap-1 rounded-2xl border border-line bg-canvas p-1 text-xs font-mono">
-            {[
-              { id: 'todos', label: 'Todos' },
-              { id: 'urgente', label: '🔴 Urgentes' },
-              { id: 'atencion', label: '🟡 En cola' },
-              { id: 'normal', label: '🟢 A tiempo' },
-            ].map((p) => {
-              const activo = filtroPrioridad === p.id
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => setFiltroPrioridad(p.id as 'todos' | NivelPrioridad)}
-                  className={`rounded-xl px-2.5 py-1 text-[11px] font-bold transition-all cursor-pointer ${
-                    activo
-                      ? 'bg-ink text-canvas dark:bg-canvas dark:text-ink shadow-2xs'
-                      : 'text-ink-muted hover:text-ink'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              )
-            })}
+        <div className="flex flex-wrap items-end gap-2.5 shrink-0">
+          {/* Filtro por Prioridad con RecursosDropdown */}
+          <div className="w-40 sm:w-44">
+            <RecursosDropdown
+              label="Prioridad"
+              value={filtroPrioridad}
+              onChange={(val) =>
+                handleActualizarFiltroPrioridad(
+                  (val || 'todos') as 'todos' | NivelPrioridad
+                )
+              }
+              options={OPCIONES_PRIORIDAD}
+              placeholder="Prioridad…"
+              searchable={false}
+              className="text-xs"
+            />
           </div>
 
-          {/* Filtro por Canal de Origen */}
-          <div className="hidden lg:flex items-center gap-1 rounded-2xl border border-line bg-canvas p-1 text-xs font-mono">
-            {[
-              { id: 'todos', label: 'Canal: Todos' },
-              { id: 'front_desk', label: 'Recepción' },
-              { id: 'room_tablet', label: 'Tablet' },
-              { id: 'mobile_app', label: 'Móvil' },
-            ].map((c) => {
-              const activo = filtroCanal === c.id
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => setFiltroCanal(c.id)}
-                  className={`rounded-xl px-2.5 py-1 text-[11px] font-bold transition-all cursor-pointer ${
-                    activo
-                      ? 'bg-primary text-white shadow-2xs'
-                      : 'text-ink-muted hover:text-ink'
-                  }`}
-                >
-                  {c.label}
-                </button>
-              )
-            })}
+          {/* Filtro por Canal con RecursosDropdown (selección múltiple) */}
+          <div className="w-full sm:w-64">
+            <RecursosDropdown
+              label="Canal"
+              multiple
+              selectedValues={filtroCanales}
+              onMultiChange={handleActualizarFiltroCanal}
+              options={OPCIONES_CANAL_FILTRO}
+              placeholder="Todos"
+              searchable={false}
+              className="text-xs"
+            />
           </div>
 
-          {/* Botón de Refrescar Comandas */}
+          {/* Botón de Refrescar Comandas (solo icono) */}
           <button
             type="button"
             onClick={() => void cargarPedidos()}
             disabled={loading}
+            aria-label="Actualizar tiquetera de cocina"
             title="Actualizar tiquetera de cocina"
-            className="inline-flex items-center gap-2 rounded-2xl border border-line bg-canvas px-3.5 py-2 text-xs font-mono font-bold text-ink hover:bg-line/40 transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+            className="inline-flex size-9 items-center justify-center rounded-2xl border border-line bg-canvas text-ink hover:border-primary/40 hover:bg-line/40 transition-all cursor-pointer shadow-2xs disabled:opacity-50"
           >
             <FontAwesomeIcon
               icon={faRotateRight}
-              className={`size-3 ${loading ? 'animate-spin' : ''}`}
+              className={`size-3.5 ${loading ? 'animate-spin' : ''}`}
             />
-            <span className="hidden sm:inline">Refrescar</span>
           </button>
-
-          {/* Acceso a Estado de Asignaciones */}
-          {onIrAEstadoPedido && (
-            <button
-              type="button"
-              onClick={onIrAEstadoPedido}
-              title="Ver estado de asignaciones de servicio (/service-assignments)"
-              className="inline-flex items-center gap-1.5 rounded-2xl border border-line bg-canvas px-3 py-2 text-xs font-mono font-bold text-ink hover:bg-line/40 transition-all cursor-pointer shadow-2xs"
-            >
-              <FontAwesomeIcon icon={faListCheck} className="size-3 text-primary" />
-              <span className="hidden md:inline">Estado Pedidos</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -937,15 +607,6 @@ export function PedidosServicioHabitacionOrganism({
                     Ir al Carrito
                   </button>
                 )}
-                {onIrAEstadoPedido && (
-                  <button
-                    type="button"
-                    onClick={onIrAEstadoPedido}
-                    className="rounded-xl border border-line bg-canvas px-4 py-2 text-xs font-bold text-ink hover:bg-line/40 transition-all cursor-pointer font-mono"
-                  >
-                    Ver Estado de Asignaciones
-                  </button>
-                )}
                 <button
                   type="button"
                   onClick={() => void cargarPedidos()}
@@ -959,11 +620,7 @@ export function PedidosServicioHabitacionOrganism({
             ) : (
               <button
                 type="button"
-                onClick={() => {
-                  setBusqueda('')
-                  setFiltroPrioridad('todos')
-                  setFiltroCanal('todos')
-                }}
+                onClick={handleRestablecerFiltros}
                 className="rounded-xl border border-line bg-canvas px-4 py-2 text-xs font-bold text-ink hover:bg-line/40 transition-all cursor-pointer font-mono"
               >
                 Restablecer Filtros
@@ -990,304 +647,56 @@ export function PedidosServicioHabitacionOrganism({
             className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"
           >
             {visiblePedidos.map((orden, index) => {
-            const canalInfo = formatearCanal(orden.channel)
-            const pagoInfo = formatearMetodoPago(orden.payment_method)
-            const prioridad = calcularPrioridadComanda(orden)
+              const prioridad = calcularPrioridadComanda(orden)
+              const primerItem = orden.items?.[0]
 
-            // Estado del pedido dinámico y mutable para este ticket
-            const estadoActual: EstadoPedido =
-              estadosPorPedido[orden.order_number] ||
-              (orden.status as EstadoPedido) ||
-              'en_preparacion'
-            const estadoActualConfig =
-              ESTADOS_PEDIDO_CONFIG[estadoActual] || ESTADOS_PEDIDO_CONFIG.en_preparacion
+              // Estado del pedido dinámico y mutable para este ticket
+              const estadoActual: EstadoPedido =
+                estadosPorPedido[orden.order_number] ||
+                (orden.status as EstadoPedido) ||
+                'en_preparacion'
 
-            // Cálculo financiero de la comanda
-            const subtotalProductos = (orden.items || []).reduce(
-              (acc, it) => acc + (Number(it.price_unit) || 0) * (Number(it.amount) || 1),
-              0
-            )
-            const totalItemsCount = (orden.items || []).reduce(
-              (acc, it) => acc + (Number(it.amount) || 1),
-              0
-            )
-            const propinaNum = Number(orden.tip) || 0
-            const totalPedido = subtotalProductos + propinaNum
+              // Resolución amigable de habitación sin exponer IDs crudos
+              const habitacionEtiqueta =
+                roomsMap.get(orden.room_id) ||
+                roomsMap.get(orden.stay_id) ||
+                'Habitación Asignada al Huésped'
 
-            // Resolución amigable de habitación sin exponer IDs crudos (Regla de Oro #1)
-            const habitacionEtiqueta =
-              roomsMap.get(orden.room_id) ||
-              roomsMap.get(orden.stay_id) ||
-              'Habitación Asignada al Huésped'
-
-            // Detectar si la orden contiene modificaciones o alertas para aviso destacado
-            const tieneAlertasItem = (orden.items || []).some((it) => it.note && it.note.trim())
-            const tieneAlertasGenerales = Boolean(orden.general_notes && orden.general_notes.trim())
-            const ordenConAlertas = tieneAlertasItem || tieneAlertasGenerales
-
-            return (
-              <motion.article
-                key={orden.order_number || index}
-                variants={KITCHEN_TICKET_CARD_VARIANTS}
-                className={`relative flex flex-col justify-between overflow-hidden rounded-2xl bg-panel transition-all duration-200 ${prioridad.bordeClase}`}
-              >
-                {/* 1. Franja Superior de Prioridad y Comanda (Código de Colores Dinámico) */}
-                <header
-                  className={`px-4 py-2.5 flex items-center justify-between gap-2 border-b border-black/10 select-none ${prioridad.bgHeaderClase} ${prioridad.textHeaderClase}`}
-                >
-                  <div className="flex items-center gap-2">
-                    <FontAwesomeIcon icon={faReceipt} className="size-3.5 opacity-90" />
-                    <span className="font-mono text-sm sm:text-base font-black tracking-widest uppercase">
-                      ORDEN #{orden.order_number}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {/* Sección Entrega */}
-                    <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] uppercase tracking-wider font-mono font-black bg-black/25 backdrop-blur-xs">
-                      <FontAwesomeIcon icon={prioridad.icon} className="size-2.5" />
-                      <span>{prioridad.tiempoTexto}</span>
-                    </span>
-
-                    {/* Pequeño botón para cambiar el estado del pedido, ubicado al lado derecho de ENTREGA */}
-                    <div className="relative">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setOpenDropdownOrderId(
-                            openDropdownOrderId === orden.order_number ? null : orden.order_number
-                          )
-                        }}
-                        className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] uppercase tracking-wider font-mono font-black bg-black/40 hover:bg-black/60 active:scale-95 text-white border border-white/25 transition-all cursor-pointer backdrop-blur-xs shadow-2xs"
-                        title="Cambiar estado del pedido"
-                      >
-                        <span className={`size-1.5 rounded-full ${estadoActualConfig.dotColor} animate-pulse`} />
-                        <span>{estadoActualConfig.label}</span>
-                        <FontAwesomeIcon icon={faChevronDown} className="size-2 opacity-80 ml-0.5" />
-                      </button>
-
-                      {/* Dropdown flotante con las opciones de estado */}
-                      {openDropdownOrderId === orden.order_number && (
-                        <div
-                          onClick={(e) => e.stopPropagation()}
-                          className="absolute right-0 top-full mt-1.5 z-40 w-44 rounded-xl border border-line bg-panel p-1.5 shadow-xl font-mono text-xs text-ink space-y-0.5 backdrop-blur-md"
-                        >
-                          <div className="px-2 py-1 text-[9px] font-black uppercase text-ink-muted border-b border-line/60 tracking-wider">
-                            Actualizar Estado
-                          </div>
-                          {(Object.keys(ESTADOS_PEDIDO_CONFIG) as EstadoPedido[]).map((estadoKey) => {
-                            const conf = ESTADOS_PEDIDO_CONFIG[estadoKey]
-                            const esSeleccionado = estadoActual === estadoKey
-
-                            return (
-                              <button
-                                key={estadoKey}
-                                type="button"
-                                onClick={() => handleCambiarEstadoPedido(orden.order_number, estadoKey)}
-                                className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg text-[10px] font-bold text-left transition-colors cursor-pointer ${
-                                  esSeleccionado
-                                    ? 'bg-primary text-white shadow-2xs'
-                                    : 'hover:bg-line/40 text-ink'
-                                }`}
-                              >
-                                <span className="flex items-center gap-1.5">
-                                  <FontAwesomeIcon icon={conf.icon} className="size-2.5" />
-                                  <span>{conf.label}</span>
-                                </span>
-                                {esSeleccionado && <FontAwesomeIcon icon={faCheck} className="size-2.5" />}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Botón de actualizar al lado del dropdown con icono de FontAwesome */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        void handleActualizarOrden(orden)
-                      }}
-                      disabled={actualizandoOrdenId === (orden.order_number || orden.id)}
-                      className="inline-flex items-center justify-center size-6 rounded-full bg-black/40 hover:bg-black/60 active:scale-95 text-white border border-white/25 transition-all cursor-pointer backdrop-blur-xs shadow-2xs disabled:opacity-50"
-                      title="Actualizar comanda y registrar asignación (PUT /service-request/{id} + POST /service-assignments)"
-                    >
-                      <FontAwesomeIcon
-                        icon={faRotateRight}
-                        className={`size-2.5 ${actualizandoOrdenId === (orden.order_number || orden.id) ? 'animate-spin' : ''}`}
-                      />
-                    </button>
-                  </div>
-                </header>
-
-                {/* 2. Cuerpo del Ticket de Cocina */}
-                <div className="p-4 sm:p-5 space-y-4 flex-1">
-                  {/* Banner de Prioridad / Estado de Cocina */}
-                  <div className="flex items-center justify-between gap-2 pb-2 border-b-2 border-dashed border-line">
-                    <span className="text-[10px] font-mono font-black uppercase tracking-wider text-ink-muted">
-                      ESTADO: <span className="text-ink font-black">{estadoActualConfig.label}</span>
-                    </span>
-                    <span className="text-[10px] font-mono font-bold text-ink-muted">
-                      ITEMS: <strong className="text-ink">{totalItemsCount}</strong>
-                    </span>
-                  </div>
-
-                  {/* Ficha de Ubicación y Huésped (REGLA DE ORO: SIN IDs CRUDOS) */}
-                  <div className="rounded-xl border border-line bg-canvas/60 p-3 space-y-1.5 font-mono text-xs">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 truncate">
-                        <FontAwesomeIcon icon={faDoorOpen} className="text-primary size-3.5 shrink-0" />
-                        <span className="font-black text-ink uppercase truncate" title={habitacionEtiqueta}>
-                          {habitacionEtiqueta}
-                        </span>
-                      </div>
-                      <span className="shrink-0 text-[10px] font-bold text-ink-muted uppercase">
-                        ACTIVA
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-line/60 text-[11px] text-ink-muted">
-                      <div className="flex items-center gap-1.5">
-                        <FontAwesomeIcon icon={faUser} className="size-3 text-ink-muted" />
-                        <span>Huésped Titular</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <FontAwesomeIcon icon={canalInfo.icon} className="size-3 text-primary" />
-                        <span>{canalInfo.label}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 3. LISTA DE PLATOS PRINCIPALES (Requisito 1: font-mono + MAYÚSCULAS) */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between font-mono text-[11px] font-black uppercase tracking-wider text-ink-muted border-b border-line pb-1">
-                      <span className="flex items-center gap-1.5">
-                        <FontAwesomeIcon icon={faUtensils} className="size-3 text-primary" />
-                        <span>Platos & Bebidas</span>
-                      </span>
-                      <span>Cant.</span>
-                    </div>
-
-                    <div className="space-y-2.5 divide-y divide-line/40">
-                      {(orden.items || []).map((item, idx) => {
-                        const tieneModificacion = Boolean(item.note && item.note.trim())
-
-                        return (
-                          <div
-                            key={item.item_menu_id || idx}
-                            className={`pt-2 first:pt-0 font-mono transition-colors ${
-                              tieneModificacion
-                                ? 'rounded-lg p-2 bg-red-500/5 dark:bg-red-500/10 border border-red-500/30'
-                                : ''
-                            }`}
-                          >
-                            {/* Fila del Plato: Cantidad destacada + Nombre en MAYÚSCULAS */}
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="flex items-start gap-2.5 flex-1 min-w-0">
-                                {/* Bloque numérico de cantidad estilo KDS de cocina */}
-                                <span className="inline-flex items-center justify-center min-w-8 px-1.5 py-0.5 rounded font-mono font-black text-xs sm:text-sm bg-ink text-canvas dark:bg-canvas dark:text-ink shrink-0 tracking-tight">
-                                  {item.amount}X
-                                </span>
-
-                                <div className="min-w-0 flex-1">
-                                  {/* Nombre del plato en MAYÚSCULAS y monoespaciado */}
-                                  <h4 className="font-mono font-black text-sm text-ink uppercase tracking-wide leading-tight">
-                                    {item.name_snapshot}
-                                  </h4>
-                                </div>
-                              </div>
-
-                              {/* Precio unitario */}
-                              <span className="font-mono text-xs font-bold text-ink-muted shrink-0 text-right">
-                                {formatearMonedaCOP(Number(item.price_unit) * Number(item.amount))}
-                              </span>
-                            </div>
-
-                            {/* Requisito 2: ALERTAS VISUALES EN COLOR ROJO PARA NOTAS/MODIFICACIONES */}
-                            {tieneModificacion && (
-                              <div className="mt-1.5 flex items-start gap-2 rounded-md border-2 border-red-600 bg-red-600/15 dark:bg-red-950/60 p-2 text-xs font-mono font-black text-red-600 dark:text-red-400">
-                                <FontAwesomeIcon
-                                  icon={faTriangleExclamation}
-                                  className="size-3.5 mt-0.5 shrink-0 text-red-600 dark:text-red-400 animate-pulse"
-                                />
-                                <div className="min-w-0 flex-1">
-                                  <span className="text-[10px] font-black uppercase tracking-wider underline">
-                                    *** MODIFICACIÓN EN PREPARACIÓN ***
-                                  </span>
-                                  <p className="font-mono font-black text-xs sm:text-sm text-red-700 dark:text-red-300 uppercase leading-snug mt-0.5">
-                                    {item.note}
-                                  </p>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Requisito 2: ALERTA ROJA PARA NOTAS GENERALES DE COCINA / ALERGIAS */}
-                  {tieneAlertasGenerales && (
-                    <div className="rounded-xl border-2 border-red-600 bg-red-600/15 dark:bg-red-950/50 p-3 font-mono text-xs text-red-600 dark:text-red-400 space-y-1">
-                      <div className="flex items-center gap-2 font-black uppercase tracking-wider text-[11px] text-red-700 dark:text-red-300">
-                        <FontAwesomeIcon icon={faTriangleExclamation} className="size-3.5 text-red-600 animate-pulse" />
-                        <span>*** ALERTA DE COCINA / NOTAS ESPECIALES ***</span>
-                      </div>
-                      <p className="font-mono font-black text-xs sm:text-sm uppercase tracking-wide text-red-800 dark:text-red-200 pl-5 leading-snug">
-                        {orden.general_notes}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Instrucciones de Delivery / Entrega */}
-                  {orden.delivery_instructions && (
-                    <div className="rounded-xl border border-line bg-canvas/70 p-2.5 font-mono text-xs text-ink space-y-0.5">
-                      <div className="flex items-center gap-1.5 text-[10px] font-bold text-ink-muted uppercase">
-                        <FontAwesomeIcon icon={faTruck} className="size-3 text-primary" />
-                        <span>INSTRUCCIONES DE DESPACHO:</span>
-                      </div>
-                      <p className="font-mono font-semibold uppercase text-xs text-ink-soft">
-                        {orden.delivery_instructions}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                {/* 3. Pie del Ticket (Estilo corte de tiquetera con línea punteada) */}
-                <footer className="p-4 border-t-2 border-dashed border-line bg-canvas/40 space-y-2 font-mono text-xs">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-ink-muted text-[11px]">
-                    <div className="flex items-center gap-1.5">
-                      <FontAwesomeIcon icon={faClock} className="size-3 text-primary" />
-                      <span className="uppercase">ENTREGA: {formatearFechaHoraLegible(orden.scheduled_for)}</span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <FontAwesomeIcon icon={pagoInfo.icon} className="size-3 text-emerald-600 dark:text-emerald-400" />
-                      <span className="uppercase">{pagoInfo.label}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1 border-t border-line/60">
-                    <span className="text-[11px] font-bold uppercase text-ink-muted">
-                      {ordenConAlertas ? '🚨 COMANDA MODIFICADA' : 'COMANDA ESTÁNDAR'}
-                    </span>
-                    <span className="text-sm font-black text-ink">
-                      TOTAL: {formatearMonedaCOP(totalPedido)}
-                    </span>
-                  </div>
-
-                  {/* Código decorativo de tiquetera POS */}
-                  <div className="text-center pt-1 text-[9px] font-mono tracking-[0.3em] opacity-40 select-none">
-                    ||| | ||||| || | |||| ||| | |||
-                  </div>
-                </footer>
-              </motion.article>
-            )
-          })}
-        </motion.div>
-      </InfiniteScroll>
+              return (
+                <PedidoServicioHabitacionCard
+                  key={orden.id || orden.order_number || index}
+                  order_number={orden.order_number}
+                  person_id={orden.person_id}
+                  channel={orden.channel}
+                  item_menu_id={primerItem?.item_menu_id ?? 'N/A'}
+                  name_snapshot={primerItem?.name_snapshot ?? 'Sin producto especificado'}
+                  amount={Number(primerItem?.amount ?? 0)}
+                  price_unit={Number(primerItem?.price_unit ?? 0)}
+                  items={orden.items}
+                  estadoActual={estadoActual}
+                  prioridad={prioridad}
+                  habitacionEtiqueta={habitacionEtiqueta}
+                  scheduled_for={orden.scheduled_for}
+                  general_notes={orden.general_notes}
+                  delivery_instructions={orden.delivery_instructions}
+                  tip={orden.tip}
+                  motionVariants={KITCHEN_TICKET_CARD_VARIANTS}
+                  openDropdown={openDropdownOrderId === orden.order_number}
+                  isUpdating={actualizandoOrdenId === (orden.order_number || orden.id)}
+                  onToggleDropdown={() =>
+                    setOpenDropdownOrderId(
+                      openDropdownOrderId === orden.order_number ? null : orden.order_number
+                    )
+                  }
+                  onChangeEstado={(nuevoEstado) =>
+                    handleCambiarEstadoPedido(orden.order_number, nuevoEstado)
+                  }
+                  onActualizarOrden={() => void handleActualizarOrden(orden)}
+                />
+              )
+            })}
+          </motion.div>
+        </InfiniteScroll>
       )}
     </div>
   )

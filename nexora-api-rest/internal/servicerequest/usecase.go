@@ -67,12 +67,10 @@ type CreateInput struct {
 	StayID               string
 	PersonID             string
 	Channel              Channel
-	PaymentMethod        PaymentMethod
 	GeneralNotes         string
 	DeliveryInstructions string
 	ScheduledFor         *time.Time
 	Currency             string
-	Tip                  *float64
 	Items                []CreateItemInput
 	CreatedBy            string
 }
@@ -146,12 +144,10 @@ func (uc *UseCase) Create(ctx context.Context, in CreateInput) (ServiceRequest, 
 		in.StayID,
 		in.PersonID,
 		in.Channel,
-		in.PaymentMethod,
 		in.GeneralNotes,
 		in.DeliveryInstructions,
 		in.ScheduledFor,
 		in.Currency,
-		in.Tip,
 		items,
 		in.CreatedBy,
 		now,

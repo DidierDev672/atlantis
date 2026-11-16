@@ -24,14 +24,10 @@ export function CarritoFlotanteFab({
       whileTap={{ scale: 0.96 }}
       aria-label={`Abrir carrito (${totalArticulos} productos agregados)`}
       title="Ver productos agregados al carrito"
-      className={`bg-primary shadow-primary/25 hover:bg-primary/95 inline-flex cursor-pointer items-center gap-2.5 rounded-2xl px-4 py-2.5 text-white shadow-lg ring-1 ring-white/20 backdrop-blur-md transition-colors ${className}`}
+      className={`bg-primary shadow-primary/25 hover:bg-primary/95 inline-flex cursor-pointer items-center gap-2 rounded-2xl px-3.5 py-2.5 text-white shadow-lg ring-1 ring-white/20 backdrop-blur-md transition-colors ${className}`}
     >
       <span className="relative flex size-4 items-center justify-center">
         <FontAwesomeIcon icon={faCartShopping} className="size-4" />
-      </span>
-
-      <span className="text-xs font-extrabold tracking-wide">
-        Carrito
       </span>
 
       <AnimatePresence mode="popLayout" initial={false}>

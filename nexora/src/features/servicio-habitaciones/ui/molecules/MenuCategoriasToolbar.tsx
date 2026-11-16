@@ -114,30 +114,31 @@ export function MenuCategoriasToolbar({
             className="w-44 sm:w-56 [&>label]:sr-only"
           />
 
-          {/* Botón Refrescar */}
+          {/* Botón Refrescar (solo icono) */}
           <button
             type="button"
             onClick={onRecargar}
             disabled={loading}
-            className="border-line bg-canvas text-ink hover:bg-panel inline-flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition-all active:scale-95 disabled:opacity-50"
-            title="Volver a consultar el endpoint /menu-category"
+            aria-label="Actualizar categorías"
+            title="Actualizar categorías"
+            className="border-line bg-canvas text-ink hover:bg-panel hover:border-primary/40 inline-flex size-9 cursor-pointer items-center justify-center rounded-xl border transition-all active:scale-95 disabled:opacity-50"
           >
             <FontAwesomeIcon
               icon={faArrowsRotate}
-              className={`size-3 ${loading ? 'animate-spin' : ''}`}
+              className={`size-3.5 ${loading ? 'animate-spin' : ''}`}
             />
-            <span className="hidden sm:inline">Actualizar</span>
           </button>
 
-          {/* Botón para registrar nuevo servicio si se proporciona */}
+          {/* Botón para registrar nueva categoría (solo icono) */}
           {onNuevoRegistro && (
             <button
               type="button"
               onClick={onNuevoRegistro}
-              className="bg-primary hover:bg-primary/90 inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-white shadow-xs transition-all active:scale-95"
+              aria-label="Registrar categoría"
+              title="Registrar categoría"
+              className="bg-primary hover:bg-primary/90 inline-flex size-9 cursor-pointer items-center justify-center rounded-xl text-white shadow-xs transition-all active:scale-95"
             >
-              <FontAwesomeIcon icon={faPlus} className="size-3" />
-              <span>Registrar Categoría</span>
+              <FontAwesomeIcon icon={faPlus} className="size-3.5" />
             </button>
           )}
         </div>

@@ -13,6 +13,7 @@ import {
 } from '../../infrastructure/image-load-balancer';
 import { MenuCategoriaCard } from '../molecules/MenuCategoriaCard';
 import { MenuCategoriaModalDetalle } from '../molecules/MenuCategoriaModalDetalle';
+import { MenuCategoriaModalProductos } from './MenuCategoriaModalProductos';
 import { MenuCategoriasEmptyState } from '../molecules/MenuCategoriasEmptyState';
 import { MenuCategoriasToolbar } from '../molecules/MenuCategoriasToolbar';
 import type { LayoutViewMode } from '../atoms/LayoutViewSwitch';
@@ -84,6 +85,8 @@ export function MenuCategoriasGrid({
   );
 
   const [categoriaSeleccionada, setCategoriaSeleccionada] =
+    useState<MenuCategoria | null>(null);
+  const [categoriaProductosModal, setCategoriaProductosModal] =
     useState<MenuCategoria | null>(null);
 
   const showLoading = useDelayVisibility(loading, { delay: 0, minDuration: 450 });
@@ -256,6 +259,7 @@ export function MenuCategoriasGrid({
                           index={idx}
                           viewMode="masonry"
                           onVerDetalle={(item) => setCategoriaSeleccionada(item)}
+                          onVerProductos={(item) => setCategoriaProductosModal(item)}
                           onAgregarProducto={(item) => onAgregarProducto?.(item)}
                         />
                       </LazyAnimatedWrapper>
@@ -280,6 +284,7 @@ export function MenuCategoriasGrid({
                           index={idx}
                           viewMode="grid"
                           onVerDetalle={(item) => setCategoriaSeleccionada(item)}
+                          onVerProductos={(item) => setCategoriaProductosModal(item)}
                           onAgregarProducto={(item) => onAgregarProducto?.(item)}
                         />
                       </LazyAnimatedWrapper>
@@ -304,6 +309,13 @@ export function MenuCategoriasGrid({
       <MenuCategoriaModalDetalle
         categoria={categoriaSeleccionada}
         onClose={() => setCategoriaSeleccionada(null)}
+        onAgregarProducto={onAgregarProducto}
+      />
+
+      {/* 5. Modal de Productos vinculados a la Categoría */}
+      <MenuCategoriaModalProductos
+        categoria={categoriaProductosModal}
+        onClose={() => setCategoriaProductosModal(null)}
         onAgregarProducto={onAgregarProducto}
       />
     </div>
