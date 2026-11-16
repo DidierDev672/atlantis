@@ -43,29 +43,40 @@ func (h *Handler) Register(mux *http.ServeMux) {
 
 // CreateItemRequest representa la entrada para un ítem dentro de la solicitud.
 type CreateItemRequest struct {
-	ItemMenuID   string  `json:"item_menu_id"`
-	NameSnapshot string  `json:"name_snapshot"`
-	PriceUnit    float64 `json:"price_unit"`
-	TaxRate      float64 `json:"tax_rate"`
-	Amount       int     `json:"amount"`
-	Note         string  `json:"note"`
+	ID           string     `json:"id,omitempty"`
+	OrderID      string     `json:"order_id,omitempty"`
+	ItemMenuID   string     `json:"item_menu_id"`
+	NameSnapshot string     `json:"name_snapshot"`
+	PriceUnit    float64    `json:"price_unit"`
+	TaxRate      float64    `json:"tax_rate"`
+	Amount       int        `json:"amount"`
+	Note         string     `json:"note"`
+	CreatedBy    string     `json:"created_by,omitempty"`
+	CreatedAt    *time.Time `json:"created_at,omitempty"`
+	UpdatedAt    *time.Time `json:"updated_at,omitempty"`
 }
 
 // CreateRequest representa el payload recibido en POST /service-request.
 type CreateRequest struct {
+	ID                   string              `json:"id,omitempty"`
 	OrderNumber          string              `json:"order_number"`
 	StayID               string              `json:"stay_id"`
 	PersonID             string              `json:"person_id"`
+	Status               string              `json:"status,omitempty"`
 	Channel              string              `json:"channel"`
-	PaymentMethod        string              `json:"payment_method"`
 	GeneralNotes         string              `json:"general_notes"`
 	DeliveryInstructions string              `json:"delivery_instructions"`
 	ScheduledFor         *time.Time          `json:"scheduled_for"`
 	Currency             string              `json:"currency"`
-	Tip                  *float64            `json:"tip"`
+	Subtotal             float64             `json:"subtotal,omitempty"`
+	Taxes                float64             `json:"taxes,omitempty"`
+	Total                float64             `json:"total,omitempty"`
 	Items                []CreateItemRequest `json:"items"`
+	History              []HistoryResponse   `json:"history,omitempty"`
 	CreatedBy            string              `json:"created_by"`
 	CreatedByAlt         string              `json:"creadted_by"`
+	CreatedAt            *time.Time          `json:"created_at,omitempty"`
+	UpdatedAt            *time.Time          `json:"updated_at,omitempty"`
 }
 
 // UpdateRequest representa el payload recibido en PUT /service-request.
@@ -123,14 +134,12 @@ type Response struct {
 	PersonID              string            `json:"person_id"`
 	Status                string            `json:"status"`
 	Channel               string            `json:"channel"`
-	PaymentMethod         string            `json:"payment_method"`
 	GeneralNotes          string            `json:"general_notes"`
 	DeliveryInstructions  string            `json:"delivery_instructions"`
 	ScheduledFor          *time.Time        `json:"scheduled_for,omitempty"`
 	Currency              string            `json:"currency"`
 	Subtotal              float64           `json:"subtotal"`
 	Taxes                 float64           `json:"taxes"`
-	Tip                   *float64          `json:"tip,omitempty"`
 	Total                 float64           `json:"total"`
 	Grade                 *int              `json:"grade,omitempty"`
 	GuestComment          *string           `json:"guest_comment,omitempty"`
@@ -186,14 +195,12 @@ func newResponse(s ServiceRequest) Response {
 		PersonID:              s.PersonID,
 		Status:                string(s.Status),
 		Channel:               string(s.Channel),
-		PaymentMethod:         string(s.PaymentMethod),
 		GeneralNotes:          s.GeneralNotes,
 		DeliveryInstructions:  s.DeliveryInstructions,
 		ScheduledFor:          s.ScheduledFor,
 		Currency:              s.Currency,
 		Subtotal:              s.Subtotal,
 		Taxes:                 s.Taxes,
-		Tip:                   s.Tip,
 		Total:                 s.Total,
 		Grade:                 s.Grade,
 		GuestComment:          s.GuestComment,
@@ -240,22 +247,15 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		channel = ChannelRoomTablet
 	}
 
-	paymentMethod := PaymentMethod(req.PaymentMethod)
-	if paymentMethod == "" {
-		paymentMethod = PaymentMethodRoomCharge
-	}
-
 	created, err := h.uc.Create(r.Context(), CreateInput{
 		OrderNumber:          req.OrderNumber,
 		StayID:               req.StayID,
 		PersonID:             req.PersonID,
 		Channel:              channel,
-		PaymentMethod:        paymentMethod,
 		GeneralNotes:         req.GeneralNotes,
 		DeliveryInstructions: req.DeliveryInstructions,
 		ScheduledFor:         req.ScheduledFor,
 		Currency:             req.Currency,
-		Tip:                  req.Tip,
 		Items:                items,
 		CreatedBy:            createdBy,
 	})

@@ -6,7 +6,6 @@ import {
   faXmark,
   faHashtag,
   faClock,
-  faDice,
   faCircleExclamation,
 } from '@fortawesome/free-solid-svg-icons'
 import { fadeUp } from '../../../../design-tokens/motion'
@@ -29,6 +28,7 @@ import {
   generarNumeroOrdenAleatorio,
 } from '../../domain/confirmar-pedido-cocina.constants'
 import { type RawStayApi } from './ModalSeleccionarRecepcion'
+import { MartilloJuezAnimado } from '../atoms/MartilloJuezAnimado'
 
 /**
  * Extrae el email del creador desde localStorage bajo el JSON auth_token (campo Email o email)
@@ -70,26 +70,63 @@ export interface DatosOrdenCocina {
   notasGenerales: string
 }
 
+function generarUuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.floor(Math.random() * 16)
+    const v = c === 'x' ? r : (r & 0x3) | 0x8
+    return v.toString(16)
+  })
+}
+
 export interface ServiceRequestItemPayload {
+  id: string
+  order_id: string
   item_menu_id: string
   name_snapshot: string
   price_unit: number
   tax_rate: number
   amount: number
   note: string
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ServiceRequestHistoryPayload {
+  id: string
+  order_id: string
+  previous_state: string
+  status_new: string
+  actor_type: string
+  actor_id: string
+  comment: string
+  created_by: string
+  created_at: string
+  updated_at: string
 }
 
 export interface ServiceRequestPayload {
+  id: string
+  order_number: string
   stay_id: string
   person_id: string
+  status: string
   channel: string
-  payment_method: string
   general_notes: string
   delivery_instructions: string
+  scheduled_for: string
   currency: string
-  tip: number
+  subtotal: number
+  taxes: number
+  total: number
   created_by: string
   items: ServiceRequestItemPayload[]
+  history: ServiceRequestHistoryPayload[]
+  created_at: string
+  updated_at: string
 }
 
 export interface ModalConfirmarPedidoCocinaProps {
@@ -196,14 +233,9 @@ export function ModalConfirmarPedidoCocina({
     recepcionInicial?.trim() ||
     ''
   const [canal, setCanal] = useState(OPCIONES_CANAL[0].value)
-  const [metodoPago, setMetodoPago] = useState(OPCIONES_METODO_PAGO[0].value)
-  const [propina, setPropina] = useState<string>('0')
   const [horarioEntrega, setHorarioEntrega] = useState(calcularHorarioEntregaPorDefecto)
   const [instruccionesDelivery, setInstruccionesDelivery] = useState('')
   const [notasGenerales, setNotasGenerales] = useState('')
-
-  const propinaNumerica = Math.max(0, Number(propina) || 0)
-  const totalConPropina = totalGeneral + propinaNumerica
 
   /**
    * Carga la lista de huéspedes consumiendo GET /persons con balanceador de carga
@@ -286,15 +318,15 @@ export function ModalConfirmarPedidoCocina({
     }
   }, [isOpen, cargarOpcionesHuespedes])
 
-  // Cierre con la tecla Escape
+  // Cierre con la tecla Escape (bloqueado durante el envío para proteger la animación Rocket)
   useEffect(() => {
     if (!isOpen) return
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape' && !isSubmitting) onClose()
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, onClose])
+  }, [isOpen, isSubmitting, onClose])
 
   if (!isOpen) return null
 
@@ -304,13 +336,9 @@ export function ModalConfirmarPedidoCocina({
     setNumeroOrden(soloDigitos)
   }
 
-  const handleGenerarAleatorio = () => {
-    const nuevoNumero = generarNumeroOrdenAleatorio()
-    setNumeroOrden(nuevoNumero)
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isSubmitting) return
     setSubmitError(null)
     setIsSubmitting(true)
 
@@ -351,39 +379,96 @@ export function ModalConfirmarPedidoCocina({
         // Respaldo si /stays no responde
       }
 
+      // Identificadores y marcas temporales ISO 8601 para la orden, ítems e historial
+      const orderId = generarUuid()
+      const nowIso = new Date().toISOString()
+      const parsedScheduled = horarioEntrega ? new Date(horarioEntrega) : null
+      const scheduledForIso =
+        parsedScheduled && !Number.isNaN(parsedScheduled.getTime())
+          ? parsedScheduled.toISOString()
+          : nowIso
+
+      // Creador obtenido desde localStorage (auth_token -> Email)
+      const createdBy = obtenerCreatedBy()
+
       // Ítems obtenidos desde la store de Zustand del carrito adaptados al contrato del endpoint
       const cartItems = useCarritoStore.getState().items
       const itemsPayload: ServiceRequestItemPayload[] = cartItems.map((ci) => ({
+        id: generarUuid(),
+        order_id: orderId,
         item_menu_id: ci.producto.id ?? '',
         name_snapshot: ci.producto.name,
         price_unit: Number(ci.producto.price) || 0,
         tax_rate: Number(ci.producto.tax_percentage ?? 0) || 0,
         amount: Number(ci.cantidad) || 1,
         note: ci.notas?.trim() || '',
+        created_by: createdBy,
+        created_at: nowIso,
+        updated_at: nowIso,
       }))
 
-      // Creador obtenido desde localStorage (auth_token -> Email)
-      const createdBy = obtenerCreatedBy()
+      // Cálculo de subtotal, impuestos y total exacto
+      const subtotalBruto = itemsPayload.reduce(
+        (acc, item) => acc + item.price_unit * item.amount,
+        0
+      )
+      const taxesBruto = itemsPayload.reduce(
+        (acc, item) => acc + item.price_unit * item.amount * (item.tax_rate / 100),
+        0
+      )
+      const subtotal = Number(subtotalBruto.toFixed(2))
+      const taxes = Number(taxesBruto.toFixed(2))
+      const total = Number((subtotal + taxes).toFixed(2))
+
+      // Historial inicial de creación de la orden
+      const historyPayload: ServiceRequestHistoryPayload[] = [
+        {
+          id: generarUuid(),
+          order_id: orderId,
+          previous_state: '',
+          status_new: 'pending',
+          actor_type: 'guest',
+          actor_id: personIdFinal,
+          comment: 'Order created',
+          created_by: createdBy,
+          created_at: nowIso,
+          updated_at: nowIso,
+        },
+      ]
+
+      const metodoPagoDefault = OPCIONES_METODO_PAGO[0].value
 
       // Construcción en segundo plano del payload exacto para POST /service-request
       const payload: ServiceRequestPayload = {
+        id: orderId,
+        order_number: ordenFinal,
         stay_id: stayIdFinal,
         person_id: personIdFinal,
+        status: 'pending',
         channel: canal,
-        payment_method: metodoPago,
         general_notes: notasGenerales.trim(),
         delivery_instructions: instruccionesDelivery.trim(),
+        scheduled_for: scheduledForIso,
         currency: 'COP',
-        tip: propinaNumerica,
+        subtotal,
+        taxes,
+        total,
         created_by: createdBy,
         items: itemsPayload,
+        history: historyPayload,
+        created_at: nowIso,
+        updated_at: nowIso,
       }
 
-      const response = await executeBalancedRequest(() =>
-        api.post('/service-request', payload, {
-          validateStatus: () => true,
-        })
-      )
+      // Garantizamos una duración mínima de 1.8s para que la animación Rocket sea visible durante el POST
+      const [response] = await Promise.all([
+        executeBalancedRequest(() =>
+          api.post('/service-request', payload, {
+            validateStatus: () => true,
+          })
+        ),
+        new Promise((resolve) => setTimeout(resolve, 1800)),
+      ])
 
       const validation = validateStatusCode(response.status)
 
@@ -392,8 +477,8 @@ export function ModalConfirmarPedidoCocina({
           numeroOrden: ordenFinal,
           recepcion: recepcionFinal,
           canal,
-          metodoPago,
-          propina: propinaNumerica,
+          metodoPago: metodoPagoDefault,
+          propina: 0,
           horarioEntrega,
           instruccionesDelivery: instruccionesDelivery.trim(),
           notasGenerales: notasGenerales.trim(),
@@ -417,17 +502,61 @@ export function ModalConfirmarPedidoCocina({
   }
 
   return (
-    <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-        {/* Backdrop desenfocado */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          onClick={onClose}
-          className="fixed inset-0 bg-ink/60 backdrop-blur-xs transition-opacity"
-          aria-hidden="true"
-        />
+    <>
+      {/* Animación Rocket a pantalla completa sobre el modal mientras se envía POST /service-request */}
+      <AnimatePresence>
+        {isSubmitting && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="fixed inset-0 z-60 flex flex-col items-center justify-center bg-black/75 p-4 backdrop-blur-md select-none text-center"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 16 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 16 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              className="flex flex-col items-center"
+            >
+              <div className="relative rounded-3xl border border-white/20 bg-panel/90 p-3 shadow-2xl backdrop-blur-xl">
+                <Rocket
+                  launch={true}
+                  autoLaunch={true}
+                  interactive={false}
+                  size="md"
+                  showStars={true}
+                  showPad={true}
+                />
+              </div>
+
+              <div className="mt-5 space-y-1.5 max-w-sm">
+                <h3 className="font-serif text-lg font-bold text-white tracking-wide">
+                  Enviando Pedido
+                </h3>
+                <p className="text-xs text-white/80 leading-relaxed">
+                  Confirmando y enviando tu pedido a cocina, por favor espera un momento…
+                </p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
+          {/* Backdrop desenfocado */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => {
+              if (!isSubmitting) onClose()
+            }}
+            className="fixed inset-0 bg-ink/60 backdrop-blur-xs transition-opacity"
+            aria-hidden="true"
+          />
 
         {/* Contenedor del Modal */}
         <motion.div
@@ -444,9 +573,12 @@ export function ModalConfirmarPedidoCocina({
                 <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-primary">
                   <span>Solicitud de Pedido</span>
                 </div>
-                <h3 className="mt-2 font-serif text-xl sm:text-2xl font-bold text-ink">
-                  Confirmar y Enviar Pedido
-                </h3>
+                <div className="mt-2 flex items-center gap-3">
+                  <MartilloJuezAnimado />
+                  <h3 className="font-serif text-xl sm:text-2xl font-bold text-ink">
+                    Confirmar y Enviar Pedido
+                  </h3>
+                </div>
                 <p className="mt-1 text-xs sm:text-sm text-ink-muted">
                   Completa los datos para registrar los {totalArticulos} artículos del pedido.
                 </p>
@@ -456,7 +588,8 @@ export function ModalConfirmarPedidoCocina({
               <button
                 type="button"
                 onClick={onClose}
-                className="grid size-9 place-items-center rounded-full bg-canvas text-ink-muted hover:text-ink hover:bg-line/40 transition-colors border border-line/60 shadow-2xs cursor-pointer shrink-0"
+                disabled={isSubmitting}
+                className="grid size-9 place-items-center rounded-full bg-canvas text-ink-muted hover:text-ink hover:bg-line/40 transition-colors border border-line/60 shadow-2xs cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Cerrar ventana"
               >
                 <FontAwesomeIcon icon={faXmark} className="size-4" />
@@ -465,16 +598,9 @@ export function ModalConfirmarPedidoCocina({
 
             {/* Resumen rápido de totales */}
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-2.5 text-xs">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-sans font-bold text-emerald-600 dark:text-emerald-400 text-sm">
-                  Total a Facturar: {formatearMonedaCOP(totalConPropina)}
-                </span>
-                {propinaNumerica > 0 && (
-                  <span className="text-[11px] font-medium text-emerald-700/80 dark:text-emerald-300/80">
-                    (incluye {formatearMonedaCOP(propinaNumerica)} de propina)
-                  </span>
-                )}
-              </div>
+              <span className="font-sans font-bold text-emerald-600 dark:text-emerald-400 text-sm">
+                Total a Facturar: {formatearMonedaCOP(totalGeneral)}
+              </span>
             </div>
           </div>
 
@@ -505,7 +631,7 @@ export function ModalConfirmarPedidoCocina({
 
             {/* 1. Número de Orden y Horario de Entrega en 2 columnas */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Campo: Número de Orden (restringido a 2 dígitos) con botón generador */}
+              {/* Campo: Número de Orden (restringido a 2 dígitos) */}
               <Input
                 label="Número de orden"
                 value={numeroOrden}
@@ -516,18 +642,7 @@ export function ModalConfirmarPedidoCocina({
                 pattern="[0-9]{2}"
                 icon={<FontAwesomeIcon icon={faHashtag} className="size-3.5" />}
                 required
-                action={
-                  <button
-                    type="button"
-                    onClick={handleGenerarAleatorio}
-                    title="Generar número de orden aleatorio de 2 dígitos (ej. 17)"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/25 bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary hover:bg-primary hover:text-white transition-all cursor-pointer shadow-2xs active:scale-95"
-                  >
-                    <FontAwesomeIcon icon={faDice} className="size-3" />
-                    <span>Generar</span>
-                  </button>
-                }
-                hint="2 dígitos. Usa 'Generar' para asignar uno."
+                hint="Código numérico de 2 dígitos."
               />
 
               {/* Campo: Horario de Entrega (Datetime) */}
@@ -591,87 +706,19 @@ export function ModalConfirmarPedidoCocina({
               </p>
             </div>
 
-            {/* 3. Canal y Método de Pago en 2 columnas */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Campo: Canal de Pedido -> RecursosDropdown */}
-              <div className="w-full">
-                <RecursosDropdown
-                  label="Canal de pedido"
-                  value={canal}
-                  onChange={(val) => setCanal(val)}
-                  options={OPCIONES_CANAL}
-                  placeholder="Selecciona el canal…"
-                  required
-                />
-                <p className="mt-1.5 text-xs text-ink-soft">
-                  Medio de solicitud.
-                </p>
-              </div>
-
-              {/* Campo: Método de Pago -> RecursosDropdown */}
-              <div className="w-full">
-                <RecursosDropdown
-                  label="Método de pago"
-                  value={metodoPago}
-                  onChange={(val) => setMetodoPago(val)}
-                  options={OPCIONES_METODO_PAGO}
-                  placeholder="Selecciona el método…"
-                  required
-                />
-                <p className="mt-1.5 text-xs text-ink-soft">
-                  Forma de pago del pedido.
-                </p>
-              </div>
-            </div>
-
-            {/* 4. Campo de Propina utilizando el componente reutilizable Input */}
-            <div className="rounded-2xl border border-line bg-canvas/30 p-4 space-y-2">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div className="flex-1">
-                  <Input
-                    label="Propina"
-                    type="number"
-                    min="0"
-                    step="1000"
-                    value={propina}
-                    onChange={(e) => setPropina(e.target.value)}
-                    placeholder="0"
-                    icon={<span className="text-xs font-bold text-ink-soft">$</span>}
-                    action={
-                      propinaNumerica > 0 ? (
-                        <button
-                          type="button"
-                          onClick={() => setPropina('0')}
-                          className="text-[11px] font-bold text-ink-muted hover:text-danger px-2 py-0.5 rounded transition-colors cursor-pointer"
-                          title="Restablecer a 0"
-                        >
-                          Quitar
-                        </button>
-                      ) : undefined
-                    }
-                    hint="Propina opcional (COP)."
-                  />
-                </div>
-
-                {/* Botones de montos sugeridos */}
-                <div className="sm:self-end pb-1.5 flex flex-wrap items-center gap-1.5">
-                  <span className="text-[11px] font-medium text-ink-muted">Sugerido:</span>
-                  {[5000, 10000, 20000].map((monto) => (
-                    <button
-                      key={monto}
-                      type="button"
-                      onClick={() => setPropina(String(monto))}
-                      className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all cursor-pointer border shadow-2xs active:scale-95 ${
-                        propinaNumerica === monto
-                          ? 'bg-primary text-white border-primary'
-                          : 'bg-panel text-ink border-line hover:border-ink-soft hover:bg-canvas'
-                      }`}
-                    >
-                      +{formatearMonedaCOP(monto)}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {/* 3. Canal de Pedido -> RecursosDropdown */}
+            <div className="w-full">
+              <RecursosDropdown
+                label="Canal de pedido"
+                value={canal}
+                onChange={(val) => setCanal(val)}
+                options={OPCIONES_CANAL}
+                placeholder="Selecciona el canal…"
+                required
+              />
+              <p className="mt-1.5 text-xs text-ink-soft">
+                Medio de solicitud.
+              </p>
             </div>
 
             {/* 4. Instrucciones para el delivery */}
@@ -719,53 +766,9 @@ export function ModalConfirmarPedidoCocina({
               </button>
             </div>
           </form>
-
-          {/* Animación Rocket visible mientras se construye y envía el payload a POST /service-request */}
-          <AnimatePresence>
-            {isSubmitting && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.25 }}
-                className="fixed inset-0 z-60 flex flex-col items-center justify-center bg-black/75 p-4 backdrop-blur-md select-none text-center"
-              >
-                <motion.div
-                  initial={{ scale: 0.9, y: 16 }}
-                  animate={{ scale: 1, y: 0 }}
-                  exit={{ scale: 0.9, y: 16 }}
-                  transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-                  className="flex flex-col items-center"
-                >
-                  <div className="relative rounded-3xl border border-white/20 bg-panel/90 p-3 shadow-2xl backdrop-blur-xl">
-                    <Rocket
-                      launch={true}
-                      autoLaunch={true}
-                      interactive={false}
-                      size="md"
-                      showStars={true}
-                      showPad={true}
-                    />
-                  </div>
-
-                  <div className="mt-5 space-y-1.5 max-w-sm">
-                    <h3 className="font-serif text-lg font-bold text-white tracking-wide">
-                      Enviando Pedido
-                    </h3>
-                    <p className="text-xs text-white/80 leading-relaxed">
-                      Procesando solicitud en{' '}
-                      <span className="font-mono font-bold text-primary-light">
-                        /service-request
-                      </span>
-                      …
-                    </p>
-                  </div>
-                </motion.div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </motion.div>
       </div>
     </AnimatePresence>
+    </>
   )
 }

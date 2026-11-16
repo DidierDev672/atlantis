@@ -112,10 +112,10 @@ export function ProductosMasonryNavbar({
   return (
     <nav
       aria-label="Filtros y acciones del menú de productos"
-      className="border-line bg-panel flex flex-col gap-3 rounded-3xl border p-3.5 shadow-xs lg:flex-row lg:items-center lg:justify-between"
+      className="border-line bg-panel flex flex-col gap-3 rounded-3xl border p-3.5 shadow-xs lg:flex-row lg:items-end lg:justify-between"
     >
       {/* Buscador reactivo */}
-      <div className="relative w-full lg:max-w-sm lg:flex-1">
+      <div className="relative w-full lg:flex-1">
         <FontAwesomeIcon
           icon={faMagnifyingGlass}
           className="text-ink-muted pointer-events-none absolute top-1/2 left-3.5 size-3.5 -translate-y-1/2"
@@ -140,7 +140,7 @@ export function ProductosMasonryNavbar({
       </div>
 
       {/* Filtros rápidos (Todos, Disponibles) + Dropdown de ordenamiento con RecursosDropdown */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-end gap-2">
         <div className="border-line bg-canvas flex items-center gap-1.5 rounded-2xl border p-1 text-xs">
           <button
             type="button"
@@ -174,6 +174,7 @@ export function ProductosMasonryNavbar({
         {/* Componente Reutilizable RecursosDropdown para selección de ordenamiento */}
         <div className="w-48 sm:w-56">
           <RecursosDropdown
+            label="Ordenar"
             value={valorOrdenSeleccionado}
             onChange={(val) => {
               if (val) onFiltroChange(val as FiltroDieta)
@@ -186,7 +187,7 @@ export function ProductosMasonryNavbar({
         </div>
       </div>
 
-      {/* Acciones de Cabecera: Refrescar y Nuevo Producto */}
+      {/* Acciones de Cabecera: Refrescar y Nuevo Producto (solo icono) */}
       <div className="flex items-center justify-end gap-2">
         <button
           type="button"
@@ -194,23 +195,23 @@ export function ProductosMasonryNavbar({
           disabled={loading}
           aria-label="Refrescar catálogo de productos"
           title="Refrescar catálogo de productos"
-          className="border-line bg-canvas text-ink-muted hover:border-primary/40 hover:text-ink inline-flex h-9 cursor-pointer items-center gap-2 rounded-2xl border px-3 text-xs font-bold shadow-2xs transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+          className="border-line bg-canvas text-ink-muted hover:border-primary/40 hover:text-ink inline-flex size-9 cursor-pointer items-center justify-center rounded-2xl border shadow-2xs transition-colors disabled:cursor-not-allowed disabled:opacity-60"
         >
           <FontAwesomeIcon
             icon={faArrowsRotate}
             spin={loading}
             className="size-3.5"
           />
-          <span className="sm:hidden lg:inline">Refrescar</span>
         </button>
         {onAgregarNuevo && (
           <button
             type="button"
             onClick={onAgregarNuevo}
-            className="bg-primary shadow-primary/20 hover:bg-primary/90 inline-flex h-9 cursor-pointer items-center gap-2 rounded-2xl px-4 text-xs font-bold text-white shadow-sm transition-all"
+            aria-label="Nuevo producto"
+            title="Nuevo producto"
+            className="bg-primary shadow-primary/20 hover:bg-primary/90 inline-flex size-9 cursor-pointer items-center justify-center rounded-2xl text-white shadow-sm transition-all"
           >
             <FontAwesomeIcon icon={faPlus} className="size-3.5" />
-            <span>Nuevo Producto</span>
           </button>
         )}
       </div>

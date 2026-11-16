@@ -9,7 +9,6 @@ import (
 
 func TestNewServiceRequest(t *testing.T) {
 	now := time.Now().UTC()
-	tip := 5.0
 
 	validItems := []servicerequest.OrderItem{
 		{
@@ -30,12 +29,10 @@ func TestNewServiceRequest(t *testing.T) {
 			"stay-1",
 			"person-1",
 			servicerequest.ChannelRoomTablet,
-			servicerequest.PaymentMethodRoomCharge,
 			"Favor entregar rápido",
 			"Dejar frente a la puerta",
 			nil,
 			"USD",
-			&tip,
 			validItems,
 			"guest_app",
 			now,
@@ -52,8 +49,8 @@ func TestNewServiceRequest(t *testing.T) {
 		if req.Taxes != 3.0 {
 			t.Errorf("expected Taxes 3.0, got %f", req.Taxes)
 		}
-		if req.Total != 38.0 {
-			t.Errorf("expected Total 38.0 (30 + 3 + 5), got %f", req.Total)
+		if req.Total != 33.0 {
+			t.Errorf("expected Total 33.0 (30 + 3), got %f", req.Total)
 		}
 		if req.Status != servicerequest.StatusPending {
 			t.Errorf("expected Status 'pending', got %s", req.Status)
@@ -70,12 +67,10 @@ func TestNewServiceRequest(t *testing.T) {
 			"stay-1",
 			"person-1",
 			servicerequest.ChannelRoomTablet,
-			servicerequest.PaymentMethodRoomCharge,
 			"",
 			"",
 			nil,
 			"USD",
-			nil,
 			nil,
 			"guest",
 			now,
@@ -92,12 +87,10 @@ func TestNewServiceRequest(t *testing.T) {
 			"",
 			"person-1",
 			servicerequest.ChannelRoomTablet,
-			servicerequest.PaymentMethodRoomCharge,
 			"",
 			"",
 			nil,
 			"USD",
-			nil,
 			validItems,
 			"guest",
 			now,
@@ -127,12 +120,10 @@ func TestServiceRequest_Transitions(t *testing.T) {
 		"stay-1",
 		"person-1",
 		servicerequest.ChannelRoomTablet,
-		servicerequest.PaymentMethodRoomCharge,
 		"",
 		"",
 		nil,
 		"USD",
-		nil,
 		validItems,
 		"guest",
 		now,

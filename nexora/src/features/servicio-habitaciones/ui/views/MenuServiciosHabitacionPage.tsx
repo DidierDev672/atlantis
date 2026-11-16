@@ -7,7 +7,6 @@ import {
   faBowlFood,
   faClipboardList,
   faPlus,
-  faListCheck,
 } from '@fortawesome/free-solid-svg-icons';
 import { slideIn, fadeIn } from '../../../../design-tokens/motion';
 import { MenuCategoriasGrid } from '../organisms/MenuCategoriasGrid';
@@ -16,19 +15,13 @@ import { ItemMenuProductosMasonry } from '../organisms/ItemMenuProductosMasonry'
 import { FormularioServicioHabitacionCard } from '../organisms/FormularioServicioHabitacionCard';
 import { FormularioAgregarProductoCard } from '../organisms/FormularioAgregarProductoCard';
 import { PedidosServicioHabitacionOrganism } from '../organisms/PedidosServicioHabitacionOrganism';
-import { EstadoPedidoAsignacionesOrganism } from '../organisms/EstadoPedidoAsignacionesOrganism';
 import { CarritoFlotanteFab } from '../atoms/CarritoFlotanteFab';
 import { CarritoProductosDrawer } from '../organisms/CarritoProductosDrawer';
 import { useCarritoStore } from '../../application/carrito-store';
 import type { MenuCategoria } from '../../domain/menu-categoria';
 
 type VistaActiva =
-  | 'catalogo'
-  | 'productos'
-  | 'nuevo'
-  | 'agregar-producto'
-  | 'pedidos'
-  | 'estado-pedido';
+  'catalogo' | 'productos' | 'nuevo' | 'agregar-producto' | 'pedidos';
 
 interface NavTabItem {
   id: Exclude<VistaActiva, 'agregar-producto'>;
@@ -37,10 +30,9 @@ interface NavTabItem {
 }
 
 const NAV_ITEMS: NavTabItem[] = [
-  { id: 'catalogo', label: 'Categoría', icon: faUtensils },
-  { id: 'productos', label: 'Producto', icon: faBowlFood },
-  { id: 'pedidos', label: 'Pedido', icon: faClipboardList },
-  { id: 'estado-pedido', label: 'Estado Pedido', icon: faListCheck },
+  { id: 'catalogo', label: 'Categorías', icon: faUtensils },
+  { id: 'productos', label: 'Productos', icon: faBowlFood },
+  { id: 'pedidos', label: 'Historial de Ventas', icon: faClipboardList },
   { id: 'nuevo', label: 'Nueva Categoría', icon: faPlus },
 ];
 
@@ -80,7 +72,7 @@ export function MenuServiciosHabitacionPage() {
           variants={slideIn}
           initial="hidden"
           animate="visible"
-          className="border-line/80 bg-panel/85 mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-1.5 rounded-2xl border p-1.5 shadow-lg backdrop-blur-md"
+          className="border-line/80 bg-panel mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-1.5 rounded-2xl border p-1.5 shadow-lg"
         >
           {NAV_ITEMS.map((item) => {
             const isActive = vistaActiva === item.id;
@@ -160,20 +152,6 @@ export function MenuServiciosHabitacionPage() {
             <PedidosServicioHabitacionOrganism
               onIrAProductos={() => handleCambiarVista('productos')}
               onIrACarrito={() => setIsCarritoDrawerOpen(true)}
-              onIrAEstadoPedido={() => handleCambiarVista('estado-pedido')}
-            />
-          </motion.div>
-        ) : vistaActiva === 'estado-pedido' ? (
-          <motion.div
-            key="estado-pedido"
-            variants={fadeIn}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-          >
-            <EstadoPedidoAsignacionesOrganism
-              onIrAPedidos={() => handleCambiarVista('pedidos')}
-              onIrAProductos={() => handleCambiarVista('productos')}
             />
           </motion.div>
         ) : vistaActiva === 'nuevo' ? (

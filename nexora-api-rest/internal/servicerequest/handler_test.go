@@ -34,11 +34,9 @@ func TestHandler_HTTPFlow(t *testing.T) {
 		"stay_id": "stay-44",
 		"person_id": "guest-11",
 		"channel": "room_tablet",
-		"payment_method": "room_charge",
 		"general_notes": "Dejar cubiertos extra",
 		"delivery_instructions": "Tocar timbre suavemente",
 		"currency": "USD",
-		"tip": 3.0,
 		"items": [
 			{
 				"item_menu_id": "item-pasta",
@@ -71,8 +69,8 @@ func TestHandler_HTTPFlow(t *testing.T) {
 	if created.OrderNumber != "ORD-2026-888" {
 		t.Errorf("expected OrderNumber 'ORD-2026-888', got %s", created.OrderNumber)
 	}
-	if created.Total != 22.8 { // 18 + 1.8 + 3
-		t.Errorf("expected Total 22.8, got %f", created.Total)
+	if created.Total != 19.8 { // 18 + 1.8
+		t.Errorf("expected Total 19.8, got %f", created.Total)
 	}
 	if len(created.Items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(created.Items))
@@ -135,5 +133,62 @@ func TestHandler_HTTPFlow(t *testing.T) {
 
 	if wDel.Code != http.StatusNoContent {
 		t.Fatalf("expected status 204 No Content, got %d", wDel.Code)
+	}
+
+	// 6. Test POST /service-request with full client payload (including id, status, subtotal, taxes, total, history, timestamps)
+	fullPayload := []byte(`{
+		"id": "fd27c802-dc6c-48e0-a78d-28ef3127b8a7",
+		"order_number": "84",
+		"stay_id": "d1e6cda9602627bb",
+		"person_id": "68ef93ef5af065f3",
+		"status": "pending",
+		"channel": "room_tablet",
+		"general_notes": "",
+		"delivery_instructions": "",
+		"scheduled_for": "2026-11-15T11:43:00.000Z",
+		"currency": "COP",
+		"subtotal": 43000,
+		"taxes": 4300,
+		"total": 47300,
+		"created_by": "fredyarias1972@gmail.com",
+		"items": [
+			{
+				"id": "80198df0-d929-434e-88f3-cb53026f0341",
+				"order_id": "fd27c802-dc6c-48e0-a78d-28ef3127b8a7",
+				"item_menu_id": "c2f8abbc59ad7f1a",
+				"name_snapshot": "Latte de Vainilla",
+				"price_unit": 8500,
+				"tax_rate": 10,
+				"amount": 1,
+				"note": "",
+				"created_by": "fredyarias1972@gmail.com",
+				"created_at": "2026-11-15T11:25:39.945Z",
+				"updated_at": "2026-11-15T11:25:39.945Z"
+			}
+		],
+		"history": [
+			{
+				"id": "9d10ef1f-53bb-423b-bd30-9961d244d0f7",
+				"order_id": "fd27c802-dc6c-48e0-a78d-28ef3127b8a7",
+				"previous_state": "",
+				"status_new": "pending",
+				"actor_type": "guest",
+				"actor_id": "68ef93ef5af065f3",
+				"comment": "Order created",
+				"created_by": "fredyarias1972@gmail.com",
+				"created_at": "2026-11-15T11:25:39.945Z",
+				"updated_at": "2026-11-15T11:25:39.945Z"
+			}
+		],
+		"created_at": "2026-11-15T11:25:39.945Z",
+		"updated_at": "2026-11-15T11:25:39.945Z"
+	}`)
+	reqFull := httptest.NewRequest(http.MethodPost, "/service-request", bytes.NewReader(fullPayload))
+	reqFull.Header.Set("Content-Type", "application/json")
+	wFull := httptest.NewRecorder()
+	mux.ServeHTTP(wFull, reqFull)
+
+	if wFull.Code != http.StatusCreated {
+		t.Fatalf("expected status 201 Created for full payload, got %d. Body: %s", wFull.Code, wFull.Body.String())
 	}
 }

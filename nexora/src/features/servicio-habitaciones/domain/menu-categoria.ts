@@ -3,6 +3,8 @@
  * Mapea la estructura devuelta por GET /menu-category.
  */
 export interface MenuCategoria {
+  /** ID único de la categoría devuelto por GET /menu-category */
+  id?: string
   /** ID de la sede principal a la que pertenece la categoría */
   headquartes_id: string
   /** ID de la subsede asociada */

@@ -1,4 +1,3 @@
-import { useId } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -13,6 +12,7 @@ import { fadeIn } from '../../../../design-tokens/motion';
 import { Input } from '../../../../shared/ui/Input';
 import { Textarea } from '../../../../shared/ui/Textarea';
 import { PlanetAlert } from '../../../../shared/alert/organisms/PlanetAlert';
+import { RecursosDropdown } from '../../../recursos/ui/molecules/recursos-dropdown';
 import { Switch } from '../atoms/Switch';
 import { PlatoAlimentosAnimado } from '../atoms/PlatoAlimentosAnimado';
 import { SeccionCargaImagen } from '../molecules/SeccionCargaImagen';
@@ -33,11 +33,13 @@ export function FormularioAgregarProductoCard({
   onProductoGuardado,
   onCancelar,
 }: FormularioAgregarProductoCardProps) {
-  const catSelectId = useId();
-
   const {
     categoriaSeleccionada,
     setCategoriaSeleccionada,
+    categoriaOptions,
+    loadingCategorias,
+    categoriaError,
+    setCategoriaError,
     name,
     setName,
     nameError,
@@ -158,27 +160,26 @@ export function FormularioAgregarProductoCard({
 
         {/* Formulario principal */}
         <form onSubmit={handleSubmit} className="mt-6 space-y-6" noValidate>
-          {categoriasDisponibles.length > 0 && (
-            <div>
-              <label
-                htmlFor={catSelectId}
-                className="text-ink mb-1.5 block text-sm font-medium"
-              >
-                Categoría del menú asignada
-              </label>
-              <select
-                id={catSelectId}
-                value={categoriaSeleccionada}
-                onChange={(e) => setCategoriaSeleccionada(e.target.value)}
-                className="border-line bg-panel text-ink focus:border-primary focus:ring-primary/20 w-full cursor-pointer rounded-xl border px-4 py-2.5 text-sm shadow-xs transition-colors outline-none focus:ring-2"
-              >
-                {categoriasDisponibles.map((cat) => (
-                  <option key={`${cat.name}-${cat.order}`} value={cat.name}>
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          {(categoriaOptions.length > 0 || loadingCategorias) && (
+            <RecursosDropdown
+              label="Categoría del menú asignada"
+              placeholder={
+                loadingCategorias
+                  ? 'Cargando categorías…'
+                  : 'Selecciona una categoría…'
+              }
+              value={categoriaSeleccionada}
+              onChange={(val) => {
+                setCategoriaSeleccionada(val);
+                if (categoriaError) setCategoriaError(undefined);
+              }}
+              options={categoriaOptions}
+              error={categoriaError}
+              required
+              isLoading={loadingCategorias}
+              disabled={loadingCategorias}
+              emptyLabel="No hay categorías disponibles."
+            />
           )}
 
           {/* Fila 1: Nombre y Precio */}

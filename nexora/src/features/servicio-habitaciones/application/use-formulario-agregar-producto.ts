@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import axios from 'axios'
 import { api } from '../../../lib/api'
 import { executeBalancedRequest } from '../../reservas/infrastructure/api-load-balancer'
@@ -12,6 +12,8 @@ import {
   subirImagenSupabase,
   DEFAULT_ROOM_SERVICE_BUCKET,
 } from '../../../shared/services/supabase-storage.service'
+import { obtenerMenuCategoriasApi } from '../infrastructure/api-menu-categoria-repository'
+import type { DropdownOption } from '../../recursos/ui/molecules/recursos-dropdown'
 import type { MenuCategoria } from '../domain/menu-categoria'
 
 const DEFAULT_PRODUCT_IMAGE =
@@ -102,9 +104,14 @@ export function useFormularioAgregarProducto({
   categoriasDisponibles = [],
   onProductoGuardado,
 }: UseFormularioAgregarProductoParams) {
-  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState<string>(
-    categoriaInicial?.name || (categoriasDisponibles[0]?.name ?? '')
+  const [categoriasCargadas, setCategoriasCargadas] = useState<MenuCategoria[]>([])
+  const [loadingCategorias, setLoadingCategorias] = useState(
+    () => categoriasDisponibles.length === 0
   )
+  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState<string>(
+    () => categoriaInicial?.id || ''
+  )
+  const [categoriaError, setCategoriaError] = useState<string | undefined>()
   const [name, setName] = useState('')
   const [nameError, setNameError] = useState<string | undefined>()
   const [price, setPrice] = useState('')
@@ -126,6 +133,48 @@ export function useFormularioAgregarProducto({
   const [saving, setSaving] = useState(false)
   const [productosRegistrados, setProductosRegistrados] = useState(0)
   const [feedback, setFeedback] = useState<ProductoPostFeedback | null>(null)
+
+  useEffect(() => {
+    if (categoriasDisponibles.length > 0) return
+
+    let active = true
+    void obtenerMenuCategoriasApi()
+      .then((res) => {
+        if (!active) return
+        setCategoriasCargadas(res.categorias)
+        if (!categoriaInicial?.id && categoriaInicial?.name) {
+          const match = res.categorias.find(
+            (c) => c.name.toLowerCase() === categoriaInicial.name.toLowerCase()
+          )
+          if (match?.id) {
+            setCategoriaSeleccionada(match.id)
+          }
+        }
+      })
+      .finally(() => {
+        if (active) setLoadingCategorias(false)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [categoriasDisponibles.length, categoriaInicial])
+
+  const listaCategorias = useMemo(
+    () => (categoriasDisponibles.length > 0 ? categoriasDisponibles : categoriasCargadas),
+    [categoriasDisponibles, categoriasCargadas]
+  )
+
+  const categoriaOptions: DropdownOption[] = useMemo(
+    () =>
+      listaCategorias
+        .filter((cat): cat is MenuCategoria & { id: string } => Boolean(cat.id))
+        .map((cat) => ({
+          value: cat.id,
+          label: cat.name,
+        })),
+    [listaCategorias]
+  )
 
   const handleImageChange = useCallback(
     (file: File | null, previewUrl: string | null) => {
@@ -170,6 +219,14 @@ export function useFormularioAgregarProducto({
 
   const validarFormulario = (): boolean => {
     let valido = true
+    const categoryIdActual = categoriaSeleccionada || categoriaInicial?.id || ''
+    if (!categoryIdActual.trim()) {
+      setCategoriaError('Por favor selecciona la categoría a la que pertenece el producto.')
+      valido = false
+    } else {
+      setCategoriaError(undefined)
+    }
+
     if (!name.trim()) {
       setNameError('Por favor ingresa el nombre comercial del producto.')
       valido = false
@@ -219,13 +276,14 @@ export function useFormularioAgregarProducto({
       }
 
       const emailCreador = readAuthTokenEmail()
-      const selectedCat = categoriasDisponibles.find(
-        (c) => c.name === categoriaSeleccionada
+      const selectedCat = listaCategorias.find(
+        (c) => c.id === categoriaSeleccionada || c.name === categoriaSeleccionada
       )
       const categoryId =
-        categoriaInicial?.headquartes_id ||
-        selectedCat?.headquartes_id ||
-        '18d5458dc0eef66e'
+        selectedCat?.id ||
+        categoriaSeleccionada ||
+        categoriaInicial?.id ||
+        ''
 
       const prepMinutes = parseInt(prepTime, 10)
       const parsedPrice = parseFloat(price)
@@ -285,6 +343,10 @@ export function useFormularioAgregarProducto({
   return {
     categoriaSeleccionada,
     setCategoriaSeleccionada,
+    categoriaOptions,
+    loadingCategorias,
+    categoriaError,
+    setCategoriaError,
     name,
     setName,
     nameError,

@@ -104,8 +104,10 @@ export async function obtenerMenuCategoriasApi(): Promise<ObtenerMenuCategoriasR
         const categoriasMapeadas: MenuCategoria[] = itemsCrudos.map((item) => {
           const raw = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>
           const rawOrder = Number(raw.order)
+          const rawId = raw.id ?? raw._id
 
           return {
+            id: rawId ? String(rawId) : undefined,
             headquartes_id: String(raw.headquartes_id ?? raw.headquarter_id ?? '857476d852c2d215'),
             sub_headquartes_id: String(
               raw.sub_headquartes_id ?? raw.sub_headquarter_id ?? '3964a679462f9efc'

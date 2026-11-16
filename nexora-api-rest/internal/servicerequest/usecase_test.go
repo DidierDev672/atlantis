@@ -100,15 +100,12 @@ func TestUseCase_Lifecycle(t *testing.T) {
 	uc := servicerequest.NewUseCase(repo, idGen, clock)
 
 	// 1. Create
-	tip := 2.0
 	created, err := uc.Create(ctx, servicerequest.CreateInput{
-		OrderNumber:   "ORD-2026-001",
-		StayID:        "stay-101",
-		PersonID:      "guest-77",
-		Channel:       servicerequest.ChannelRoomTablet,
-		PaymentMethod: servicerequest.PaymentMethodRoomCharge,
-		Currency:      "USD",
-		Tip:           &tip,
+		OrderNumber: "ORD-2026-001",
+		StayID:      "stay-101",
+		PersonID:    "guest-77",
+		Channel:     servicerequest.ChannelRoomTablet,
+		Currency:    "USD",
 		Items: []servicerequest.CreateItemInput{
 			{
 				ItemMenuID:   "item-burger",
@@ -127,8 +124,8 @@ func TestUseCase_Lifecycle(t *testing.T) {
 	if created.ID != "sr-id-1" {
 		t.Errorf("expected ID 'sr-id-1', got %s", created.ID)
 	}
-	if created.Total != 19.6 { // 16 + 1.6 (10%) + 2 (tip)
-		t.Errorf("expected Total 19.6, got %f", created.Total)
+	if created.Total != 17.6 { // 16 + 1.6 (10%)
+		t.Errorf("expected Total 17.6, got %f", created.Total)
 	}
 
 	// 2. GetByID

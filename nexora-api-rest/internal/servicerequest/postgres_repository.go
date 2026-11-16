@@ -19,14 +19,12 @@ CREATE TABLE IF NOT EXISTS service_requests (
     person_id               VARCHAR(36) NOT NULL,
     status                  VARCHAR(30) NOT NULL DEFAULT 'pending',
     channel                 VARCHAR(30) NOT NULL DEFAULT 'room_tablet',
-    payment_method          VARCHAR(30) NOT NULL DEFAULT 'room_charge',
     general_notes           TEXT NOT NULL DEFAULT '',
     delivery_instructions   TEXT NOT NULL DEFAULT '',
     scheduled_for           TIMESTAMPTZ,
     currency                VARCHAR(5) NOT NULL DEFAULT 'USD',
     subtotal                NUMERIC(12,2) NOT NULL DEFAULT 0.0 CHECK (subtotal >= 0),
     taxes                   NUMERIC(12,2) NOT NULL DEFAULT 0.0 CHECK (taxes >= 0),
-    tip                     NUMERIC(12,2) CHECK (tip IS NULL OR tip >= 0),
     total                   NUMERIC(12,2) NOT NULL DEFAULT 0.0 CHECK (total >= 0),
     grade                   INTEGER CHECK (grade IS NULL OR (grade >= 1 AND grade <= 5)),
     guest_comment           TEXT,
@@ -39,6 +37,8 @@ CREATE TABLE IF NOT EXISTS service_requests (
     updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE service_requests DROP COLUMN IF EXISTS room_id;
+ALTER TABLE service_requests DROP COLUMN IF EXISTS payment_method;
+ALTER TABLE service_requests DROP COLUMN IF EXISTS tip;
 CREATE INDEX IF NOT EXISTS idx_service_requests_stay_id ON service_requests(stay_id);
 CREATE INDEX IF NOT EXISTS idx_service_requests_status ON service_requests(status);
 
@@ -96,8 +96,8 @@ func (r *PostgresRepository) EnsureTable(ctx context.Context) error {
 }
 
 const serviceRequestColumns = `
-	id, order_number, stay_id, person_id, status, channel, payment_method,
-	general_notes, delivery_instructions, scheduled_for, currency, subtotal, taxes, tip, total,
+	id, order_number, stay_id, person_id, status, channel,
+	general_notes, delivery_instructions, scheduled_for, currency, subtotal, taxes, total,
 	grade, guest_comment, reason_for_cancellation, created_by, confirmed_at, delivered_at,
 	canceled_at, created_at, updated_at
 `
@@ -117,7 +117,7 @@ func (r *PostgresRepository) Create(ctx context.Context, req ServiceRequest) err
 
 	insertHeader := fmt.Sprintf(`
 		INSERT INTO service_requests (%s)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
 	`, serviceRequestColumns)
 
 	_, err = tx.Exec(ctx, insertHeader,
@@ -127,14 +127,12 @@ func (r *PostgresRepository) Create(ctx context.Context, req ServiceRequest) err
 		req.PersonID,
 		string(req.Status),
 		string(req.Channel),
-		string(req.PaymentMethod),
 		req.GeneralNotes,
 		req.DeliveryInstructions,
 		req.ScheduledFor,
 		req.Currency,
 		req.Subtotal,
 		req.Taxes,
-		req.Tip,
 		req.Total,
 		req.Grade,
 		req.GuestComment,
@@ -379,7 +377,7 @@ func (r *PostgresRepository) Delete(ctx context.Context, id ID) error {
 
 func scanServiceRequestHeader(row pgx.Row) (ServiceRequest, error) {
 	var s ServiceRequest
-	var idStr, statusStr, channelStr, paymentStr string
+	var idStr, statusStr, channelStr string
 
 	err := row.Scan(
 		&idStr,
@@ -388,14 +386,12 @@ func scanServiceRequestHeader(row pgx.Row) (ServiceRequest, error) {
 		&s.PersonID,
 		&statusStr,
 		&channelStr,
-		&paymentStr,
 		&s.GeneralNotes,
 		&s.DeliveryInstructions,
 		&s.ScheduledFor,
 		&s.Currency,
 		&s.Subtotal,
 		&s.Taxes,
-		&s.Tip,
 		&s.Total,
 		&s.Grade,
 		&s.GuestComment,
@@ -417,7 +413,6 @@ func scanServiceRequestHeader(row pgx.Row) (ServiceRequest, error) {
 	s.ID = ID(idStr)
 	s.Status = Status(statusStr)
 	s.Channel = Channel(channelStr)
-	s.PaymentMethod = PaymentMethod(paymentStr)
 	return s, nil
 }
 

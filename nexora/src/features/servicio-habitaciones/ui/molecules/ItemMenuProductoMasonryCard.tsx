@@ -107,7 +107,7 @@ export function ItemMenuProductoMasonryCard({
           onVerDetalle?.(producto)
         }
       }}
-      className={`group border-line/80 bg-panel relative w-full ${aspectClass} cursor-pointer overflow-hidden rounded-3xl border shadow-xs transition-all duration-300 select-none hover:border-primary/60 hover:shadow-2xl`}
+      className={`group border-line/80 bg-panel relative w-full ${aspectClass} cursor-pointer overflow-hidden rounded-3xl border shadow-xs transition-[border-color,box-shadow] duration-300 select-none hover:border-primary/60 hover:shadow-2xl`}
     >
       {/* Loader del balanceador de cargas de imagen */}
       <Loading
@@ -137,8 +137,8 @@ export function ItemMenuProductoMasonryCard({
         />
       )}
 
-      {/* Overlay en hover: Botón plus arriba a la derecha + Nombre, Descripción y Precio */}
-      <div className="absolute inset-0 flex flex-col justify-between bg-linear-to-t from-black/90 via-black/60 to-black/35 p-4 opacity-0 backdrop-blur-[2px] transition-all duration-300 ease-out group-hover:opacity-100 group-focus-within:opacity-100 sm:p-5">
+      {/* Overlay en hover: degradado ligero sin backdrop-blur para evitar sobrecarga de GPU */}
+      <div className="absolute inset-0 flex flex-col justify-between bg-linear-to-t from-black/95 via-black/70 to-black/45 p-4 opacity-0 transition-opacity duration-300 ease-out group-hover:opacity-100 group-focus-within:opacity-100 sm:p-5">
         <div className="flex items-start justify-between gap-2.5">
           <div className="min-w-0 flex-1">
             <h3 className="font-serif text-base font-bold leading-snug text-white line-clamp-2 sm:text-lg">
@@ -161,12 +161,12 @@ export function ItemMenuProductoMasonryCard({
                 disabled={!isDisponible}
                 aria-label={`Agregar ${producto.name} al carrito`}
                 title={isDisponible ? 'Agregar al carrito' : 'No disponible'}
-                className="bg-primary hover:bg-primary/90 inline-flex size-9 cursor-pointer items-center justify-center rounded-full text-white shadow-lg transition-all hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+                className="bg-primary hover:bg-primary/90 inline-flex size-9 cursor-pointer items-center justify-center rounded-full text-white shadow-lg transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <FontAwesomeIcon icon={faPlus} className="size-4" />
               </button>
             ) : (
-              <div className="flex items-center gap-1 rounded-full border border-white/25 bg-black/60 p-1 shadow-lg backdrop-blur-md">
+              <div className="flex items-center gap-1 rounded-full border border-white/25 bg-black/80 p-1 shadow-lg">
                 <button
                   type="button"
                   onClick={(e) => {
