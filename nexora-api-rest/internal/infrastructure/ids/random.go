@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 
 	"nexora-api-rest/internal/domain"
+	"nexora-api-rest/internal/domain/billing"
 )
 
 // RandomID generates domain identifiers using crypto/rand.
@@ -136,4 +137,28 @@ func (RandomID) NewRoomTariffID() domain.RoomTariffID {
 		panic(err)
 	}
 	return domain.RoomTariffID(hex.EncodeToString(b))
+}
+
+func (RandomID) NewFolioID() billing.FolioID {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return billing.FolioID(hex.EncodeToString(b))
+}
+
+func (RandomID) NewChargeID() billing.ChargeID {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return billing.ChargeID(hex.EncodeToString(b))
+}
+
+func (RandomID) NewPaymentID() billing.PaymentID {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return billing.PaymentID(hex.EncodeToString(b))
 }

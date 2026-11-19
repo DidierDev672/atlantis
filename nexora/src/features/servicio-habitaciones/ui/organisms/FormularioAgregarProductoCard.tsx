@@ -1,22 +1,16 @@
-import { motion, AnimatePresence } from 'motion/react';
+import type { FormEvent } from 'react';
+import { motion } from 'motion/react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import {
-  faArrowRight,
-  faClock,
-  faDollarSign,
-  faPercent,
-  faStopwatch,
-  faUtensils,
-} from '@fortawesome/free-solid-svg-icons';
+import { faArrowRight } from '@fortawesome/free-solid-svg-icons';
 import { fadeIn } from '../../../../design-tokens/motion';
-import { Input } from '../../../../shared/ui/Input';
-import { Textarea } from '../../../../shared/ui/Textarea';
 import { PlanetAlert } from '../../../../shared/alert/organisms/PlanetAlert';
-import { RecursosDropdown } from '../../../recursos/ui/molecules/recursos-dropdown';
-import { Switch } from '../atoms/Switch';
 import { PlatoAlimentosAnimado } from '../atoms/PlatoAlimentosAnimado';
+import { ProductoCategoriaField } from '../molecules/ProductoCategoriaField';
+import { ProductoGuardadoOverlay } from '../molecules/ProductoGuardadoOverlay';
+import { ProductoHorarioYDietaFields } from '../molecules/ProductoHorarioYDietaFields';
+import { ProductoPreciosYNombreFields } from '../molecules/ProductoPreciosYNombreFields';
 import { SeccionCargaImagen } from '../molecules/SeccionCargaImagen';
-import { Rocket } from '../../../../shared/rocket/organisms/Rocket';
+import { buildUnexpectedSubmitErrorFeedback } from '../../application/agregar-producto.helpers';
 import { useFormularioAgregarProducto } from '../../application/use-formulario-agregar-producto';
 import type { MenuCategoria } from '../../domain/menu-categoria';
 
@@ -27,6 +21,9 @@ export interface FormularioAgregarProductoCardProps {
   onCancelar?: () => void;
 }
 
+/**
+ * Organismo: Tarjeta principal para registrar un nuevo producto o platillo en `POST /item-menu`.
+ */
 export function FormularioAgregarProductoCard({
   categoriaInicial,
   categoriasDisponibles = [],
@@ -38,6 +35,9 @@ export function FormularioAgregarProductoCard({
     setCategoriaSeleccionada,
     categoriaOptions,
     loadingCategorias,
+    categoriaValidation,
+    setCategoriaValidation,
+    recargarCategorias,
     categoriaError,
     setCategoriaError,
     name,
@@ -79,48 +79,17 @@ export function FormularioAgregarProductoCard({
     onProductoGuardado,
   });
 
+  const handleGuardarSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    try {
+      await handleSubmit(e);
+    } catch (err) {
+      setFeedback(buildUnexpectedSubmitErrorFeedback(err));
+    }
+  };
+
   return (
     <>
-      {/* Animación del cohete Rocket mientras se envía el producto a POST /item-menu */}
-      <AnimatePresence>
-        {saving && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.3 }}
-            className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/75 p-4 backdrop-blur-md select-none text-center"
-          >
-            <motion.div
-              initial={{ scale: 0.9, y: 16 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 16 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-              className="flex flex-col items-center"
-            >
-              <div className="relative rounded-3xl border border-white/20 bg-panel/90 p-3 shadow-2xl backdrop-blur-xl">
-                <Rocket
-                  launch={true}
-                  autoLaunch={true}
-                  interactive={false}
-                  size="md"
-                  showStars={true}
-                  showPad={true}
-                />
-              </div>
-
-              <div className="mt-5 space-y-1.5 max-w-sm">
-                <h3 className="font-serif text-lg font-bold text-white tracking-wide">
-                  Registrando Producto
-                </h3>
-                <p className="text-xs text-white/80 leading-relaxed">
-                  Guardando el producto en el catálogo, por favor espera un momento…
-                </p>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <ProductoGuardadoOverlay visible={saving} />
 
       <motion.div
         variants={fadeIn}
@@ -159,160 +128,60 @@ export function FormularioAgregarProductoCard({
         </div>
 
         {/* Formulario principal */}
-        <form onSubmit={handleSubmit} className="mt-6 space-y-6" noValidate>
-          {(categoriaOptions.length > 0 || loadingCategorias) && (
-            <RecursosDropdown
-              label="Categoría del menú asignada"
-              placeholder={
-                loadingCategorias
-                  ? 'Cargando categorías…'
-                  : 'Selecciona una categoría…'
-              }
-              value={categoriaSeleccionada}
-              onChange={(val) => {
-                setCategoriaSeleccionada(val);
-                if (categoriaError) setCategoriaError(undefined);
-              }}
-              options={categoriaOptions}
-              error={categoriaError}
-              required
-              isLoading={loadingCategorias}
-              disabled={loadingCategorias}
-              emptyLabel="No hay categorías disponibles."
-            />
-          )}
-
-          {/* Fila 1: Nombre y Precio */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input
-              label="Nombre del producto o platillo"
-              placeholder="Ej. Bowl de Quinoa y Aguacate"
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (nameError) setNameError(undefined);
-              }}
-              error={nameError}
-              required
-              icon={<FontAwesomeIcon icon={faUtensils} className="size-4" />}
-            />
-
-            <Input
-              label="Precio de venta (COP)"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="Ej. 14.50"
-              value={price}
-              onChange={(e) => {
-                setPrice(e.target.value);
-                if (priceError) setPriceError(undefined);
-              }}
-              error={priceError}
-              required
-              icon={<FontAwesomeIcon icon={faDollarSign} className="size-4" />}
-            />
-          </div>
-
-          {/* Fila 2: Porcentaje de Impuesto y Tiempo de Preparación */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Input
-              label="Porcentaje de impuesto (%)"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="Ej. 10.0"
-              value={taxPercentage}
-              onChange={(e) => setTaxPercentage(e.target.value)}
-              icon={<FontAwesomeIcon icon={faPercent} className="size-4" />}
-            />
-
-            <Input
-              label="Tiempo de preparación (minutos)"
-              type="number"
-              min="1"
-              placeholder="Ej. 15"
-              value={prepTime}
-              onChange={(e) => setPrepTime(e.target.value)}
-              icon={<FontAwesomeIcon icon={faStopwatch} className="size-4" />}
-            />
-          </div>
-
-          {/* Fila 3: Horarios de Servicio ("Solo hora") */}
-          <div className="border-line bg-canvas/40 rounded-2xl border p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <span className="text-primary text-xs font-bold tracking-wider uppercase">
-                  Ventana de Horario
-                </span>
-                <p className="text-ink-muted text-xs">
-                  Horas del día en que cocina y bar despachan este producto.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Input
-                label="Fecha de inicio (Solo hora)"
-                type="time"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                icon={<FontAwesomeIcon icon={faClock} className="size-4" />}
-              />
-
-              <Input
-                label="Fecha final (Solo hora)"
-                type="time"
-                value={endTime}
-                onChange={(e) => setEndTime(e.target.value)}
-                icon={<FontAwesomeIcon icon={faClock} className="size-4" />}
-              />
-            </div>
-          </div>
-
-          {/* Fila 4: Switches */}
-          <div className="space-y-3">
-            <span className="text-ink block text-sm font-semibold">
-              Preferencias dietéticas y estado en catálogo
-            </span>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <Switch
-                label="¿Es vegetariano?"
-                description="Apto para dietas sin carnes"
-                checked={isVegetarian}
-                onChange={setIsVegetarian}
-              />
-
-              <Switch
-                label="¿Es vegano?"
-                description="Libre de derivados animales"
-                checked={isVegan}
-                onChange={setIsVegan}
-              />
-
-              <Switch
-                label="Disponible"
-                description="Habilitado para pedidos hoy"
-                checked={available}
-                onChange={setAvailable}
-              />
-            </div>
-          </div>
-
-          {/* Fila 5: Descripción comercial y notas de sabor con Textarea reutilizable */}
-          <Textarea
-            label="Descripción comercial y notas de sabor"
-            rows={3}
-            maxLength={280}
-            showCount
-            resize="none"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Describe los ingredientes principales, alérgenos o maridajes recomendados..."
+        <form
+          onSubmit={(e) => void handleGuardarSubmit(e)}
+          className="mt-6 space-y-6"
+          noValidate
+        >
+          <ProductoCategoriaField
+            loadingCategorias={loadingCategorias}
+            categoriaValidation={categoriaValidation}
+            onDismissValidation={() => setCategoriaValidation(null)}
+            onRetryCategorias={() => void recargarCategorias()}
+            canRetry={categoriasDisponibles.length === 0}
+            categoriaSeleccionada={categoriaSeleccionada}
+            onCategoriaChange={(val) => {
+              setCategoriaSeleccionada(val);
+              if (categoriaError) setCategoriaError(undefined);
+            }}
+            categoriaOptions={categoriaOptions}
+            categoriaError={categoriaError}
           />
 
-          {/* Fila 6: Sección para seleccionar imagen */}
+          <ProductoPreciosYNombreFields
+            name={name}
+            onNameChange={(val) => {
+              setName(val);
+              if (nameError) setNameError(undefined);
+            }}
+            nameError={nameError}
+            price={price}
+            onPriceChange={(val) => {
+              setPrice(val);
+              if (priceError) setPriceError(undefined);
+            }}
+            priceError={priceError}
+            taxPercentage={taxPercentage}
+            onTaxPercentageChange={setTaxPercentage}
+            prepTime={prepTime}
+            onPrepTimeChange={setPrepTime}
+          />
+
+          <ProductoHorarioYDietaFields
+            startTime={startTime}
+            onStartTimeChange={setStartTime}
+            endTime={endTime}
+            onEndTimeChange={setEndTime}
+            isVegetarian={isVegetarian}
+            onIsVegetarianChange={setIsVegetarian}
+            isVegan={isVegan}
+            onIsVeganChange={setIsVegan}
+            available={available}
+            onAvailableChange={setAvailable}
+            description={description}
+            onDescriptionChange={setDescription}
+          />
+
           <SeccionCargaImagen
             key={resetKey}
             imageFile={imagenArchivo}
@@ -320,7 +189,7 @@ export function FormularioAgregarProductoCard({
             onImageChange={handleImageChange}
           />
 
-          {/* Alerta reutilizable PlanetAlert según respuesta del endpoint POST /item-menu */}
+          {/* Alerta reutilizable PlanetAlert según respuesta de validación, subida o POST /item-menu */}
           {feedback && (
             <PlanetAlert
               key={feedback.id}
@@ -329,6 +198,7 @@ export function FormularioAgregarProductoCard({
               title={feedback.title}
               message={feedback.message}
               error={feedback.rawError}
+              errors={feedback.validationErrors}
               dismissible
               onClose={() => setFeedback(null)}
               role={feedback.isValid ? 'status' : 'alert'}
@@ -376,6 +246,7 @@ export function FormularioAgregarProductoCard({
             <button
               type="submit"
               disabled={saving}
+              aria-busy={saving}
               className="bg-primary shadow-primary/20 hover:bg-primary/90 inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-2xl px-8 py-3 text-xs font-bold text-white shadow-md transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 sm:w-auto"
             >
               <span>

@@ -15,7 +15,7 @@ export function useMenuCategorias() {
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [selectedBuilding, setSelectedBuilding] = useState<string>('todos')
   const [selectedHeadquarter, setSelectedHeadquarter] = useState<string>('todas')
-  const [orden, setOrden] = useState<CriterioOrden>('order-asc')
+  const [ordenes, setOrdenes] = useState<CriterioOrden[]>(['order-asc'])
 
   // Carga inicial y refetch manual
   const cargarCategorias = useCallback(async () => {
@@ -32,8 +32,18 @@ export function useMenuCategorias() {
   }, [])
 
   useEffect(() => {
-    void cargarCategorias()
-  }, [cargarCategorias])
+    let active = true
+    void obtenerMenuCategoriasApi().then((res) => {
+      if (!active) return
+      setCategorias(res.categorias)
+      setFeedback(res.validation)
+      setUsandoFallback(res.usandoFallback)
+      setLoading(false)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
 
   // Lista única de edificios y sedes presentes en las categorías para poblar filtros
   const edificiosDisponibles = useMemo(() => {
@@ -74,22 +84,27 @@ export function useMenuCategorias() {
       return coincideTexto && coincideEdificio && coincideSede
     })
 
-    // Ordenamiento
+    // Ordenamiento múltiple secuencial
+    if (ordenes.length === 0) return filtradas
     return filtradas.sort((a, b) => {
-      if (orden === 'order-asc') return a.order - b.order
-      if (orden === 'order-desc') return b.order - a.order
-      if (orden === 'name-asc') return a.name.localeCompare(b.name)
-      if (orden === 'name-desc') return b.name.localeCompare(a.name)
+      for (const criterio of ordenes) {
+        let cmp = 0
+        if (criterio === 'order-asc') cmp = a.order - b.order
+        else if (criterio === 'order-desc') cmp = b.order - a.order
+        else if (criterio === 'name-asc') cmp = a.name.localeCompare(b.name)
+        else if (criterio === 'name-desc') cmp = b.name.localeCompare(a.name)
+        if (cmp !== 0) return cmp
+      }
       return 0
     })
-  }, [categorias, searchTerm, selectedBuilding, selectedHeadquarter, orden])
+  }, [categorias, searchTerm, selectedBuilding, selectedHeadquarter, ordenes])
 
   // Reset de filtros
   const limpiarFiltros = () => {
     setSearchTerm('')
     setSelectedBuilding('todos')
     setSelectedHeadquarter('todas')
-    setOrden('order-asc')
+    setOrdenes(['order-asc'])
   }
 
   return {
@@ -104,8 +119,8 @@ export function useMenuCategorias() {
     setSelectedBuilding,
     selectedHeadquarter,
     setSelectedHeadquarter,
-    orden,
-    setOrden,
+    ordenes,
+    setOrdenes,
     edificiosDisponibles,
     sedesDisponibles,
     recargar: cargarCategorias,

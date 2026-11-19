@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 	authhttp "nexora-api-rest/internal/api/auth"
 	bedhttp "nexora-api-rest/internal/api/bed"
 	bedtypehttp "nexora-api-rest/internal/api/bedtype"
+	billinghttp "nexora-api-rest/internal/api/billing"
 	buildinghttp "nexora-api-rest/internal/api/building"
 	headquarterhttp "nexora-api-rest/internal/api/headquarter"
 	palettehttp "nexora-api-rest/internal/api/palette"
@@ -26,6 +28,7 @@ import (
 	authapp "nexora-api-rest/internal/application/auth"
 	bedapp "nexora-api-rest/internal/application/bed"
 	bedtypeapp "nexora-api-rest/internal/application/bedtype"
+	billingapp "nexora-api-rest/internal/application/billing"
 	buildingapp "nexora-api-rest/internal/application/building"
 	headquarterapp "nexora-api-rest/internal/application/headquarter"
 	paletteapp "nexora-api-rest/internal/application/palette"
@@ -41,6 +44,7 @@ import (
 	subheadquarterapp "nexora-api-rest/internal/application/subheadquarter"
 	userapp "nexora-api-rest/internal/application/user"
 	"nexora-api-rest/internal/domain"
+	"nexora-api-rest/internal/domain/billing"
 	"nexora-api-rest/internal/infrastructure/auth"
 	"nexora-api-rest/internal/infrastructure/ids"
 	"nexora-api-rest/internal/infrastructure/password"
@@ -57,11 +61,32 @@ import (
 	"nexora-api-rest/usecase"
 )
 
+// serviceRequestBillingBridge adapts servicerequest status changes into billing snapshots without package coupling.
+type serviceRequestBillingBridge struct {
+	billingUC *billingapp.UseCase
+}
+
+func (b serviceRequestBillingBridge) OnServiceRequestStatusChanged(ctx context.Context, sr servicerequest.ServiceRequest) error {
+	if b.billingUC == nil {
+		return nil
+	}
+	return b.billingUC.PostServiceRequestCharge(ctx, domain.StayID(sr.StayID), billingapp.ServiceRequestSnapshot{
+		ID:          string(sr.ID),
+		OrderNumber: sr.OrderNumber,
+		Status:      string(sr.Status),
+		Currency:    sr.Currency,
+		PersonID:    domain.PersonID(sr.PersonID),
+		Subtotal:    billing.MoneyFromMajorUnits(sr.Subtotal),
+		Taxes:       billing.MoneyFromMajorUnits(sr.Taxes),
+		Total:       billing.MoneyFromMajorUnits(sr.Total),
+	})
+}
+
 // NewRouter wires the whole onion and exposes the /roles, /palette,
 // /headquarters, /sub-headquarters, /users, /permission-assignment, /login,
 // /room-types, /rooms, /building, /reserve, /stays, /rates, /room_tariffs,
-// /menu-category, /item-menu, /service-request, /service-assignments and /guest-attendant vertical slices.
-func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.HeadquarterRepository, subHeadquarterRepo domain.SubHeadquarterRepository, paletteRepo domain.PaletteRepository, userRepo domain.UserRepository, permissionAssignmentRepo domain.PermissionAssignmentRepository, roomTypeRepo domain.RoomTypeRepository, roomRepo domain.RoomRepository, buildingRepo domain.BuildingRepository, bedTypeRepo domain.BedTypeRepository, bedRepo domain.BedRepository, personRepo domain.PersonRepository, reserveRepo domain.ReserveRepository, stayRepo domain.StayRepository, rateRepo domain.RateRepository, roomTariffRepo domain.RoomTariffRepository, auditRepo domain.AuditRepository, moduleRepo externaldomain.ModuleRepository, resourceRepo externaldomain.ResourceRepository, permissionResourceRepo externaldomain.PermissionResourceRepository, menuCategoryRepo menucategory.Repository, itemMenuRepo itemmenu.Repository, serviceRequestRepo servicerequest.Repository, serviceAssignmentRepo serviceassignment.Repository, guestAttendantRepo guestattendant.Repository, rolePermissionRepo externaldomain.RolePermissionRepository, roleLimitRepo rolelimit.Repository, userLimitRepo userlimit.Repository, jwtSecret string) http.Handler {
+// /menu-category, /item-menu, /service-request, /service-assignments, /guest-attendant and /folios vertical slices.
+func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.HeadquarterRepository, subHeadquarterRepo domain.SubHeadquarterRepository, paletteRepo domain.PaletteRepository, userRepo domain.UserRepository, permissionAssignmentRepo domain.PermissionAssignmentRepository, roomTypeRepo domain.RoomTypeRepository, roomRepo domain.RoomRepository, buildingRepo domain.BuildingRepository, bedTypeRepo domain.BedTypeRepository, bedRepo domain.BedRepository, personRepo domain.PersonRepository, reserveRepo domain.ReserveRepository, stayRepo domain.StayRepository, rateRepo domain.RateRepository, roomTariffRepo domain.RoomTariffRepository, auditRepo domain.AuditRepository, moduleRepo externaldomain.ModuleRepository, resourceRepo externaldomain.ResourceRepository, permissionResourceRepo externaldomain.PermissionResourceRepository, menuCategoryRepo menucategory.Repository, itemMenuRepo itemmenu.Repository, serviceRequestRepo servicerequest.Repository, serviceAssignmentRepo serviceassignment.Repository, guestAttendantRepo guestattendant.Repository, rolePermissionRepo externaldomain.RolePermissionRepository, roleLimitRepo rolelimit.Repository, userLimitRepo userlimit.Repository, jwtSecret string, folioRepos ...billing.FolioRepository) http.Handler {
 	roleHandler := &rolehttp.Handler{
 		Creator: roleapp.NewCreateRoleUseCase(roleRepo, ids.RandomID{}),
 		Lister:  roleapp.NewListRolesUseCase(roleRepo),
@@ -218,6 +243,15 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 		InactiveTariffsInUseList: auditapp.NewInactiveTariffsInUseUseCase(auditRepo),
 	}
 
+	var billingHTTP *billinghttp.Handler
+	srUseCase := servicerequest.NewUseCase(serviceRequestRepo, nil, nil)
+	if len(folioRepos) > 0 && folioRepos[0] != nil {
+		pricer := billingapp.NewRoomTariffPricer(roomRepo, roomTypeRepo)
+		billingUC := billingapp.NewUseCase(folioRepos[0], stayRepo, reserveRepo, pricer, ids.RandomID{}, nil)
+		billingHTTP = billinghttp.NewHandler(billingUC)
+		srUseCase.WithStatusListener(serviceRequestBillingBridge{billingUC: billingUC})
+	}
+
 	moduleHTTP := handler.NewModuleHTTP(usecase.NewModuleService(moduleRepo))
 	resourceHTTP := handler.NewResourceHTTP(usecase.NewResourceService(resourceRepo))
 	permissionResourceHTTP := handler.NewPermissionResourceHTTP(usecase.NewPermissionResourceService(permissionResourceRepo))
@@ -226,7 +260,7 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 	userLimitHTTP := userlimit.NewHandler(userlimit.NewUseCase(userLimitRepo, nil))
 	menuCategoryHTTP := menucategory.NewHandler(menucategory.NewUseCase(menuCategoryRepo, nil, nil))
 	itemMenuHTTP := itemmenu.NewHandler(itemmenu.NewUseCase(itemMenuRepo, nil, nil))
-	serviceRequestHTTP := servicerequest.NewHandler(servicerequest.NewUseCase(serviceRequestRepo, nil, nil))
+	serviceRequestHTTP := servicerequest.NewHandler(srUseCase)
 	serviceAssignmentHTTP := serviceassignment.NewHandler(serviceassignment.NewUseCase(serviceAssignmentRepo, nil, nil))
 	guestAttendantHTTP := guestattendant.NewHandler(guestattendant.NewUseCase(guestAttendantRepo, nil, nil, nil, nil))
 
@@ -407,6 +441,9 @@ func NewRouter(roleRepo domain.RoleRepository, headquarterRepo domain.Headquarte
 	serviceAssignmentHTTP.Register(mux)
 	// Guest Attendants: registra POST, GET, PUT, DELETE para /guest-attendant
 	guestAttendantHTTP.Register(mux)
+	if billingHTTP != nil {
+		billingHTTP.Register(mux)
+	}
 
 	return corsMiddleware(rateLimitMiddleware(authContextMiddleware(tokenGen, userRepo, roleRepo, mux)))
 }

@@ -132,6 +132,7 @@ func Run() error {
 	serviceRequestRepo := servicerequest.NewPostgresRepository(conn)
 	serviceAssignmentRepo := serviceassignment.NewPostgresRepository(conn)
 	guestAttendantRepo := guestattendant.NewPostgresRepository(conn)
+	folioRepo := postgres.NewFolioRepository(conn)
 
 	router := api.NewRouter(
 		roleRepo,
@@ -163,6 +164,7 @@ func Run() error {
 		roleLimitRepo,
 		userLimitRepo,
 		jwtSecret,
+		folioRepo,
 	)
 
 	server := &http.Server{

@@ -15,23 +15,24 @@ import {
   RecursosDropdown,
   type DropdownOption,
 } from '../../../recursos/ui/molecules/recursos-dropdown'
+import type { OrdenProducto } from '../../domain/item-menu'
 
-export type FiltroDieta =
-  | 'todos'
-  | 'precio-alto'
-  | 'precio-menor'
-  | 'orden-az'
-  | 'orden-za'
-  | 'disponibles'
+export type DisponibilidadFiltro = 'todos' | 'disponibles'
+
+export type FiltroDieta = DisponibilidadFiltro | OrdenProducto
 
 export interface ProductosMasonryNavbarProps {
   busqueda: string
-  filtroDieta: FiltroDieta
+  disponibilidad: DisponibilidadFiltro
+  categoriasSeleccionadas: string[]
+  ordenesSeleccionados: OrdenProducto[]
   totalProductos: number
   loading: boolean
   onBusquedaChange: (value: string) => void
   onLimpiarBusqueda: () => void
-  onFiltroChange: (filtro: FiltroDieta) => void
+  onDisponibilidadChange: (filtro: DisponibilidadFiltro) => void
+  onCategoriasChange: (categorias: string[]) => void
+  onOrdenesChange: (ordenes: OrdenProducto[]) => void
   onRefrescar: () => void
   onAgregarNuevo?: () => void
 }
@@ -91,24 +92,19 @@ const OPCIONES_ORDENAMIENTO: DropdownOption[] = [
  */
 export function ProductosMasonryNavbar({
   busqueda,
-  filtroDieta,
+  disponibilidad,
+  categoriasSeleccionadas,
+  ordenesSeleccionados,
   totalProductos,
   loading,
   onBusquedaChange,
   onLimpiarBusqueda,
-  onFiltroChange,
+  onDisponibilidadChange,
+  onCategoriasChange,
+  onOrdenesChange,
   onRefrescar,
   onAgregarNuevo,
 }: ProductosMasonryNavbarProps) {
-  const isOrdenActivo = [
-    'precio-alto',
-    'precio-menor',
-    'orden-az',
-    'orden-za',
-  ].includes(filtroDieta)
-
-  const valorOrdenSeleccionado = isOrdenActivo ? filtroDieta : ''
-
   return (
     <nav
       aria-label="Filtros y acciones del menú de productos"
@@ -139,15 +135,15 @@ export function ProductosMasonryNavbar({
         )}
       </div>
 
-      {/* Filtros rápidos (Todos, Disponibles) + Dropdown de ordenamiento con RecursosDropdown */}
+      {/* Filtros rápidos (Todos, Disponibles) + Dropdown de ordenamiento múltiple con RecursosDropdown */}
       <div className="flex flex-wrap items-end gap-2">
         <div className="border-line bg-canvas flex items-center gap-1.5 rounded-2xl border p-1 text-xs">
           <button
             type="button"
-            onClick={() => onFiltroChange('todos')}
-            aria-pressed={filtroDieta === 'todos'}
+            onClick={() => onDisponibilidadChange('todos')}
+            aria-pressed={disponibilidad === 'todos'}
             className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 font-bold transition-all ${
-              filtroDieta === 'todos'
+              disponibilidad === 'todos'
                 ? 'bg-primary text-white shadow-xs'
                 : 'text-ink-muted hover:bg-panel/80 hover:text-ink'
             }`}
@@ -158,10 +154,10 @@ export function ProductosMasonryNavbar({
 
           <button
             type="button"
-            onClick={() => onFiltroChange('disponibles')}
-            aria-pressed={filtroDieta === 'disponibles'}
+            onClick={() => onDisponibilidadChange('disponibles')}
+            aria-pressed={disponibilidad === 'disponibles'}
             className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 font-bold transition-all ${
-              filtroDieta === 'disponibles'
+              disponibilidad === 'disponibles'
                 ? 'bg-primary text-white shadow-xs'
                 : 'text-ink-muted hover:bg-panel/80 hover:text-ink'
             }`}
@@ -171,14 +167,29 @@ export function ProductosMasonryNavbar({
           </button>
         </div>
 
-        {/* Componente Reutilizable RecursosDropdown para selección de ordenamiento */}
-        <div className="w-48 sm:w-56">
+        {/* Componente Reutilizable RecursosDropdown para filtrar por categorías (/menu-category) */}
+        <div className="w-56 sm:w-72">
+          <RecursosDropdown
+            label="Categorías"
+            endpoint="/menu-category"
+            multiple
+            searchable
+            searchPlaceholder="Buscar categoría…"
+            selectedValues={categoriasSeleccionadas}
+            onMultiChange={onCategoriasChange}
+            placeholder="Todas las categorías"
+            emptyLabel="No hay categorías disponibles."
+            className="text-xs"
+          />
+        </div>
+
+        {/* Componente Reutilizable RecursosDropdown con selección múltiple para ordenamiento */}
+        <div className="w-56 sm:w-64">
           <RecursosDropdown
             label="Ordenar"
-            value={valorOrdenSeleccionado}
-            onChange={(val) => {
-              if (val) onFiltroChange(val as FiltroDieta)
-            }}
+            multiple
+            selectedValues={ordenesSeleccionados}
+            onMultiChange={(values) => onOrdenesChange(values as OrdenProducto[])}
             options={OPCIONES_ORDENAMIENTO}
             placeholder="Ordenar por…"
             searchable={false}

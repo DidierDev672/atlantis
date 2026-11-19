@@ -202,7 +202,8 @@ func (r *PostgresRepository) Update(ctx context.Context, item ItemMenu) error {
 	    start_time = $10,
 	    end_time = $11,
 	    available = $12,
-	    updated_at = $13
+	    updated_at = $13,
+	    category_id = $14
 	WHERE id = $1
 	`
 
@@ -220,6 +221,7 @@ func (r *PostgresRepository) Update(ctx context.Context, item ItemMenu) error {
 		item.EndTime,
 		item.Available,
 		item.UpdatedAt,
+		item.CategoryID,
 	)
 	if err != nil {
 		return fmt.Errorf("postgres update item_menu: %w", err)

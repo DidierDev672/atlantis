@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faMinus, faPlus } from '@fortawesome/free-solid-svg-icons'
 import {
+  faMinus,
+  faPenToSquare,
+  faPlus,
+} from '@fortawesome/free-solid-svg-icons'
+import { Tooltip } from '../../../../shared/ui'
+import {
+  type CategoriaVinculadaInfo,
   type ItemMenuProducto,
   formatearMonedaCOP,
   resolverImagenProducto,
@@ -10,6 +16,8 @@ import {
   obtenerProductoKey,
   useCarritoStore,
 } from '../../application/carrito-store'
+import { useCategoriaServicio } from '../../application/use-categoria-servicio'
+import { CategoriaVinculadaBadge } from '../atoms/CategoriaVinculadaBadge'
 import {
   isImageCached,
   loadBalancedImage,
@@ -19,7 +27,9 @@ import { Loading } from '../../../../shared/loading'
 export interface ItemMenuProductoMasonryCardProps {
   producto: ItemMenuProducto
   index?: number
+  categoriaInfo?: CategoriaVinculadaInfo | null
   onVerDetalle?: (producto: ItemMenuProducto) => void
+  onEditar?: (producto: ItemMenuProducto) => void
 }
 
 const FALLBACK_PRODUCT_IMG =
@@ -33,8 +43,14 @@ const FALLBACK_PRODUCT_IMG =
 export function ItemMenuProductoMasonryCard({
   producto,
   index = 0,
+  categoriaInfo,
   onVerDetalle,
+  onEditar,
 }: ItemMenuProductoMasonryCardProps) {
+  const { categoriaServicio } = useCategoriaServicio(
+    categoriaInfo ? undefined : producto.category_id
+  )
+  const categoriaVinculada = categoriaInfo ?? categoriaServicio
   const isDisponible = producto.available !== false
   const primaryUrl = resolverImagenProducto(producto)
 
@@ -144,13 +160,32 @@ export function ItemMenuProductoMasonryCard({
             <h3 className="font-serif text-base font-bold leading-snug text-white line-clamp-2 sm:text-lg">
               {producto.name}
             </h3>
-            <p className="mt-1.5 text-xs leading-relaxed text-white/85 line-clamp-3">
-              {producto.description?.trim() ||
-                'Sin descripción gastronómica registrada.'}
-            </p>
           </div>
 
-          <div onClick={(e) => e.stopPropagation()} className="shrink-0">
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex shrink-0 items-center gap-1.5"
+          >
+            {onEditar && (
+              <Tooltip content="Modificar producto">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onEditar(producto)
+                  }}
+                  aria-label={`Modificar ${producto.name}`}
+                  className="inline-flex size-9 cursor-pointer items-center justify-center rounded-full border border-white/25 bg-black/65 text-white shadow-lg transition-transform hover:scale-105 hover:bg-black/85 active:scale-95"
+                >
+                  <FontAwesomeIcon
+                    icon={faPenToSquare}
+                    className="size-3.5"
+                    aria-hidden="true"
+                  />
+                </button>
+              </Tooltip>
+            )}
+
             {cantidadEnCarrito === 0 ? (
               <button
                 type="button"
@@ -205,13 +240,21 @@ export function ItemMenuProductoMasonryCard({
           </div>
         </div>
 
-        <div className="border-t border-white/20 pt-3">
-          <span className="block text-[10px] font-bold tracking-wider text-white/70 uppercase">
-            Precio
-          </span>
-          <span className="font-sans text-lg font-black tracking-tight text-white sm:text-xl">
-            {formatearMonedaCOP(producto.price)}
-          </span>
+        <div className="space-y-2.5">
+          {categoriaVinculada && (
+            <CategoriaVinculadaBadge
+              categoria={categoriaVinculada}
+              variant="overlay"
+            />
+          )}
+          <div className="border-t border-white/20 pt-3">
+            <span className="block text-[10px] font-bold tracking-wider text-white/70 uppercase">
+              Precio
+            </span>
+            <span className="font-sans text-lg font-black tracking-tight text-white sm:text-xl">
+              {formatearMonedaCOP(producto.price)}
+            </span>
+          </div>
         </div>
       </div>
     </article>

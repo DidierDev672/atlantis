@@ -88,11 +88,18 @@ type UpdateInput struct {
 	DeliveryInstructions *string
 }
 
+// StatusChangedListener define un puerto de salida desacoplado para notificar
+// cambios de estado de la orden (ej. al módulo billing cuando pasa a delivered o canceled).
+type StatusChangedListener interface {
+	OnServiceRequestStatusChanged(ctx context.Context, sr ServiceRequest) error
+}
+
 // UseCase implementa las operaciones del caso de uso para ServiceRequest (SRP).
 type UseCase struct {
-	repo  Repository
-	idGen IDGenerator
-	clock Clock
+	repo           Repository
+	idGen          IDGenerator
+	clock          Clock
+	statusListener StatusChangedListener
 }
 
 // NewUseCase construye el orquestador de casos de uso inyectando sus puertos.
@@ -108,6 +115,12 @@ func NewUseCase(repo Repository, idGen IDGenerator, clock Clock) *UseCase {
 		idGen: idGen,
 		clock: clock,
 	}
+}
+
+// WithStatusListener registra un listener desacoplado para eventos de cambio de estado.
+func (uc *UseCase) WithStatusListener(l StatusChangedListener) *UseCase {
+	uc.statusListener = l
+	return uc
 }
 
 // Create valida las invariantes de negocio, calcula subtotales/impuestos y persiste el pedido.
@@ -233,6 +246,12 @@ func (uc *UseCase) Update(ctx context.Context, in UpdateInput) (ServiceRequest, 
 
 	if err := uc.repo.Update(ctx, existing); err != nil {
 		return ServiceRequest{}, fmt.Errorf("usecase update service request: %w", err)
+	}
+
+	if in.Status != nil && uc.statusListener != nil {
+		if err := uc.statusListener.OnServiceRequestStatusChanged(ctx, existing); err != nil {
+			return ServiceRequest{}, fmt.Errorf("notify status listener: %w", err)
+		}
 	}
 
 	return existing, nil

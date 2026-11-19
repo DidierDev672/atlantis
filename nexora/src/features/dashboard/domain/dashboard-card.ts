@@ -28,6 +28,19 @@ export const DASHBOARD_CARDS: readonly DashboardCardDefinition[] = [
     highlightMetric: 'Atención ágil',
   },
   {
+    id: 'salidas',
+    title: 'Salidas de recepción',
+    subtitle: 'Check-outs de hoy y mañana',
+    description:
+      'Visualiza a los huéspedes con recepción o reserva y organiza sus salidas.',
+    badgeText: 'Check-out',
+    badgeVariant: 'warning',
+    iconName: 'ConciergeBellIcon',
+    accentColor:
+      'from-amber-500/10 to-orange-500/10 text-amber-700 dark:text-amber-300',
+    highlightMetric: 'Despedida ágil',
+  },
+  {
     id: 'reservas',
     title: 'Reservas',
     subtitle: 'Check-ins y estancias',

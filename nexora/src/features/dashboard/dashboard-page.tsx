@@ -12,6 +12,7 @@ import { RecursosPage } from '../../features/recursos/ui/recursos-page';
 import { HabitacionesPage } from '../../features/habitaciones/ui/habitaciones-page';
 import { ReservasPage } from '../../features/reservas/ui/reservas-page';
 import { RecepcionesPage } from '../../features/recepciones/ui/recepciones-page';
+import { SalidasRecepcionesPage } from '../../features/recepciones/ui/salidas-recepciones-page';
 import { Cama3dPage } from '../../features/cama3d/ui/cama3d-page';
 import { TarifasPage } from '../../features/tarifas/ui/tarifas-page';
 import { ConfiguracionesPage } from '../../features/configuraciones/ui/configuraciones-page';
@@ -87,6 +88,8 @@ export function DashboardPage({
             <ReservasPage />
           ) : activeId === 'recepcion' ? (
             <RecepcionesPage />
+          ) : activeId === 'salidas' ? (
+            <SalidasRecepcionesPage />
           ) : activeId === 'auditoria' ? (
             <AuditoriaPage />
           ) : activeId === 'cama' ? (

@@ -24,8 +24,8 @@ export interface MenuCategoriasToolbarProps {
   selectedBuilding: string
   onBuildingChange: (value: string) => void
   ordenOptions: DropdownOption[]
-  orden: string
-  onOrderChange: (value: string) => void
+  ordenes: string[]
+  onOrdersChange: (values: string[]) => void
   viewMode: LayoutViewMode
   onViewModeChange: (mode: LayoutViewMode) => void
   loading: boolean
@@ -45,8 +45,8 @@ export function MenuCategoriasToolbar({
   selectedBuilding,
   onBuildingChange,
   ordenOptions,
-  orden,
-  onOrderChange,
+  ordenes,
+  onOrdersChange,
   viewMode,
   onViewModeChange,
   loading,
@@ -104,14 +104,16 @@ export function MenuCategoriasToolbar({
             className="w-40 sm:w-48 [&>label]:sr-only"
           />
 
-          {/* Ordenación */}
+          {/* Ordenación múltiple */}
           <RecursosDropdown
             label="Ordenar"
+            multiple
             options={ordenOptions}
-            value={orden}
-            onChange={onOrderChange}
+            selectedValues={ordenes}
+            onMultiChange={onOrdersChange}
             placeholder="Ordenar por..."
-            className="w-44 sm:w-56 [&>label]:sr-only"
+            searchable={false}
+            className="w-48 sm:w-64 [&>label]:sr-only"
           />
 
           {/* Botón Refrescar (solo icono) */}

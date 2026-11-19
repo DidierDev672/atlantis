@@ -64,21 +64,25 @@ type CreateRequest struct {
 
 // UpdateRequest representa el payload recibido en PUT /item-menu.
 type UpdateRequest struct {
-	ID              string  `json:"id"`
-	Name            string  `json:"name"`
-	Description     string  `json:"description"`
-	Price           float64 `json:"price"`
-	TaxPercentage   float64 `json:"tax_percentage"`
-	PrepTime        *int    `json:"prep_time"`
-	IsVegetarian    *bool   `json:"isVegetarian"`
-	IsVegetarianAlt *bool   `json:"is_vegetarian"`
-	IsVegan         *bool   `json:"isVegan"`
-	IsVeganAlt      *bool   `json:"is_vegan"`
-	ImageURL        string  `json:"imageURL"`
-	ImageURLAlt     string  `json:"image_url"`
-	StartTime       string  `json:"start_time"`
-	EndTime         string  `json:"end_time"`
-	Available       *bool   `json:"available"`
+	ID              string     `json:"id"`
+	CategoryID      string     `json:"category_id"`
+	Name            string     `json:"name"`
+	Description     string     `json:"description"`
+	Price           float64    `json:"price"`
+	TaxPercentage   float64    `json:"tax_percentage"`
+	PrepTime        *int       `json:"prep_time"`
+	IsVegetarian    *bool      `json:"isVegetarian"`
+	IsVegetarianAlt *bool      `json:"is_vegetarian"`
+	IsVegan         *bool      `json:"isVegan"`
+	IsVeganAlt      *bool      `json:"is_vegan"`
+	ImageURL        string     `json:"imageURL"`
+	ImageURLAlt     string     `json:"image_url"`
+	StartTime       string     `json:"start_time"`
+	EndTime         string     `json:"end_time"`
+	Available       *bool      `json:"available"`
+	CreatedBy       string     `json:"created_by,omitempty"`
+	CreatedAt       *time.Time `json:"created_at,omitempty"`
+	UpdatedAt       *time.Time `json:"updated_at,omitempty"`
 }
 
 // DeleteRequest representa el payload opcional en DELETE /item-menu.
@@ -300,6 +304,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := h.uc.Update(r.Context(), UpdateInput{
 		ID:            ID(idStr),
+		CategoryID:    req.CategoryID,
 		Name:          req.Name,
 		Description:   req.Description,
 		Price:         req.Price,

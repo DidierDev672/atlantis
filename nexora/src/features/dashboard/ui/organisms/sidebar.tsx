@@ -1,5 +1,7 @@
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
 import { useEffect, useState, type ReactNode } from 'react'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faDoorOpen } from '@fortawesome/free-solid-svg-icons'
 import type { NavId } from '../navigation'
 import {
   BedIcon,
@@ -33,6 +35,7 @@ const NAV_ICONS: Record<NavId, ReactNode> = {
   cama: <CubeIcon className="size-[18px]" />,
   reservas: <CalendarIcon className="size-[18px]" />,
   recepcion: <ConciergeBellIcon className="size-[18px]" />,
+  salidas: <FontAwesomeIcon icon={faDoorOpen} className="size-[18px]" aria-hidden="true" />,
   auditoria: <ClipboardCheckIcon className="size-[18px]" />,
   usuarios: <UsersIcon className="size-[18px]" />,
   personas: <UserIcon className="size-[18px]" />,
@@ -55,6 +58,7 @@ interface OperacionSubItem {
 const OPERACION_SUB_ITEMS: readonly OperacionSubItem[] = [
   { id: 'habitacion', label: 'Habitaciones' },
   { id: 'recepcion', label: 'Recepción' },
+  { id: 'salidas', label: 'Salidas de recepción' },
   { id: 'reservas', label: 'Reservas' },
   { id: 'servicios', label: 'Servicios de habitaciones' },
 ] as const
@@ -168,7 +172,7 @@ function SidebarBody({
 
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-cream/70">
-                4
+                {OPERACION_SUB_ITEMS.length}
               </span>
               <motion.span
                 animate={{ rotate: operacionOpen ? 180 : 0 }}

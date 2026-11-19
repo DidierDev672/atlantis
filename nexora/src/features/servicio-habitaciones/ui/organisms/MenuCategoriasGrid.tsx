@@ -62,8 +62,8 @@ export function MenuCategoriasGrid({
     setSearchTerm,
     selectedBuilding,
     setSelectedBuilding,
-    orden,
-    setOrden,
+    ordenes,
+    setOrdenes,
     edificiosDisponibles,
     recargar,
     limpiarFiltros,
@@ -128,8 +128,8 @@ export function MenuCategoriasGrid({
     setVisibleCount(PAGE_SIZE);
   };
 
-  const handleOrderChange = (newOrden: string) => {
-    setOrden(newOrden as CriterioOrden);
+  const handleOrdersChange = (newOrdenes: string[]) => {
+    setOrdenes(newOrdenes as CriterioOrden[]);
     setVisibleCount(PAGE_SIZE);
   };
 
@@ -158,8 +158,8 @@ export function MenuCategoriasGrid({
         selectedBuilding={selectedBuilding}
         onBuildingChange={handleBuildingChange}
         ordenOptions={ORDEN_OPTIONS}
-        orden={orden}
-        onOrderChange={handleOrderChange}
+        ordenes={ordenes}
+        onOrdersChange={handleOrdersChange}
         viewMode={activeViewMode}
         onViewModeChange={handleViewModeChange}
         loading={loading}
