@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faUtensils } from '@fortawesome/free-solid-svg-icons'
 import { Loading } from '../../../../shared/loading'
 import {
+  getCachedImageUrl,
   isImageCached,
   loadBalancedImage,
 } from '../../infrastructure/image-load-balancer'
@@ -60,7 +61,7 @@ export function ItemMenuCategoriaServicioCard({
   const cachedReady = Boolean(categoriaServicio) && isImageCached(primaryUrl)
   const isImageReady = cachedReady || loadedState?.sourceKey === primaryUrl
   const activeSrc = cachedReady
-    ? primaryUrl
+    ? (getCachedImageUrl(primaryUrl) ?? primaryUrl)
     : loadedState?.sourceKey === primaryUrl
       ? loadedState.resolvedUrl
       : null

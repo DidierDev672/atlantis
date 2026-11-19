@@ -1,3 +1,4 @@
+import { memo, useCallback } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faArrowsRotate,
@@ -25,6 +26,7 @@ export interface ProductosMasonryNavbarProps {
   busqueda: string
   disponibilidad: DisponibilidadFiltro
   categoriasSeleccionadas: string[]
+  categoriaOptions?: ReadonlyArray<DropdownOption>
   ordenesSeleccionados: OrdenProducto[]
   totalProductos: number
   loading: boolean
@@ -86,14 +88,19 @@ const OPCIONES_ORDENAMIENTO: DropdownOption[] = [
   },
 ]
 
+const EMPTY_CATEGORIA_OPTIONS: ReadonlyArray<DropdownOption> = []
+
 /**
  * Molécula: Barra de búsqueda, filtros dietéticos, selector desplegable
  * de ordenamiento (con RecursosDropdown) y acciones del catálogo de productos.
+ * Envuelto en `React.memo` y reutiliza `categoriaOptions` ya cargadas para evitar
+ * duplicar peticiones a `GET /menu-category`.
  */
-export function ProductosMasonryNavbar({
+export const ProductosMasonryNavbar = memo(function ProductosMasonryNavbar({
   busqueda,
   disponibilidad,
   categoriasSeleccionadas,
+  categoriaOptions = EMPTY_CATEGORIA_OPTIONS,
   ordenesSeleccionados,
   totalProductos,
   loading,
@@ -105,6 +112,13 @@ export function ProductosMasonryNavbar({
   onRefrescar,
   onAgregarNuevo,
 }: ProductosMasonryNavbarProps) {
+  const handleOrdenesMultiChange = useCallback(
+    (values: string[]) => {
+      onOrdenesChange(values as OrdenProducto[])
+    },
+    [onOrdenesChange]
+  )
+
   return (
     <nav
       aria-label="Filtros y acciones del menú de productos"
@@ -167,11 +181,12 @@ export function ProductosMasonryNavbar({
           </button>
         </div>
 
-        {/* Componente Reutilizable RecursosDropdown para filtrar por categorías (/menu-category) */}
+        {/* Reutiliza las opciones ya cargadas desde useItemMenuProductos sin re-consultar GET /menu-category */}
         <div className="w-56 sm:w-72">
           <RecursosDropdown
             label="Categorías"
-            endpoint="/menu-category"
+            options={categoriaOptions}
+            isLoading={loading && categoriaOptions.length === 0}
             multiple
             searchable
             searchPlaceholder="Buscar categoría…"
@@ -189,7 +204,7 @@ export function ProductosMasonryNavbar({
             label="Ordenar"
             multiple
             selectedValues={ordenesSeleccionados}
-            onMultiChange={(values) => onOrdenesChange(values as OrdenProducto[])}
+            onMultiChange={handleOrdenesMultiChange}
             options={OPCIONES_ORDENAMIENTO}
             placeholder="Ordenar por…"
             searchable={false}
@@ -228,6 +243,6 @@ export function ProductosMasonryNavbar({
       </div>
     </nav>
   )
-}
+})
 
 export default ProductosMasonryNavbar

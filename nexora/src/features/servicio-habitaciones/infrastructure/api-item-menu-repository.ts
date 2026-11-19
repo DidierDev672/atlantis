@@ -35,6 +35,34 @@ export interface UpdateProductoMenuResponse {
   rawError?: unknown
 }
 
+function extractItemMenuList(rawData: unknown): ItemMenuProducto[] {
+  if (Array.isArray(rawData)) {
+    return rawData as ItemMenuProducto[]
+  }
+
+  if (!rawData || typeof rawData !== 'object') {
+    return []
+  }
+
+  const obj = rawData as Record<string, unknown>
+  for (const key of ['data', 'items', 'results', 'products']) {
+    const candidate = obj[key]
+    if (Array.isArray(candidate)) {
+      return candidate as ItemMenuProducto[]
+    }
+    if (candidate && typeof candidate === 'object') {
+      const nested = candidate as Record<string, unknown>
+      for (const nestedKey of ['items', 'results', 'products', 'data']) {
+        if (Array.isArray(nested[nestedKey])) {
+          return nested[nestedKey] as ItemMenuProducto[]
+        }
+      }
+    }
+  }
+
+  return []
+}
+
 /**
  * Consulta balanceada del endpoint GET /item-menu con validación de status code.
  */
@@ -52,18 +80,7 @@ export async function requestProductosMenu(): Promise<ProductosMenuResponse> {
       return { productos: [], feedback: validation }
     }
 
-    const rawData = response.data
-    let lista: ItemMenuProducto[] = []
-
-    if (Array.isArray(rawData)) {
-      lista = rawData as ItemMenuProducto[]
-    } else if (
-      rawData &&
-      typeof rawData === 'object' &&
-      Array.isArray((rawData as { data?: unknown }).data)
-    ) {
-      lista = (rawData as { data: ItemMenuProducto[] }).data
-    }
+    const lista = extractItemMenuList(response.data)
 
     return { productos: lista, feedback: validation }
   } catch (err: unknown) {

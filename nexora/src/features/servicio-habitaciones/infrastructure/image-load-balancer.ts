@@ -1,12 +1,18 @@
 /**
- * Balanceador de carga para la descarga controlada de imágenes de productos.
+ * Balanceador de carga para la descarga controlada y optimizada de imágenes de productos y categorías.
  * - Limita la concurrencia simultánea para evitar saturar la red o el CDN.
+ * - Reduce fotos pesadas (15 MB / 4000x3000 px) y Base64 a texturas `blob:` acotadas (`<=maxDimension`).
  * - Aplica micro-jitter adaptativo y reintentos con retroceso exponencial.
- * - Deduplica peticiones en vuelo y cachea URLs ya resueltas.
- * - Expone el estado en tiempo real para sincronizar indicadores `/shared/loading`.
  */
 
 import { sleep } from '../../reservas/infrastructure/api-load-balancer'
+import {
+  buildImageCacheKey,
+  getImageCacheEntry,
+  hasImageCacheEntry,
+  setImageCacheEntry,
+} from './image-cache-lru'
+import { downscaleImageToBlobUrl } from './image-downscaler'
 
 export interface ImageLoadBalancerOptions {
   /** Máximo de imágenes descargándose en paralelo (pool compartido) */
@@ -19,6 +25,8 @@ export interface ImageLoadBalancerOptions {
   timeoutMs?: number
   /** URL alternativa si la imagen principal falla tras los reintentos */
   fallbackUrl?: string
+  /** Dimensión máxima en px para reducir fotos pesadas. Por defecto 640px (96px para avatares). */
+  maxDimension?: number
 }
 
 export interface BalancedImageResult {
@@ -39,12 +47,14 @@ interface QueuedImageTask {
   maxRetries: number
   backoffMultiplier: number
   timeoutMs: number
+  maxDimension: number
   resolve: (result: BalancedImageResult) => void
 }
 
-const DEFAULT_MAX_CONCURRENT = 4
-const loadedUrlCache = new Set<string>()
-const inFlightByUrl = new Map<string, Promise<BalancedImageResult>>()
+const DEFAULT_MAX_CONCURRENT = 3
+const DEFAULT_MAX_DIMENSION = 640
+
+const inFlightByKey = new Map<string, Promise<BalancedImageResult>>()
 const pendingQueue: QueuedImageTask[] = []
 const listeners = new Set<() => void>()
 
@@ -67,12 +77,7 @@ function emitSnapshot(): void {
     return
   }
 
-  currentSnapshot = {
-    activeCount: activeDownloads,
-    queuedCount,
-    isRunning,
-  }
-
+  currentSnapshot = { activeCount: activeDownloads, queuedCount, isRunning }
   listeners.forEach((listener) => listener())
 }
 
@@ -87,8 +92,18 @@ export function getImageLoadBalancerSnapshot(): ImageLoadBalancerSnapshot {
   return currentSnapshot
 }
 
-export function isImageCached(url: string): boolean {
-  return Boolean(url) && loadedUrlCache.has(url)
+export function isImageCached(
+  url: string,
+  maxDimension: number = DEFAULT_MAX_DIMENSION
+): boolean {
+  return hasImageCacheEntry(url, maxDimension)
+}
+
+export function getCachedImageUrl(
+  url: string,
+  maxDimension: number = DEFAULT_MAX_DIMENSION
+): string | null {
+  return getImageCacheEntry(url, maxDimension)?.resolvedUrl ?? null
 }
 
 function attemptSingleImageLoad(url: string, timeoutMs: number): Promise<boolean> {
@@ -101,21 +116,16 @@ function attemptSingleImageLoad(url: string, timeoutMs: number): Promise<boolean
     const img = new Image()
     let settled = false
 
-    const cleanup = () => {
-      img.onload = null
-      img.onerror = null
-      clearTimeout(timerId)
-    }
-
     const finish = (ok: boolean) => {
       if (settled) return
       settled = true
-      cleanup()
+      img.onload = null
+      img.onerror = null
+      clearTimeout(timerId)
       resolve(ok)
     }
 
     const timerId = window.setTimeout(() => finish(false), timeoutMs)
-
     img.onload = () => finish(true)
     img.onerror = () => finish(false)
     img.decoding = 'async'
@@ -123,21 +133,55 @@ function attemptSingleImageLoad(url: string, timeoutMs: number): Promise<boolean
   })
 }
 
-async function executeImageTask(task: QueuedImageTask): Promise<BalancedImageResult> {
-  const { url, fallbackUrl, maxRetries, backoffMultiplier, timeoutMs } = task
+async function resolveOptimizedImage(
+  url: string,
+  maxDimension: number,
+  timeoutMs: number
+): Promise<{ ok: boolean; resolvedUrl: string; isBlob: boolean }> {
+  try {
+    const downscaledBlobUrl = await downscaleImageToBlobUrl(url, {
+      maxDimension,
+      timeoutMs,
+    })
+    if (downscaledBlobUrl) {
+      return { ok: true, resolvedUrl: downscaledBlobUrl, isBlob: true }
+    }
 
-  // Micro-jitter adaptativo (4-16ms) para distribuir ráfagas de montaje en el grid
-  const jitterMs = Math.floor(Math.random() * 12) + 4
-  await sleep(jitterMs)
+    const loaded = await attemptSingleImageLoad(url, timeoutMs)
+    return { ok: loaded, resolvedUrl: url, isBlob: false }
+  } catch {
+    return { ok: false, resolvedUrl: url, isBlob: false }
+  }
+}
+
+async function executeImageTask(task: QueuedImageTask): Promise<BalancedImageResult> {
+  const {
+    url,
+    fallbackUrl,
+    maxRetries,
+    backoffMultiplier,
+    timeoutMs,
+    maxDimension,
+  } = task
+
+  await sleep(Math.floor(Math.random() * 12) + 4)
 
   let attempt = 0
   let delayMs = 150
 
   while (attempt <= maxRetries) {
-    const loaded = await attemptSingleImageLoad(url, timeoutMs)
-    if (loaded) {
-      loadedUrlCache.add(url)
-      return { resolvedUrl: url, usedFallback: false, fromCache: false }
+    const attemptResult = await resolveOptimizedImage(url, maxDimension, timeoutMs)
+    if (attemptResult.ok) {
+      setImageCacheEntry(url, maxDimension, {
+        resolvedUrl: attemptResult.resolvedUrl,
+        usedFallback: false,
+        isBlob: attemptResult.isBlob,
+      })
+      return {
+        resolvedUrl: attemptResult.resolvedUrl,
+        usedFallback: false,
+        fromCache: false,
+      }
     }
 
     if (attempt < maxRetries) {
@@ -146,17 +190,37 @@ async function executeImageTask(task: QueuedImageTask): Promise<BalancedImageRes
       delayMs = Math.round(delayMs * backoffMultiplier)
       continue
     }
-
     break
   }
 
   if (fallbackUrl && fallbackUrl !== url) {
-    if (loadedUrlCache.has(fallbackUrl)) {
-      return { resolvedUrl: fallbackUrl, usedFallback: true, fromCache: true }
+    const cachedFallback = getImageCacheEntry(fallbackUrl, maxDimension)
+    if (cachedFallback) {
+      return {
+        resolvedUrl: cachedFallback.resolvedUrl,
+        usedFallback: true,
+        fromCache: true,
+      }
     }
-    const fallbackOk = await attemptSingleImageLoad(fallbackUrl, timeoutMs)
-    if (fallbackOk) {
-      loadedUrlCache.add(fallbackUrl)
+
+    const fallbackRes = await resolveOptimizedImage(
+      fallbackUrl,
+      maxDimension,
+      timeoutMs
+    )
+    if (fallbackRes.ok) {
+      const entry = {
+        resolvedUrl: fallbackRes.resolvedUrl,
+        usedFallback: true,
+        isBlob: fallbackRes.isBlob,
+      }
+      setImageCacheEntry(fallbackUrl, maxDimension, entry)
+      setImageCacheEntry(url, maxDimension, entry)
+      return {
+        resolvedUrl: fallbackRes.resolvedUrl,
+        usedFallback: true,
+        fromCache: false,
+      }
     }
     return { resolvedUrl: fallbackUrl, usedFallback: true, fromCache: false }
   }
@@ -187,8 +251,7 @@ function drainQueue(maxConcurrent: number): void {
 }
 
 /**
- * Carga una imagen a través del balanceador de carga compartido (cola con concurrencia limitada,
- * micro-jitter, reintentos con exponential backoff y fallback automático).
+ * Carga una imagen de forma asíncrona a través del balanceador de carga compartido.
  */
 export function loadBalancedImage(
   url: string,
@@ -200,17 +263,20 @@ export function loadBalancedImage(
     backoffMultiplier = 1.5,
     timeoutMs = 10000,
     fallbackUrl,
+    maxDimension = DEFAULT_MAX_DIMENSION,
   } = options
 
-  if (isImageCached(url)) {
+  const cached = getImageCacheEntry(url, maxDimension)
+  if (cached) {
     return Promise.resolve({
-      resolvedUrl: url,
-      usedFallback: false,
+      resolvedUrl: cached.resolvedUrl,
+      usedFallback: cached.usedFallback,
       fromCache: true,
     })
   }
 
-  const existing = inFlightByUrl.get(url)
+  const cacheKey = buildImageCacheKey(url, maxDimension)
+  const existing = inFlightByKey.get(cacheKey)
   if (existing) {
     return existing
   }
@@ -222,14 +288,15 @@ export function loadBalancedImage(
       maxRetries,
       backoffMultiplier,
       timeoutMs,
+      maxDimension,
       resolve,
     })
     emitSnapshot()
     drainQueue(maxConcurrent)
   }).finally(() => {
-    inFlightByUrl.delete(url)
+    inFlightByKey.delete(cacheKey)
   })
 
-  inFlightByUrl.set(url, taskPromise)
+  inFlightByKey.set(cacheKey, taskPromise)
   return taskPromise
 }

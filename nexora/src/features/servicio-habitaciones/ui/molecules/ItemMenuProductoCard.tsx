@@ -1,6 +1,6 @@
+import { memo } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faMinus, faPenToSquare, faPlus } from '@fortawesome/free-solid-svg-icons'
-import { Tooltip } from '../../../../shared/ui'
 import {
   type CategoriaVinculadaInfo,
   type ItemMenuProducto,
@@ -30,7 +30,7 @@ export interface ItemMenuProductoCardProps {
  * Muestra la imagen del producto en el encabezado, título/descripción, banner de la
  * categoría vinculada sobre el precio y controles rápidos para editar y agregar al carrito.
  */
-export function ItemMenuProductoCard({
+export const ItemMenuProductoCard = memo(function ItemMenuProductoCard({
   producto,
   index = 0,
   viewMode = 'grid',
@@ -80,7 +80,7 @@ export function ItemMenuProductoCard({
           onVerDetalle?.(producto)
         }
       }}
-      className="group relative flex h-full flex-col justify-between overflow-hidden rounded-3xl border border-line bg-panel shadow-xs transition-all duration-300 hover:border-primary/40 hover:shadow-xl hover:-translate-y-1 cursor-pointer select-none"
+      className="group relative flex h-full flex-col justify-between overflow-hidden rounded-3xl border border-line bg-panel shadow-xs transition-[transform,border-color,box-shadow] duration-300 hover:border-primary/40 hover:shadow-lg hover:-translate-y-1 cursor-pointer select-none"
     >
       {/* 1. Encabezado visual con imagen del producto */}
       <div>
@@ -118,23 +118,22 @@ export function ItemMenuProductoCard({
             className="flex shrink-0 items-center gap-2"
           >
             {onEditar && (
-              <Tooltip content="Modificar producto">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onEditar(producto)
-                  }}
-                  aria-label={`Modificar ${producto.name}`}
-                  className="border-line bg-canvas text-ink hover:border-primary/40 hover:text-primary inline-flex size-9 cursor-pointer items-center justify-center rounded-2xl border shadow-2xs transition-all hover:scale-105 active:scale-95"
-                >
-                  <FontAwesomeIcon
-                    icon={faPenToSquare}
-                    className="size-3.5"
-                    aria-hidden="true"
-                  />
-                </button>
-              </Tooltip>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onEditar(producto)
+                }}
+                aria-label={`Modificar ${producto.name}`}
+                title="Modificar producto"
+                className="border-line bg-canvas text-ink hover:border-primary/40 hover:text-primary inline-flex size-9 cursor-pointer items-center justify-center rounded-2xl border shadow-2xs transition-[transform,border-color,color] hover:scale-105 active:scale-95"
+              >
+                <FontAwesomeIcon
+                  icon={faPenToSquare}
+                  className="size-3.5"
+                  aria-hidden="true"
+                />
+              </button>
             )}
 
             {cantidadEnCarrito === 0 ? (
@@ -194,6 +193,6 @@ export function ItemMenuProductoCard({
       </div>
     </article>
   )
-}
+})
 
 export default ItemMenuProductoCard

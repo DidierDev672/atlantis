@@ -5,6 +5,7 @@ import { faBowlFood, faExpand, faPlus } from '@fortawesome/free-solid-svg-icons'
 import type { MenuCategoria } from '../../domain/menu-categoria'
 import type { LayoutViewMode } from '../atoms/LayoutViewSwitch'
 import {
+  getCachedImageUrl,
   isImageCached,
   loadBalancedImage,
 } from '../../infrastructure/image-load-balancer'
@@ -62,7 +63,7 @@ export function MenuCategoriaCard({
   const cachedReady = isImageCached(primaryUrl)
   const isImageReady = cachedReady || loadedState?.sourceKey === primaryUrl
   const activeSrc = cachedReady
-    ? primaryUrl
+    ? (getCachedImageUrl(primaryUrl) ?? primaryUrl)
     : loadedState?.sourceKey === primaryUrl
       ? loadedState.resolvedUrl
       : null
