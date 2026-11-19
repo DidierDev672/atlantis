@@ -13,6 +13,17 @@ export interface CategoriaServicioInfo {
 }
 
 const categoriaServicioCache = new Map<string, CategoriaServicioInfo | null>()
+const inFlightByCategoryId = new Map<string, Promise<CategoriaServicioInfo | null>>()
+let inFlightCatalogPromise: ReturnType<typeof obtenerMenuCategoriasApi> | null = null
+
+function obtenerCatalogoDeduplicado() {
+  if (!inFlightCatalogPromise) {
+    inFlightCatalogPromise = obtenerMenuCategoriasApi().finally(() => {
+      inFlightCatalogPromise = null
+    })
+  }
+  return inFlightCatalogPromise
+}
 
 function obtenerCategoriaLocal(categoryId?: string): CategoriaServicioInfo | null {
   if (!categoryId) return null
@@ -32,64 +43,78 @@ async function consultarCategoriaPorId(
     return categoriaServicioCache.get(categoryId) ?? null
   }
 
-  try {
-    const response = await executeBalancedRequest(() =>
-      api.get(`/menu-category/${encodeURIComponent(categoryId)}`, {
-        skipAuth: true,
-        validateStatus: () => true,
-      })
-    )
+  const enVuelo = inFlightByCategoryId.get(categoryId)
+  if (enVuelo) {
+    return enVuelo
+  }
 
-    const validation = validateStatusCode(response.status)
+  const requestPromise = (async (): Promise<CategoriaServicioInfo | null> => {
+    try {
+      const response = await executeBalancedRequest(() =>
+        api.get(`/menu-category/${encodeURIComponent(categoryId)}`, {
+          skipAuth: true,
+          validateStatus: () => true,
+        })
+      )
 
-    if (validation.isValid && response.data) {
-      let raw: Record<string, unknown> | null = null
+      const validation = validateStatusCode(response.status)
 
-      if (Array.isArray(response.data) && response.data.length > 0) {
-        raw = response.data[0] as Record<string, unknown>
-      } else if (response.data && typeof response.data === 'object') {
-        const obj = response.data as Record<string, unknown>
-        if (obj.data && typeof obj.data === 'object' && !Array.isArray(obj.data)) {
-          raw = obj.data as Record<string, unknown>
-        } else if (Array.isArray(obj.data) && obj.data.length > 0) {
-          raw = obj.data[0] as Record<string, unknown>
-        } else {
-          raw = obj
+      if (validation.isValid && response.data) {
+        let raw: Record<string, unknown> | null = null
+
+        if (Array.isArray(response.data) && response.data.length > 0) {
+          raw = response.data[0] as Record<string, unknown>
+        } else if (response.data && typeof response.data === 'object') {
+          const obj = response.data as Record<string, unknown>
+          if (obj.data && typeof obj.data === 'object' && !Array.isArray(obj.data)) {
+            raw = obj.data as Record<string, unknown>
+          } else if (Array.isArray(obj.data) && obj.data.length > 0) {
+            raw = obj.data[0] as Record<string, unknown>
+          } else {
+            raw = obj
+          }
+        }
+
+        if (raw && typeof raw === 'object' && raw.name) {
+          const info: CategoriaServicioInfo = {
+            name: String(raw.name),
+            asset: raw.asset ? String(raw.asset) : undefined,
+          }
+          categoriaServicioCache.set(categoryId, info)
+          return info
         }
       }
 
-      if (raw && typeof raw === 'object' && raw.name) {
+      // Fallback al catálogo general GET /menu-category deduplicado
+      const catalogoRes = await obtenerCatalogoDeduplicado()
+      const coincidencia =
+        catalogoRes.categorias.find((c) => c.id === categoryId) ||
+        catalogoRes.categorias.find(
+          (c) => c.name.toLowerCase() === categoryId.toLowerCase()
+        ) ||
+        catalogoRes.categorias.find((c) => c.headquartes_id === categoryId)
+
+      if (coincidencia) {
         const info: CategoriaServicioInfo = {
-          name: String(raw.name),
-          asset: raw.asset ? String(raw.asset) : undefined,
+          name: coincidencia.name,
+          asset: coincidencia.asset,
         }
         categoriaServicioCache.set(categoryId, info)
         return info
       }
+    } catch (err) {
+      console.warn('Aviso al consultar servicio de habitaciones:', err)
     }
 
-    // Fallback al catálogo general GET /menu-category buscando por id o headquartes_id legado
-    const catalogoRes = await obtenerMenuCategoriasApi()
-    const coincidencia =
-      catalogoRes.categorias.find((c) => c.id === categoryId) ||
-      catalogoRes.categorias.find(
-        (c) => c.name.toLowerCase() === categoryId.toLowerCase()
-      ) ||
-      catalogoRes.categorias.find((c) => c.headquartes_id === categoryId)
+    const fallbackLocal = obtenerCategoriaLocal(categoryId)
+    categoriaServicioCache.set(categoryId, fallbackLocal)
+    return fallbackLocal
+  })().finally(() => {
+    inFlightByCategoryId.delete(categoryId)
+  })
 
-    if (coincidencia) {
-      const info: CategoriaServicioInfo = {
-        name: coincidencia.name,
-        asset: coincidencia.asset,
-      }
-      categoriaServicioCache.set(categoryId, info)
-      return info
-    }
-  } catch (err) {
-    console.warn('Aviso al consultar servicio de habitaciones:', err)
-  }
-
-  return obtenerCategoriaLocal(categoryId)
+  inFlightByCategoryId.set(categoryId, requestPromise)
+  return requestPromise
 }
 
 /**

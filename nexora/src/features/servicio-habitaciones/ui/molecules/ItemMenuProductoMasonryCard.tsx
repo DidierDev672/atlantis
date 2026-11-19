@@ -1,15 +1,7 @@
-import { useEffect, useState } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import {
-  faMinus,
-  faPenToSquare,
-  faPlus,
-} from '@fortawesome/free-solid-svg-icons'
-import { Tooltip } from '../../../../shared/ui'
+import { Suspense, lazy, memo, useCallback, useState, type ComponentType } from 'react'
 import {
   type CategoriaVinculadaInfo,
   type ItemMenuProducto,
-  formatearMonedaCOP,
   resolverImagenProducto,
 } from '../../domain/item-menu'
 import {
@@ -17,12 +9,21 @@ import {
   useCarritoStore,
 } from '../../application/carrito-store'
 import { useCategoriaServicio } from '../../application/use-categoria-servicio'
-import { CategoriaVinculadaBadge } from '../atoms/CategoriaVinculadaBadge'
-import {
-  isImageCached,
-  loadBalancedImage,
-} from '../../infrastructure/image-load-balancer'
-import { Loading } from '../../../../shared/loading'
+import { useBalancedProductImage } from '../../application/use-balanced-product-image'
+import { Skeleton } from '../../../../shared/loading'
+import type { ItemMenuProductoMasonryOverlayProps } from './ItemMenuProductoMasonryOverlay'
+
+const LazyItemMenuProductoMasonryOverlay = lazy<
+  ComponentType<ItemMenuProductoMasonryOverlayProps>
+>(async () => {
+  try {
+    const mod = await import('./ItemMenuProductoMasonryOverlay')
+    return { default: mod.ItemMenuProductoMasonryOverlay }
+  } catch (error) {
+    console.error('Error cargando overlay de tarjeta Masonry:', error)
+    return { default: () => null }
+  }
+})
 
 export interface ItemMenuProductoMasonryCardProps {
   producto: ItemMenuProducto
@@ -32,233 +33,122 @@ export interface ItemMenuProductoMasonryCardProps {
   onEditar?: (producto: ItemMenuProducto) => void
 }
 
-const FALLBACK_PRODUCT_IMG =
-  'https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg?auto=compress&cs=tinysrgb&w=800'
-
 /**
  * Molécula: Tarjeta visual en modo Masonry para productos del menú.
- * En reposo muestra únicamente la fotografía del producto; al hacer hover
- * despliega Nombre, Descripción, Precio y Botón para agregar al carrito.
+ * En reposo renderiza únicamente la fotografía optimizada (<=640px) y carga el overlay
+ * de acciones de forma perezosa solo al hacer hover, focus o touch.
  */
-export function ItemMenuProductoMasonryCard({
-  producto,
-  index = 0,
-  categoriaInfo,
-  onVerDetalle,
-  onEditar,
-}: ItemMenuProductoMasonryCardProps) {
-  const { categoriaServicio } = useCategoriaServicio(
-    categoriaInfo ? undefined : producto.category_id
-  )
-  const categoriaVinculada = categoriaInfo ?? categoriaServicio
-  const isDisponible = producto.available !== false
-  const primaryUrl = resolverImagenProducto(producto)
+export const ItemMenuProductoMasonryCard = memo(
+  function ItemMenuProductoMasonryCard({
+    producto,
+    index = 0,
+    categoriaInfo,
+    onVerDetalle,
+    onEditar,
+  }: ItemMenuProductoMasonryCardProps) {
+    const [isOverlayMounted, setIsOverlayMounted] = useState(false)
 
-  const [loadedState, setLoadedState] = useState<{
-    sourceKey: string
-    resolvedUrl: string
-  } | null>(() =>
-    isImageCached(primaryUrl)
-      ? { sourceKey: primaryUrl, resolvedUrl: primaryUrl }
-      : null
-  )
+    const { categoriaServicio } = useCategoriaServicio(
+      categoriaInfo ? undefined : producto.category_id
+    )
+    const categoriaVinculada = categoriaInfo ?? categoriaServicio
+    const isDisponible = producto.available !== false
+    const primaryUrl = resolverImagenProducto(producto)
 
-  useEffect(() => {
-    if (isImageCached(primaryUrl)) return
+    const { activeSrc, isImageReady, handleImageError } =
+      useBalancedProductImage(primaryUrl)
 
-    let active = true
-    void loadBalancedImage(primaryUrl, {
-      fallbackUrl: FALLBACK_PRODUCT_IMG,
-    }).then((result) => {
-      if (!active) return
-      setLoadedState({
-        sourceKey: primaryUrl,
-        resolvedUrl: result.resolvedUrl,
-      })
-    })
+    const productoKey = obtenerProductoKey(producto)
+    const cantidadEnCarrito = useCarritoStore(
+      (s) =>
+        s.items.find((item) => obtenerProductoKey(item.producto) === productoKey)
+          ?.cantidad ?? 0
+    )
+    const agregarProducto = useCarritoStore((s) => s.agregarProducto)
+    const incrementarCantidad = useCarritoStore((s) => s.incrementarCantidad)
+    const decrementarCantidad = useCarritoStore((s) => s.decrementarCantidad)
 
-    return () => {
-      active = false
-    }
-  }, [primaryUrl])
+    const ratioVariant = index % 3
+    const aspectClass =
+      ratioVariant === 0
+        ? 'aspect-3/4'
+        : ratioVariant === 1
+          ? 'aspect-4/3'
+          : 'aspect-square'
 
-  const cachedReady = isImageCached(primaryUrl)
-  const isImageReady = cachedReady || loadedState?.sourceKey === primaryUrl
-  const activeSrc = cachedReady
-    ? primaryUrl
-    : loadedState?.sourceKey === primaryUrl
-      ? loadedState.resolvedUrl
-      : null
+    const handleAgregar = useCallback(() => {
+      agregarProducto(producto, 1)
+    }, [agregarProducto, producto])
 
-  const productoKey = obtenerProductoKey(producto)
-  const cantidadEnCarrito = useCarritoStore(
-    (s) =>
-      s.items.find((item) => obtenerProductoKey(item.producto) === productoKey)
-        ?.cantidad ?? 0
-  )
-  const agregarProducto = useCarritoStore((s) => s.agregarProducto)
-  const incrementarCantidad = useCarritoStore((s) => s.incrementarCantidad)
-  const decrementarCantidad = useCarritoStore((s) => s.decrementarCantidad)
+    const handleIncrementar = useCallback(() => {
+      incrementarCantidad(productoKey)
+    }, [incrementarCantidad, productoKey])
 
-  // Proporciones alternadas estilo Masonry / cascada
-  const ratioVariant = index % 3
-  const aspectClass =
-    ratioVariant === 0
-      ? 'aspect-3/4'
-      : ratioVariant === 1
-        ? 'aspect-4/3'
-        : 'aspect-square'
+    const handleDecrementar = useCallback(() => {
+      decrementarCantidad(productoKey)
+    }, [decrementarCantidad, productoKey])
 
-  return (
-    <article
-      data-id={producto.id}
-      data-category-id={producto.category_id}
-      role="button"
-      tabIndex={0}
-      onClick={() => onVerDetalle?.(producto)}
-      onKeyDown={(e) => {
-        if (e.target !== e.currentTarget) return
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onVerDetalle?.(producto)
-        }
-      }}
-      className={`group border-line/80 bg-panel relative w-full ${aspectClass} cursor-pointer overflow-hidden rounded-3xl border shadow-xs transition-[border-color,box-shadow] duration-300 select-none hover:border-primary/60 hover:shadow-2xl`}
-    >
-      {/* Loader del balanceador de cargas de imagen */}
-      <Loading
-        visible={!isImageReady}
-        variant="overlay"
-        size="sm"
-        label="Cargando imagen…"
-        delay={0}
-        minDuration={250}
-      />
+    return (
+      <article
+        data-id={producto.id}
+        data-category-id={producto.category_id}
+        role="button"
+        tabIndex={0}
+        onMouseEnter={() => setIsOverlayMounted(true)}
+        onMouseLeave={() => setIsOverlayMounted(false)}
+        onFocus={() => setIsOverlayMounted(true)}
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget)) {
+            setIsOverlayMounted(false)
+          }
+        }}
+        onTouchStart={() => setIsOverlayMounted(true)}
+        onClick={() => onVerDetalle?.(producto)}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onVerDetalle?.(producto)
+          }
+        }}
+        className={`group border-line/80 bg-panel relative w-full ${aspectClass} cursor-pointer overflow-hidden rounded-3xl border shadow-xs transition-[border-color,box-shadow] duration-200 select-none hover:border-primary/60 hover:shadow-lg`}
+      >
+        {!isImageReady && (
+          <Skeleton
+            variant="rectangular"
+            animation="pulse"
+            className="absolute inset-0 size-full"
+          />
+        )}
 
-      {/* Estado en reposo: únicamente la imagen del producto */}
-      {activeSrc && (
-        <img
-          src={activeSrc}
-          alt={producto.name}
-          onError={() => {
-            if (activeSrc !== FALLBACK_PRODUCT_IMG) {
-              setLoadedState({
-                sourceKey: primaryUrl,
-                resolvedUrl: FALLBACK_PRODUCT_IMG,
-              })
-            }
-          }}
-          loading="lazy"
-          className="size-full object-cover transition-transform duration-700 ease-out group-hover:scale-108"
-        />
-      )}
+        {activeSrc && (
+          <img
+            src={activeSrc}
+            alt={producto.name}
+            onError={handleImageError}
+            loading="lazy"
+            decoding="async"
+            className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]"
+          />
+        )}
 
-      {/* Overlay en hover: degradado ligero sin backdrop-blur para evitar sobrecarga de GPU */}
-      <div className="absolute inset-0 flex flex-col justify-between bg-linear-to-t from-black/95 via-black/70 to-black/45 p-4 opacity-0 transition-opacity duration-300 ease-out group-hover:opacity-100 group-focus-within:opacity-100 sm:p-5">
-        <div className="flex items-start justify-between gap-2.5">
-          <div className="min-w-0 flex-1">
-            <h3 className="font-serif text-base font-bold leading-snug text-white line-clamp-2 sm:text-lg">
-              {producto.name}
-            </h3>
-          </div>
-
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="flex shrink-0 items-center gap-1.5"
-          >
-            {onEditar && (
-              <Tooltip content="Modificar producto">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onEditar(producto)
-                  }}
-                  aria-label={`Modificar ${producto.name}`}
-                  className="inline-flex size-9 cursor-pointer items-center justify-center rounded-full border border-white/25 bg-black/65 text-white shadow-lg transition-transform hover:scale-105 hover:bg-black/85 active:scale-95"
-                >
-                  <FontAwesomeIcon
-                    icon={faPenToSquare}
-                    className="size-3.5"
-                    aria-hidden="true"
-                  />
-                </button>
-              </Tooltip>
-            )}
-
-            {cantidadEnCarrito === 0 ? (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  agregarProducto(producto, 1)
-                }}
-                disabled={!isDisponible}
-                aria-label={`Agregar ${producto.name} al carrito`}
-                title={isDisponible ? 'Agregar al carrito' : 'No disponible'}
-                className="bg-primary hover:bg-primary/90 inline-flex size-9 cursor-pointer items-center justify-center rounded-full text-white shadow-lg transition-transform hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <FontAwesomeIcon icon={faPlus} className="size-4" />
-              </button>
-            ) : (
-              <div className="flex items-center gap-1 rounded-full border border-white/25 bg-black/80 p-1 shadow-lg">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    decrementarCantidad(productoKey)
-                  }}
-                  aria-label={`Disminuir una unidad de ${producto.name}`}
-                  title="Disminuir cantidad"
-                  className="inline-flex size-7 cursor-pointer items-center justify-center rounded-full bg-white/15 text-white transition-all hover:bg-rose-500 active:scale-95"
-                >
-                  <FontAwesomeIcon icon={faMinus} className="size-2.5" />
-                </button>
-
-                <span
-                  aria-label={`${cantidadEnCarrito} unidades en el carrito`}
-                  className="min-w-5 text-center text-xs font-black text-white"
-                >
-                  {cantidadEnCarrito}
-                </span>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    incrementarCantidad(productoKey)
-                  }}
-                  disabled={!isDisponible}
-                  aria-label={`Agregar más de ${producto.name}`}
-                  title="Agregar más"
-                  className="bg-primary hover:bg-primary/90 inline-flex size-7 cursor-pointer items-center justify-center rounded-full text-white transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <FontAwesomeIcon icon={faPlus} className="size-2.5" />
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="space-y-2.5">
-          {categoriaVinculada && (
-            <CategoriaVinculadaBadge
-              categoria={categoriaVinculada}
-              variant="overlay"
+        {isOverlayMounted && (
+          <Suspense fallback={null}>
+            <LazyItemMenuProductoMasonryOverlay
+              producto={producto}
+              categoriaVinculada={categoriaVinculada}
+              isDisponible={isDisponible}
+              cantidadEnCarrito={cantidadEnCarrito}
+              onEditar={onEditar}
+              onAgregar={handleAgregar}
+              onIncrementar={handleIncrementar}
+              onDecrementar={handleDecrementar}
             />
-          )}
-          <div className="border-t border-white/20 pt-3">
-            <span className="block text-[10px] font-bold tracking-wider text-white/70 uppercase">
-              Precio
-            </span>
-            <span className="font-sans text-lg font-black tracking-tight text-white sm:text-xl">
-              {formatearMonedaCOP(producto.price)}
-            </span>
-          </div>
-        </div>
-      </div>
-    </article>
-  )
-}
+          </Suspense>
+        )}
+      </article>
+    )
+  }
+)
 
 export default ItemMenuProductoMasonryCard

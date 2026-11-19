@@ -1,34 +1,46 @@
-import { useState, useSyncExternalStore } from 'react';
+import { Suspense, lazy, useCallback, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
-import {
-  getImageLoadBalancerSnapshot,
-  subscribeImageLoadBalancer,
-} from '../../infrastructure/image-load-balancer';
 import { StatusCodeAlert } from '../../../../shared/lib/status-code-validator';
 import { Loading, useDelayVisibility } from '../../../../shared/loading';
 import { useItemMenuProductos } from '../../application/use-item-menu-productos';
-import {
-  resolverCategoriaDeProducto,
-  type ItemMenuProducto,
-} from '../../domain/item-menu';
-import { ItemMenuProductoCard } from '../molecules/ItemMenuProductoCard';
-import { ItemMenuProductoModalDetalle } from '../molecules/ItemMenuProductoModalDetalle';
+import type { ItemMenuProducto } from '../../domain/item-menu';
 import { ProductosMasonryNavbar } from '../molecules/ProductosMasonryNavbar';
 import { ProductosVisualizacionNavbar } from '../molecules/ProductosVisualizacionNavbar';
 import { ItemMenuProductosEmptyState } from '../molecules/ItemMenuProductosEmptyState';
-import { EditarProductoDrawer } from './EditarProductoDrawer';
+import { ImageBalancerStatusBanner } from '../molecules/ImageBalancerStatusBanner';
+import { ProductosCatalogoGrid } from '../molecules/ProductosCatalogoGrid';
 import type { LayoutViewMode } from '../atoms/LayoutViewSwitch';
-import {
-  InfiniteScroll,
-  InfiniteScrollAnimatedItem,
-  InfiniteScrollEnd,
-} from '../../../../shared/ui';
+
+// Carga perezosa bajo demanda: evita montar/descargar Modal y Drawer hasta que el usuario interactúe
+const LazyItemMenuProductoModalDetalle = lazy(async () => {
+  try {
+    return await import('../molecules/ItemMenuProductoModalDetalle');
+  } catch (error) {
+    console.error('Error cargando modal de detalle de producto:', error);
+    return { default: () => null };
+  }
+});
+
+const LazyEditarProductoDrawer = lazy(async () => {
+  try {
+    const mod = await import('./EditarProductoDrawer');
+    return { default: mod.EditarProductoDrawer };
+  } catch (error) {
+    console.error('Error cargando drawer de edición de producto:', error);
+    return { default: () => null };
+  }
+});
 
 export interface ItemMenuProductosMasonryProps {
   onAgregarNuevo?: () => void;
 }
 
+/**
+ * Organismo: Catálogo principal de productos gastronómicos (`/item-menu`).
+ * Mantiene `ImageBalancerStatusBanner` aislado, `ProductosVisualizacionNavbar` sin blur
+ * y carga perezosa para modales/drawers evitando trabajo innecesario de GPU/RAM.
+ */
 export function ItemMenuProductosMasonry({
   onAgregarNuevo,
 }: ItemMenuProductosMasonryProps) {
@@ -37,6 +49,7 @@ export function ItemMenuProductosMasonry({
     productosFiltrados,
     visibleProductos,
     categoriasMap,
+    categoriaOptions,
     loading,
     organizando,
     feedback,
@@ -47,6 +60,7 @@ export function ItemMenuProductosMasonry({
     ordenesSeleccionados,
     hasMore,
     handleLoadMore,
+    mostrarTodos,
     cargarProductos,
     handleBusquedaChange,
     handleLimpiarBusqueda,
@@ -70,22 +84,32 @@ export function ItemMenuProductosMasonry({
     delay: 0,
     minDuration: 450,
   });
-  const imageBalancer = useSyncExternalStore(
-    subscribeImageLoadBalancer,
-    getImageLoadBalancerSnapshot
-  );
-  const showImageBalancerLoading = useDelayVisibility(
-    imageBalancer.isRunning && !loading,
-    { delay: 0, minDuration: 350 }
-  );
+
+  const handleRefrescar = useCallback(() => {
+    void cargarProductos();
+  }, [cargarProductos]);
+
+  const handleDismissFeedback = useCallback(() => {
+    setFeedback(null);
+  }, [setFeedback]);
+
+  const handleCerrarDetalle = useCallback(() => {
+    setProductoSeleccionado(null);
+  }, []);
+
+  const handleCerrarEditar = useCallback(() => {
+    setProductoParaEditar(null);
+  }, []);
+
+  const isOverlayLoading = showOrganizando || (showLoading && productos.length > 0);
 
   return (
     <div className="space-y-6">
-      {/* Barra Superior Atomic Design: Buscador, Filtros y Acciones */}
       <ProductosMasonryNavbar
         busqueda={busqueda}
         disponibilidad={disponibilidad}
         categoriasSeleccionadas={categoriasSeleccionadas}
+        categoriaOptions={categoriaOptions}
         ordenesSeleccionados={ordenesSeleccionados}
         totalProductos={productos.length}
         loading={loading}
@@ -94,19 +118,18 @@ export function ItemMenuProductosMasonry({
         onDisponibilidadChange={handleDisponibilidadChange}
         onCategoriasChange={handleCategoriasChange}
         onOrdenesChange={handleOrdenesChange}
-        onRefrescar={() => void cargarProductos()}
+        onRefrescar={handleRefrescar}
         onAgregarNuevo={onAgregarNuevo}
       />
 
-      {/* Alerta automática basada en status-code-validator.ts (silenciosa en 200 OK) */}
       <StatusCodeAlert
         validation={feedback}
         dismissible
-        onClose={() => setFeedback(null)}
+        onClose={handleDismissFeedback}
         actions={
           <button
             type="button"
-            onClick={() => void cargarProductos()}
+            onClick={handleRefrescar}
             disabled={loading}
             className="border-line bg-panel text-ink hover:border-primary/40 inline-flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-60"
           >
@@ -120,21 +143,9 @@ export function ItemMenuProductosMasonry({
         }
       />
 
-      {/* Indicador visual del balanceador de cargas de imágenes (/shared/loading) */}
-      {showImageBalancerLoading && (
-        <div className="border-line bg-panel/90 flex items-center justify-center rounded-2xl border px-4 py-1.5 shadow-2xs backdrop-blur-xs">
-          <Loading
-            visible={true}
-            variant="inline"
-            size="sm"
-            label={`Balanceando carga de imágenes (${imageBalancer.activeCount} activas · ${imageBalancer.queuedCount} en cola)…`}
-            delay={0}
-            minDuration={350}
-          />
-        </div>
-      )}
+      {/* Estado aislado del balanceador: emitSnapshot() no re-renderiza este organismo */}
+      <ImageBalancerStatusBanner suppressed={loading} />
 
-      {/* Estado de Carga y Contenido con /shared/loading */}
       {loading && productos.length === 0 ? (
         <div className="border-line bg-panel flex min-h-[260px] flex-col items-center justify-center rounded-3xl border shadow-xs">
           <Loading
@@ -149,23 +160,25 @@ export function ItemMenuProductosMasonry({
         </div>
       ) : (
         <div className="relative rounded-3xl">
-          <Loading
-            visible={showOrganizando || (showLoading && productos.length > 0)}
-            variant="overlay"
-            size="md"
-            label={
-              organizando
-                ? 'Organizando productos gastronómicos…'
-                : 'Actualizando productos (/item-menu)…'
-            }
-            description={
-              organizando
-                ? 'Reordenando carta según la opción seleccionada'
-                : 'Consultando catálogo (/item-menu)'
-            }
-            delay={0}
-            minDuration={400}
-          />
+          {isOverlayLoading && (
+            <Loading
+              visible={true}
+              variant="overlay"
+              size="md"
+              label={
+                organizando
+                  ? 'Organizando productos gastronómicos…'
+                  : 'Actualizando productos (/item-menu)…'
+              }
+              description={
+                organizando
+                  ? 'Reordenando carta según la opción seleccionada'
+                  : 'Consultando catálogo (/item-menu)'
+              }
+              delay={0}
+              minDuration={400}
+            />
+          )}
 
           {productosFiltrados.length === 0 ? (
             <ItemMenuProductosEmptyState
@@ -173,85 +186,40 @@ export function ItemMenuProductosMasonry({
               onAgregarNuevo={onAgregarNuevo}
             />
           ) : (
-            <InfiniteScroll
-              onLoadMore={handleLoadMore}
+            <ProductosCatalogoGrid
+              productos={visibleProductos}
+              totalFiltrados={productosFiltrados.length}
+              viewMode={viewMode}
+              categoriasMap={categoriasMap}
               hasMore={hasMore}
-              isLoading={false}
-              cooldownMs={180}
-              animationVariant="slideUp"
-              loader={
-                <Loading
-                  variant="inline"
-                  size="sm"
-                  label="Cargando más productos…"
-                  delay={0}
-                  minDuration={300}
-                />
-              }
-              endMessage={
-                <InfiniteScrollEnd label="Has visualizado todos los platillos y bebidas del menú de Room Service." />
-              }
-            >
-              <div
-                className={
-                  viewMode === 'grid'
-                    ? 'grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4'
-                    : 'columns-1 gap-6 space-y-6 sm:columns-2 lg:columns-3 xl:columns-4 [&>*]:break-inside-avoid'
-                }
-              >
-                {visibleProductos.map((item, idx) => {
-                  const itemKey =
-                    item.id ||
-                    `${item.category_id || 'cat'}-${item.name}-${idx}`;
-
-                  return (
-                    <InfiniteScrollAnimatedItem
-                      key={itemKey}
-                      variant="slideUp"
-                      viewportMargin="-100px"
-                      estimatedHeight={340}
-                      className={
-                        viewMode === 'grid'
-                          ? 'h-full w-full'
-                          : 'mb-6 break-inside-avoid'
-                      }
-                    >
-                      <ItemMenuProductoCard
-                        producto={item}
-                        index={idx}
-                        viewMode={viewMode}
-                        categoriaInfo={resolverCategoriaDeProducto(
-                          item.category_id,
-                          categoriasMap
-                        )}
-                        onVerDetalle={setProductoSeleccionado}
-                        onEditar={setProductoParaEditar}
-                      />
-                    </InfiniteScrollAnimatedItem>
-                  );
-                })}
-              </div>
-            </InfiniteScroll>
+              onLoadMore={handleLoadMore}
+              onMostrarTodos={mostrarTodos}
+              onVerDetalle={setProductoSeleccionado}
+              onEditar={setProductoParaEditar}
+            />
           )}
         </div>
       )}
 
-      {/* Modal de Detalle al hacer clic en la fotografía del producto */}
-      <ItemMenuProductoModalDetalle
-        producto={productoSeleccionado}
-        onClose={() => setProductoSeleccionado(null)}
-      />
+      {productoSeleccionado && (
+        <Suspense fallback={null}>
+          <LazyItemMenuProductoModalDetalle
+            producto={productoSeleccionado}
+            onClose={handleCerrarDetalle}
+          />
+        </Suspense>
+      )}
 
-      {/* Drawer lateral para modificar las características del producto */}
-      <EditarProductoDrawer
-        producto={productoParaEditar}
-        onClose={() => setProductoParaEditar(null)}
-        onProductoActualizado={(updated) => {
-          aplicarProductoActualizado(updated);
-        }}
-      />
+      {productoParaEditar && (
+        <Suspense fallback={null}>
+          <LazyEditarProductoDrawer
+            producto={productoParaEditar}
+            onClose={handleCerrarEditar}
+            onProductoActualizado={aplicarProductoActualizado}
+          />
+        </Suspense>
+      )}
 
-      {/* Navbar flotante para alternar modo de visualización (Grid por defecto vs Masonry) */}
       <ProductosVisualizacionNavbar
         viewMode={viewMode}
         onViewModeChange={setViewMode}

@@ -5,6 +5,7 @@ import { faBowlFood, faClock, faStopwatch } from '@fortawesome/free-solid-svg-ic
 import { Loading } from '../../../../shared/loading'
 import { formatearMonedaCOP, type ItemMenuProducto } from '../../domain/item-menu'
 import {
+  getCachedImageUrl,
   isImageCached,
   loadBalancedImage,
 } from '../../infrastructure/image-load-balancer'
@@ -62,7 +63,7 @@ export function CategoriaProductoFilaItem({
   const activeSrc = !primaryUrl
     ? null
     : cachedReady
-      ? primaryUrl
+      ? (getCachedImageUrl(primaryUrl) ?? primaryUrl)
       : loadedState?.sourceKey === primaryUrl
         ? loadedState.resolvedUrl
         : null
