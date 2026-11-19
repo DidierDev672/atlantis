@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { motion } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
@@ -37,7 +38,7 @@ export interface MenuCategoriasToolbarProps {
  * Barra de herramientas y filtros reactivos para las categorías de menú.
  * Incluye búsqueda, dropdowns de edificio/ordenación, switch Masonry/Grid y acciones.
  */
-export function MenuCategoriasToolbar({
+export const MenuCategoriasToolbar = memo(function MenuCategoriasToolbar({
   searchTerm,
   onSearchChange,
   onClearSearch,
@@ -147,5 +148,5 @@ export function MenuCategoriasToolbar({
       </div>
     </motion.div>
   )
-}
+})
 

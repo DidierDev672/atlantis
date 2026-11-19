@@ -6,7 +6,7 @@ export interface ImageCacheEntry {
   isBlob: boolean
 }
 
-const MAX_CACHE_ENTRIES = 80
+const MAX_CACHE_ENTRIES = 50
 const loadedUrlCache = new Map<string, ImageCacheEntry>()
 
 export function buildImageCacheKey(url: string, maxDimension: number): string {

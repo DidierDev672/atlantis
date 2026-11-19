@@ -12,23 +12,19 @@ export interface CategoriaVinculadaBadgeProps {
   variant?: 'card' | 'overlay'
 }
 
-/**
- * Átomo: Badge de categoría vinculada.
- * Reduce el avatar (`20x20` / `32x32`) a `<=96px` mediante `useBalancedProductImage`
- * para evitar decodificar imágenes de 4000x3000 px o Base64 en RAM/VRAM.
- */
-export const CategoriaVinculadaBadge = memo(function CategoriaVinculadaBadge({
-  categoria,
-  variant = 'card',
-}: CategoriaVinculadaBadgeProps) {
-  const hasAsset = Boolean(categoria.asset && categoria.asset.trim().length > 0)
-  const { activeSrc, handleImageError } = useBalancedProductImage(
-    hasAsset ? categoria.asset!.trim() : '',
-    FALLBACK_CATEGORY_IMG,
-    96
-  )
+const CategoriaVinculadaOverlayBadge = memo(
+  function CategoriaVinculadaOverlayBadge({
+    categoria,
+  }: {
+    categoria: CategoriaVinculadaInfo
+  }) {
+    const hasAsset = Boolean(categoria.asset && categoria.asset.trim().length > 0)
+    const { activeSrc, handleImageError } = useBalancedProductImage(
+      hasAsset ? categoria.asset!.trim() : '',
+      FALLBACK_CATEGORY_IMG,
+      96
+    )
 
-  if (variant === 'overlay') {
     return (
       <div className="mb-2 inline-flex max-w-full items-center gap-2 rounded-full border border-white/20 bg-black/55 px-2 py-1">
         <span className="size-5 shrink-0 overflow-hidden rounded-full border border-white/30 bg-white/10">
@@ -55,30 +51,27 @@ export const CategoriaVinculadaBadge = memo(function CategoriaVinculadaBadge({
       </div>
     )
   }
+)
+
+/**
+ * Átomo: Etiqueta de categoría vinculada.
+ * - `card`: texto limpio sin imagen ni fondo contenedor, ubicado junto al nombre del producto.
+ * - `overlay`: pill visual para el overlay de tarjetas Masonry.
+ */
+export const CategoriaVinculadaBadge = memo(function CategoriaVinculadaBadge({
+  categoria,
+  variant = 'card',
+}: CategoriaVinculadaBadgeProps) {
+  if (variant === 'overlay') {
+    return <CategoriaVinculadaOverlayBadge categoria={categoria} />
+  }
 
   return (
-    <div className="flex items-center gap-2.5 rounded-2xl border border-line/70 bg-canvas/70 p-2">
-      <div className="relative size-8 shrink-0 overflow-hidden rounded-xl border border-line/60 bg-panel">
-        {hasAsset && activeSrc ? (
-          <img
-            src={activeSrc}
-            alt={categoria.name}
-            width={32}
-            height={32}
-            loading="lazy"
-            decoding="async"
-            onError={handleImageError}
-            className="size-full object-cover"
-          />
-        ) : (
-          <div className="grid size-full place-items-center text-primary/70">
-            <FontAwesomeIcon icon={faUtensils} className="size-3.5" />
-          </div>
-        )}
-      </div>
-      <p className="min-w-0 flex-1 truncate text-xs font-bold text-ink">
-        {categoria.name}
-      </p>
-    </div>
+    <p
+      className="text-ink-muted truncate text-xs font-semibold tracking-wide"
+      title={categoria.name}
+    >
+      {categoria.name}
+    </p>
   )
 })

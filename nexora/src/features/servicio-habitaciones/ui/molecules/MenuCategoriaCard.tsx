@@ -1,17 +1,22 @@
-import { useEffect, useState } from 'react'
-import { motion } from 'motion/react'
+import { memo, useCallback, useMemo } from 'react'
+import type { IconProp } from '@fortawesome/fontawesome-svg-core'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faBowlFood, faExpand, faPlus } from '@fortawesome/free-solid-svg-icons'
+import { faEye, faPlus, faUtensils } from '@fortawesome/free-solid-svg-icons'
 import type { MenuCategoria } from '../../domain/menu-categoria'
 import type { LayoutViewMode } from '../atoms/LayoutViewSwitch'
-import {
-  getCachedImageUrl,
-  isImageCached,
-  loadBalancedImage,
-} from '../../infrastructure/image-load-balancer'
-import { Loading } from '../../../../shared/loading'
+import { useBalancedProductImage } from '../../application/use-balanced-product-image'
+import { Skeleton } from '../../../../shared/loading'
 
-interface MenuCategoriaCardProps {
+interface MenuCategoriaCardAccion {
+  readonly key: 'detalle' | 'productos' | 'agregar'
+  readonly label: string
+  readonly icon: IconProp
+  readonly title: string
+  readonly variant: 'neutral' | 'accent' | 'primary'
+  readonly onClick: () => void
+}
+
+export interface MenuCategoriaCardProps {
   categoria: MenuCategoria
   index?: number
   viewMode?: LayoutViewMode
@@ -23,202 +28,171 @@ interface MenuCategoriaCardProps {
 const FALLBACK_FOOD_IMG =
   'https://images.pexels.com/photos/1855214/pexels-photo-1855214.jpeg?auto=compress&cs=tinysrgb&w=800'
 
-export function MenuCategoriaCard({
+const BUTTON_VARIANT_CLASSES: Record<MenuCategoriaCardAccion['variant'], string> = {
+  neutral:
+    'border border-line bg-canvas text-ink shadow-2xs hover:border-primary/45 hover:text-primary hover:bg-panel',
+  accent:
+    'border border-primary/25 bg-primary/10 text-primary shadow-2xs hover:border-primary/50 hover:bg-primary/15',
+  primary:
+    'border border-primary bg-primary text-white shadow-xs hover:bg-primary/90',
+}
+
+const TOOLTIP_ALIGN_CLASSES: Record<MenuCategoriaCardAccion['key'], string> = {
+  detalle: 'left-0',
+  productos: 'left-1/2 -translate-x-1/2',
+  agregar: 'right-0',
+}
+
+/**
+ * Tarjeta optimizada para una categoría o servicio de habitaciones.
+ * Presenta la fotografía, el nombre de la categoría y 3 acciones de solo icono
+ * con jerarquía cromática, tooltip inmediato y soporte accesible para recepción.
+ */
+export const MenuCategoriaCard = memo(function MenuCategoriaCard({
   categoria,
   index = 0,
-  viewMode = 'grid',
+  viewMode = 'masonry',
   onVerDetalle,
   onVerProductos,
   onAgregarProducto,
 }: MenuCategoriaCardProps) {
-  const primaryUrl = categoria.asset || FALLBACK_FOOD_IMG
-  const [loadedState, setLoadedState] = useState<{
-    sourceKey: string
-    resolvedUrl: string
-  } | null>(() =>
-    isImageCached(primaryUrl)
-      ? { sourceKey: primaryUrl, resolvedUrl: primaryUrl }
-      : null
+  const primaryUrl = categoria.asset?.trim() || FALLBACK_FOOD_IMG
+  const { activeSrc, isImageReady, handleImageError } = useBalancedProductImage(
+    primaryUrl,
+    FALLBACK_FOOD_IMG,
+    640,
   )
 
-  useEffect(() => {
-    if (isImageCached(primaryUrl)) return
-
-    let active = true
-    void loadBalancedImage(primaryUrl, {
-      fallbackUrl: FALLBACK_FOOD_IMG,
-    }).then((result) => {
-      if (!active) return
-      setLoadedState({
-        sourceKey: primaryUrl,
-        resolvedUrl: result.resolvedUrl,
-      })
-    })
-
-    return () => {
-      active = false
-    }
-  }, [primaryUrl])
-
-  const cachedReady = isImageCached(primaryUrl)
-  const isImageReady = cachedReady || loadedState?.sourceKey === primaryUrl
-  const activeSrc = cachedReady
-    ? (getCachedImageUrl(primaryUrl) ?? primaryUrl)
-    : loadedState?.sourceKey === primaryUrl
-      ? loadedState.resolvedUrl
-      : null
-
-  // En modo Grid la relación de aspecto es uniforme (4/3) para alineación perfecta de cuadrícula;
-  // en modo Masonry es variable determinista (estilo Cascada / Pinterest).
   const isGrid = viewMode === 'grid'
-  const ratioVariant = (categoria.order + index) % 3
+  const stableSeed = Number.isFinite(categoria.order) ? categoria.order : index
+  const ratioVariant = Math.abs(stableSeed) % 3
   const aspectClass = isGrid
     ? 'aspect-4/3'
     : ratioVariant === 0
-      ? 'aspect-3/4' // Formato vertical estilizado
+      ? 'aspect-3/4'
       : ratioVariant === 1
-        ? 'aspect-4/3' // Formato clásico
-        : 'aspect-square' // Formato cuadrado 1:1
+        ? 'aspect-4/3'
+        : 'aspect-square'
 
-  const acciones = [
-    {
-      key: 'detalle',
-      label: 'Ver detalle',
-      icon: faExpand,
-      title: 'Expandir y ver detalle de la categoría',
-      isPrimary: false,
-      onClick: () => onVerDetalle?.(categoria),
+  const handleCardClick = useCallback(() => {
+    try {
+      onVerDetalle?.(categoria)
+    } catch (error) {
+      console.error('Error al abrir el detalle de la categoría:', error)
+    }
+  }, [categoria, onVerDetalle])
+
+  const handleCardKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLElement>) => {
+      if (event.target !== event.currentTarget) return
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        handleCardClick()
+      }
     },
-    {
-      key: 'productos',
-      label: 'Ver productos',
-      icon: faBowlFood,
-      title: `Ver productos vinculados a ${categoria.name}`,
-      isPrimary: false,
-      onClick: () => onVerProductos?.(categoria),
-    },
-    {
-      key: 'agregar',
-      label: 'Agregar producto',
-      icon: faPlus,
-      title: `Agregar nuevo producto a ${categoria.name}`,
-      isPrimary: true,
-      onClick: () => onAgregarProducto?.(categoria),
-    },
-  ] as const
+    [handleCardClick],
+  )
+
+  const acciones = useMemo<readonly MenuCategoriaCardAccion[]>(
+    () => [
+      {
+        key: 'detalle',
+        label: 'Ver detalle',
+        icon: faEye,
+        title: `Ver detalle de ${categoria.name}`,
+        variant: 'neutral',
+        onClick: () => onVerDetalle?.(categoria),
+      },
+      {
+        key: 'productos',
+        label: 'Ver productos',
+        icon: faUtensils,
+        title: `Ver productos de ${categoria.name}`,
+        variant: 'accent',
+        onClick: () => onVerProductos?.(categoria),
+      },
+      {
+        key: 'agregar',
+        label: 'Agregar producto',
+        icon: faPlus,
+        title: `Agregar producto a ${categoria.name}`,
+        variant: 'primary',
+        onClick: () => onAgregarProducto?.(categoria),
+      },
+    ],
+    [categoria, onAgregarProducto, onVerDetalle, onVerProductos],
+  )
 
   return (
-    <motion.article
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      transition={{ duration: 0.4, ease: 'easeOut' }}
-      whileHover={{ y: -6, scale: 1.015 }}
-      onClick={() => onVerDetalle?.(categoria)}
-      className="group flex w-full flex-col overflow-hidden rounded-3xl border border-line/80 bg-panel shadow-xs transition-[border-color,box-shadow] duration-300 hover:shadow-2xl hover:border-primary/60 cursor-pointer select-none"
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={handleCardClick}
+      onKeyDown={handleCardKeyDown}
+      className="group flex h-full w-full flex-col justify-between overflow-hidden rounded-3xl border border-line/80 bg-panel shadow-xs transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:border-primary/60 cursor-pointer select-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
     >
       {/* Contenedor multimedia con proporción Grid / Masonry */}
-      <div className={`relative ${aspectClass} w-full overflow-hidden`}>
-        {/* Loader del balanceador de cargas de imagen (/shared/loading) */}
-        <Loading
-          visible={!isImageReady}
-          variant="overlay"
-          size="sm"
-          label="Cargando imagen…"
-          delay={0}
-          minDuration={250}
-        />
+      <div className={`relative ${aspectClass} w-full shrink-0 overflow-hidden bg-canvas`}>
+        {!isImageReady && (
+          <Skeleton variant="rectangular" animation="none" className="absolute inset-0 size-full" />
+        )}
 
-        {/* 1. VISTA EN REPOSO: SOLO LA FOTOGRAFÍA (Pura y en alta definición) */}
         {activeSrc && (
           <img
             src={activeSrc}
             alt={categoria.name}
-            onError={() => {
-              if (activeSrc !== FALLBACK_FOOD_IMG) {
-                setLoadedState({
-                  sourceKey: primaryUrl,
-                  resolvedUrl: FALLBACK_FOOD_IMG,
-                })
-              }
-            }}
+            onError={handleImageError}
             loading="lazy"
-            className="size-full object-cover transition-transform duration-700 ease-out group-hover:scale-108"
+            decoding="async"
+            className={`size-full object-cover transition-[transform,opacity] duration-300 ease-out group-hover:scale-[1.03] ${
+              isImageReady ? 'opacity-100' : 'opacity-0'
+            }`}
           />
         )}
 
-        {/* Sombra sutil en los bordes para profundidad visual */}
         <div
           aria-hidden="true"
-          className="absolute inset-0 bg-linear-to-t from-black/20 via-transparent to-black/10 pointer-events-none transition-opacity duration-300 group-hover:opacity-0"
+          className="pointer-events-none absolute inset-0 bg-linear-to-t from-black/15 via-transparent to-transparent"
         />
-
-        {/* 2. DESKTOP (HOVER): Overlay ligero sin backdrop-blur para evitar sobrecarga de GPU */}
-        <div
-          className="hidden lg:flex [@media(hover:none)]:hidden absolute inset-0 items-center justify-center p-3 bg-black/65 opacity-0 group-hover:opacity-100 transition-opacity duration-300 ease-out"
-        >
-          <div className="flex w-44 max-w-full flex-col items-stretch justify-center gap-2">
-            {acciones.map((accion) => (
-              <button
-                key={accion.key}
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  accion.onClick()
-                }}
-                className={
-                  accion.isPrimary
-                    ? 'inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-white shadow-xl transition-transform duration-200 hover:scale-105 hover:bg-primary/90 active:scale-95 border border-primary/40 cursor-pointer'
-                    : 'inline-flex items-center justify-center gap-2 rounded-xl bg-white/95 px-3.5 py-2 text-xs font-bold text-ink shadow-xl transition-transform duration-200 hover:scale-105 hover:bg-white active:scale-95 border border-white/60 cursor-pointer'
-                }
-                title={accion.title}
-              >
-                <FontAwesomeIcon
-                  icon={accion.icon}
-                  className={`size-3 ${accion.isPrimary ? 'text-white' : 'text-primary'}`}
-                />
-                <span>{accion.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
-      {/* 3. MÓVIL Y TABLET (SIN HOVER): Título, descripción y grid de acciones siempre visible */}
-      <div className="flex flex-col gap-3 border-t border-line/60 bg-panel p-4 lg:hidden [@media(hover:none)]:flex">
-        <div className="space-y-1">
-          <h3 className="font-serif text-base font-bold leading-snug text-ink line-clamp-1">
-            {categoria.name}
-          </h3>
-          <p className="text-xs leading-relaxed text-ink-muted line-clamp-2">
-            {categoria.description || 'Sin descripción registrada para esta categoría.'}
-          </p>
-        </div>
+      {/* Nombre de categoría y grilla compacta de 3 botones solo icono con tooltip inmediato */}
+      <div className="flex flex-1 flex-col justify-between gap-2.5 border-t border-line/60 bg-panel p-3.5">
+        <h3 className="font-serif text-base font-bold leading-snug text-ink line-clamp-1">
+          {categoria.name}
+        </h3>
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           {acciones.map((accion) => (
             <button
               key={accion.key}
               type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                accion.onClick()
-              }}
-              className={
-                accion.isPrimary
-                  ? 'col-span-2 inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-white shadow-xs transition-all active:scale-95 hover:bg-primary/90 cursor-pointer'
-                  : 'inline-flex items-center justify-center gap-1.5 rounded-xl border border-line bg-canvas px-2.5 py-2 text-xs font-bold text-ink shadow-2xs transition-all active:scale-95 hover:border-primary/40 hover:bg-panel cursor-pointer'
-              }
+              aria-label={accion.title}
               title={accion.title}
+              onClick={(event) => {
+                event.stopPropagation()
+                try {
+                  accion.onClick()
+                } catch (error) {
+                  console.error(`Error al ejecutar la acción "${accion.key}":`, error)
+                }
+              }}
+              className={`group/btn relative inline-flex h-9 items-center justify-center rounded-xl transition-colors active:scale-95 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${BUTTON_VARIANT_CLASSES[accion.variant]}`}
             >
-              <FontAwesomeIcon
-                icon={accion.icon}
-                className={`size-3 shrink-0 ${accion.isPrimary ? 'text-white' : 'text-primary'}`}
-              />
-              <span className="truncate">{accion.label}</span>
+              <FontAwesomeIcon icon={accion.icon} className="size-3.5 shrink-0" />
+              <span className="sr-only">{accion.label}</span>
+
+              {/* Tooltip instantáneo sin JS extra para facilitar la lectura al recepcionista */}
+              <span
+                role="tooltip"
+                className={`pointer-events-none absolute bottom-full z-20 mb-1.5 whitespace-nowrap rounded-lg bg-ink px-2 py-1 text-[11px] font-semibold text-white opacity-0 shadow-md transition-opacity duration-150 group-hover/btn:opacity-100 group-focus-visible/btn:opacity-100 ${TOOLTIP_ALIGN_CLASSES[accion.key]}`}
+              >
+                {accion.label}
+              </span>
             </button>
           ))}
         </div>
       </div>
-    </motion.article>
+    </article>
   )
-}
+})

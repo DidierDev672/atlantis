@@ -60,9 +60,7 @@ export const ItemMenuProductoMasonryCard = memo(
 
     const productoKey = obtenerProductoKey(producto)
     const cantidadEnCarrito = useCarritoStore(
-      (s) =>
-        s.items.find((item) => obtenerProductoKey(item.producto) === productoKey)
-          ?.cantidad ?? 0
+      (s) => s.cantidadPorKey[productoKey] ?? 0
     )
     const agregarProducto = useCarritoStore((s) => s.agregarProducto)
     const incrementarCantidad = useCarritoStore((s) => s.incrementarCantidad)
@@ -116,7 +114,7 @@ export const ItemMenuProductoMasonryCard = memo(
         {!isImageReady && (
           <Skeleton
             variant="rectangular"
-            animation="pulse"
+            animation="none"
             className="absolute inset-0 size-full"
           />
         )}

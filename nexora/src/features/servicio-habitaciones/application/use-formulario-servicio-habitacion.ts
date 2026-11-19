@@ -1,5 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { validateStatusCode, type StatusCodeValidationResult } from '../../../shared/lib/status-code-validator'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import {
+  validateStatusCode,
+  type StatusCodeValidationResult,
+} from '../../../shared/lib/status-code-validator'
 import {
   fetchSedesApi,
   fetchSubSedesApi,
@@ -14,6 +17,7 @@ import {
   subirImagenSupabase,
   DEFAULT_ROOM_SERVICE_BUCKET,
 } from '../../../shared/services/supabase-storage.service'
+import { revocarBlobUrlSegura } from '../domain/item-menu'
 import type { DropdownOption } from '../../recursos/ui/molecules/recursos-dropdown'
 
 const DEFAULT_ASSET_URL =
@@ -24,44 +28,44 @@ function generarNumeroDosDigitos(): string {
   return dosDigitos.toString()
 }
 
+export interface UseFormularioServicioHabitacionParams {
+  onCategoriaGuardada?: () => void
+}
+
 /**
  * Hook de aplicación que orquesta la lógica, balanceo de carga y validación de status codes
  * para el registro de categorías y servicios gastronómicos de habitación.
+ * Evita convertir imágenes a Base64 en RAM conservando solo el `File` y miniatura `blob:`.
  */
-export function useFormularioServicioHabitacion() {
-  // 1. Order (código de orden numérico de 2 dígitos generado automáticamente)
+export function useFormularioServicioHabitacion(
+  params?: UseFormularioServicioHabitacionParams,
+) {
+  const onCategoriaGuardada = params?.onCategoriaGuardada
   const [order, setOrder] = useState<string>(generarNumeroDosDigitos)
-
-  // 2. Sede (sin selección por defecto)
   const [sedeId, setSedeId] = useState('')
   const [sedes, setSedes] = useState<SedeOption[]>([])
   const [loadingSedes, setLoadingSedes] = useState(true)
 
-  // 3. Sub Sede (sin selección por defecto)
   const [subSedeId, setSubSedeId] = useState('')
   const [subSedes, setSubSedes] = useState<SubSedeOption[]>([])
   const [loadingSubSedes, setLoadingSubSedes] = useState(false)
 
-  // 4. Edificio (sin selección por defecto)
   const [edificioId, setEdificioId] = useState('')
   const [edificios, setEdificios] = useState<EdificioOption[]>([])
   const [loadingEdificios, setLoadingEdificios] = useState(true)
 
-  // 5. Nombre y descripción (vacíos inicialmente)
   const [nombreServicio, setNombreServicio] = useState('')
   const [descripcion, setDescripcion] = useState('')
 
-  // 6. Imagen y asset
   const [imagenArchivo, setImagenArchivo] = useState<File | null>(null)
   const [imagenPreview, setImagenPreview] = useState<string | null>(null)
-  const [assetUrl, setAssetUrl] = useState<string>(DEFAULT_ASSET_URL)
   const [resetKey, setResetKey] = useState(0)
+  const activeBlobUrlRef = useRef<string | null>(null)
+  const isMountedRef = useRef(true)
 
-  // 7. Estados de envío y validación de status code
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(null)
 
-  // Carga balanceada de Sub-Sedes vía GET /sub-headquarters/by-headquarter/{id}
   const loadSubSedes = useCallback(async (headquarterId: string) => {
     if (!headquarterId) {
       setSubSedes([])
@@ -71,60 +75,92 @@ export function useFormularioServicioHabitacion() {
     setLoadingSubSedes(true)
     try {
       const res = await fetchSubSedesApi(headquarterId)
-      setSubSedes(res.subSedes)
+      if (isMountedRef.current) {
+        setSubSedes(res.subSedes)
+      }
+    } catch (error) {
+      console.error('Error al cargar sub sedes:', error)
+      if (isMountedRef.current) {
+        setSubSedes([])
+      }
     } finally {
-      setLoadingSubSedes(false)
+      if (isMountedRef.current) {
+        setLoadingSubSedes(false)
+      }
     }
   }, [])
 
-  // Montaje inicial con balanceador de carga asíncrono sin seleccionar opciones por defecto
   useEffect(() => {
-    let active = true
+    isMountedRef.current = true
 
-    void fetchSedesApi().then((res) => {
-      if (!active) return
-      setSedes(res.sedes)
-      setLoadingSedes(false)
-    })
+    const cargarCatalogosIniciales = async () => {
+      try {
+        const [sedesRes, edificiosRes] = await Promise.allSettled([
+          fetchSedesApi(),
+          fetchEdificiosApi(),
+        ])
+        if (!isMountedRef.current) return
 
-    void fetchEdificiosApi().then((res) => {
-      if (!active) return
-      setEdificios(res.edificios)
-      setLoadingEdificios(false)
-    })
+        if (sedesRes.status === 'fulfilled') {
+          setSedes(sedesRes.value.sedes)
+        } else {
+          console.error('Error al cargar sedes:', sedesRes.reason)
+          setSedes([])
+        }
+
+        if (edificiosRes.status === 'fulfilled') {
+          setEdificios(edificiosRes.value.edificios)
+        } else {
+          console.error('Error al cargar edificios:', edificiosRes.reason)
+          setEdificios([])
+        }
+      } catch (error) {
+        console.error('Error cargando catálogos de ubicación:', error)
+      } finally {
+        if (isMountedRef.current) {
+          setLoadingSedes(false)
+          setLoadingEdificios(false)
+        }
+      }
+    }
+
+    void Promise.resolve().then(() => cargarCatalogosIniciales())
 
     return () => {
-      active = false
+      isMountedRef.current = false
+      revocarBlobUrlSegura(activeBlobUrlRef.current)
+      activeBlobUrlRef.current = null
     }
   }, [])
 
-  // Handlers de cambio en selectores
-  const handleSedeChange = (nuevaSedeId: string) => {
-    setSedeId(nuevaSedeId)
-    setSubSedeId('')
-    if (nuevaSedeId) {
-      void loadSubSedes(nuevaSedeId)
-    } else {
-      setSubSedes([])
-    }
-  }
+  const handleSedeChange = useCallback(
+    (nuevaSedeId: string) => {
+      setSedeId(nuevaSedeId)
+      setSubSedeId('')
+      if (nuevaSedeId) {
+        void loadSubSedes(nuevaSedeId)
+      } else {
+        setSubSedes([])
+      }
+    },
+    [loadSubSedes],
+  )
 
-  const handleSubSedeChange = (nuevaSubSedeId: string) => {
+  const handleSubSedeChange = useCallback((nuevaSubSedeId: string) => {
     setSubSedeId(nuevaSubSedeId)
-  }
+  }, [])
 
-  const handleEdificioChange = (nuevoEdificioId: string) => {
+  const handleEdificioChange = useCallback((nuevoEdificioId: string) => {
     setEdificioId(nuevoEdificioId)
-  }
+  }, [])
 
-  const generarOrderAleatorio = () => {
+  const generarOrderAleatorio = useCallback(() => {
     setOrder(generarNumeroDosDigitos())
-  }
+  }, [])
 
   const limpiarFormulario = useCallback(() => {
-    if (imagenPreview && imagenPreview.startsWith('blob:')) {
-      URL.revokeObjectURL(imagenPreview)
-    }
+    revocarBlobUrlSegura(activeBlobUrlRef.current)
+    activeBlobUrlRef.current = null
     setOrder(generarNumeroDosDigitos())
     setSedeId('')
     setSubSedeId('')
@@ -134,104 +170,128 @@ export function useFormularioServicioHabitacion() {
     setDescripcion('')
     setImagenArchivo(null)
     setImagenPreview(null)
-    setAssetUrl(DEFAULT_ASSET_URL)
     setFeedback(null)
     setResetKey((prev) => prev + 1)
-  }, [imagenPreview])
+  }, [])
 
-  const handleImageChange = (file: File | null, previewUrl: string | null) => {
+  const handleImageChange = useCallback((file: File | null, previewUrl: string | null) => {
+    try {
+      if (activeBlobUrlRef.current && activeBlobUrlRef.current !== previewUrl) {
+        revocarBlobUrlSegura(activeBlobUrlRef.current)
+      }
+      activeBlobUrlRef.current =
+        previewUrl && previewUrl.startsWith('blob:') ? previewUrl : null
+    } catch {
+      activeBlobUrlRef.current = null
+    }
     setImagenArchivo(file)
     setImagenPreview(previewUrl)
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          setAssetUrl(reader.result)
-        }
-      }
-      reader.readAsDataURL(file)
-    } else {
-      setAssetUrl(DEFAULT_ASSET_URL)
-    }
-  }
+  }, [])
 
-  // Opciones formateadas para RecursosDropdown
   const sedeOptions: DropdownOption[] = useMemo(
     () => sedes.map((s) => ({ value: s.id, label: s.name })),
-    [sedes]
+    [sedes],
   )
 
   const subSedeOptions: DropdownOption[] = useMemo(
     () => subSedes.map((sub) => ({ value: sub.id, label: sub.name })),
-    [subSedes]
+    [subSedes],
   )
 
   const edificioOptions: DropdownOption[] = useMemo(
     () => edificios.map((ed) => ({ value: ed.id, label: ed.name })),
-    [edificios]
+    [edificios],
   )
 
-  // Envío del formulario
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (saving) return
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault()
+      if (saving) return
 
-    if (!sedeId || !subSedeId || !edificioId || !nombreServicio.trim()) {
-      setFeedback({
-        ...validateStatusCode(400),
-        title: 'Campos obligatorios pendientes',
-        message:
-          'Selecciona una sede, sub sede y edificio, e ingresa el nombre del servicio antes de guardar.',
-      })
-      return
-    }
-
-    setSaving(true)
-    setFeedback(null)
-
-    let finalAssetUrl = assetUrl || DEFAULT_ASSET_URL
-    if (imagenArchivo) {
-      try {
-        const uploadResult = await subirImagenSupabase(imagenArchivo, {
-          bucketName: DEFAULT_ROOM_SERVICE_BUCKET,
+      if (!sedeId || !subSedeId || !edificioId || !nombreServicio.trim()) {
+        setFeedback({
+          ...validateStatusCode(400),
+          title: 'Campos obligatorios pendientes',
+          message:
+            'Selecciona una sede, sub sede y edificio, e ingresa el nombre del servicio antes de guardar.',
         })
-        if (uploadResult.success && uploadResult.publicUrl) {
-          finalAssetUrl = uploadResult.publicUrl
-          setAssetUrl(uploadResult.publicUrl)
-        }
-      } catch (uploadErr) {
-        console.warn('Aviso al subir imagen a Supabase Storage:', uploadErr)
+        return
       }
-    }
 
-    const orderNumber = Number(order)
-    const resolvedOrder =
-      Number.isFinite(orderNumber) && orderNumber > 0
-        ? orderNumber
-        : Number(generarNumeroDosDigitos())
+      setSaving(true)
+      setFeedback(null)
 
-    const payload = {
-      headquartes_id: sedeId,
-      sub_headquartes_id: subSedeId,
-      building_id: edificioId,
-      name: nombreServicio.trim(),
-      description: descripcion.trim(),
-      order: resolvedOrder,
-      asset: finalAssetUrl,
-      created_by: obtenerEmailCreador(),
-    }
+      try {
+        let finalAssetUrl = DEFAULT_ASSET_URL
+        if (imagenArchivo) {
+          try {
+            const uploadResult = await subirImagenSupabase(imagenArchivo, {
+              bucketName: DEFAULT_ROOM_SERVICE_BUCKET,
+            })
+            if (uploadResult.success && uploadResult.publicUrl) {
+              finalAssetUrl = uploadResult.publicUrl
+            }
+          } catch (uploadErr) {
+            console.warn('Aviso al subir imagen a Supabase Storage:', uploadErr)
+          }
+        }
 
-    try {
-      // Balanceo de carga en POST /menu-category con tiempo de animación para el despegue del cohete
-      const [validation] = await Promise.all([
-        guardarMenuCategoriaApi(payload),
-        new Promise((resolve) => setTimeout(resolve, 2000)),
-      ])
-      setFeedback(validation)
-    } finally {
-      setSaving(false)
-    }
-  }
+        const orderNumber = Number(order)
+        const resolvedOrder =
+          Number.isFinite(orderNumber) && orderNumber > 0
+            ? orderNumber
+            : Number(generarNumeroDosDigitos())
+
+        const payload = {
+          headquartes_id: sedeId,
+          sub_headquartes_id: subSedeId,
+          building_id: edificioId,
+          name: nombreServicio.trim(),
+          description: descripcion.trim(),
+          order: resolvedOrder,
+          asset: finalAssetUrl,
+          created_by: obtenerEmailCreador(),
+        }
+
+        const validation = await guardarMenuCategoriaApi(payload)
+        if (isMountedRef.current) {
+          setFeedback(validation)
+          if (validation.isValid) {
+            try {
+              onCategoriaGuardada?.()
+            } catch (callbackErr) {
+              console.error('Error en callback post-registro de categoría:', callbackErr)
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error inesperado al guardar categoría de servicio:', error)
+        if (isMountedRef.current) {
+          setFeedback({
+            ...validateStatusCode(500),
+            title: 'No pudimos registrar la categoría',
+            message:
+              'Ocurrió un inconveniente inesperado al enviar el servicio. Intenta nuevamente.',
+          })
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setSaving(false)
+        }
+      }
+    },
+    [
+      descripcion,
+      edificioId,
+      imagenArchivo,
+      nombreServicio,
+      onCategoriaGuardada,
+      order,
+      saving,
+      sedeId,
+      subSedeId,
+    ],
+  )
 
   const isLoadingEndpoints = loadingSedes || loadingSubSedes || loadingEdificios
 

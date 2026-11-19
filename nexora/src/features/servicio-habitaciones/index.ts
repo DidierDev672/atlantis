@@ -52,7 +52,9 @@ export * from './ui/molecules/PedidoServicioHabitacionCard'
 
 // 5. UI: Organismos y Vistas
 export * from './ui/organisms/FormularioServicioHabitacionCard'
+export * from './ui/organisms/RegistrarCategoriaDrawer'
 export * from './ui/organisms/FormularioAgregarProductoCard'
+export * from './ui/organisms/AgregarProductoDrawer'
 export * from './ui/organisms/MenuCategoriasGrid'
 export * from './ui/organisms/MenuCategoriaModalProductos'
 export * from './ui/organisms/ItemMenuProductosMasonry'
