@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faDoorOpen } from '@fortawesome/free-solid-svg-icons';
 import { RecepcionesListContainer } from './organisms/recepciones-list-container';
 import { RecepcionPanel } from './organisms/recepcion-panel';
 import { RecepcionRoomsDashboard } from './organisms/recepcion-rooms-dashboard';
+import { SalidasRecepcionesPage } from './salidas-recepciones-page';
 import { useStaysList } from '../application/use-stays-list';
 import { Loading, useDelayVisibility } from '../../../shared/loading';
 import { StatusCodeAlert } from '../../../shared/lib/status-code-validator';
@@ -10,7 +13,7 @@ import { RandomPlanet } from '../../../shared/planets';
 
 export function RecepcionesPage() {
   const [activeTab, setActiveTab] = useState<
-    'habitaciones' | 'lista' | 'nuevo'
+    'habitaciones' | 'lista' | 'salidas' | 'nuevo'
   >('habitaciones');
   const staysList = useStaysList();
 
@@ -99,7 +102,32 @@ export function RecepcionesPage() {
               )}
             </button>
 
-            {/* Pestaña 3: Nuevo registro */}
+            {/* Pestaña 3: Salidas de recepción */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('salidas')}
+              className={`relative flex cursor-pointer items-center gap-2 px-4 py-2.5 text-xs font-semibold transition ${
+                activeTab === 'salidas'
+                  ? 'text-primary'
+                  : 'text-ink-muted hover:text-ink'
+              }`}
+            >
+              <FontAwesomeIcon
+                icon={faDoorOpen}
+                className="size-4"
+                aria-hidden="true"
+              />
+              <span>Salidas de recepción</span>
+              {activeTab === 'salidas' && (
+                <motion.div
+                  layoutId="activeRecepcionesTabIndicator"
+                  className="bg-primary absolute inset-x-0 bottom-0 h-0.5"
+                  transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                />
+              )}
+            </button>
+
+            {/* Pestaña 4: Nuevo registro */}
             <button
               type="button"
               onClick={() => setActiveTab('nuevo')}
@@ -199,6 +227,17 @@ export function RecepcionesPage() {
                   )}
                 </>
               )}
+            </motion.div>
+          ) : activeTab === 'salidas' ? (
+            <motion.div
+              key="recepciones-salidas-tab"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+              className="relative min-h-[360px]"
+            >
+              <SalidasRecepcionesPage />
             </motion.div>
           ) : (
             <motion.div

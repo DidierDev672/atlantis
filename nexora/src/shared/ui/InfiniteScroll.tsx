@@ -1,11 +1,26 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import { cn } from '../lib/cn'
+import { createInfiniteScrollBalancer } from '../lib/infinite-scroll-balancer'
 import {
   LazyAnimatedWrapper,
   type LazyAnimationVariant,
 } from './LazyAnimatedWrapper'
+import { InfiniteScrollSentinel } from './atoms/InfiniteScrollSentinel'
+import { InfiniteScrollOptimizedItem } from './atoms/InfiniteScrollOptimizedItem'
 
 export type { LazyAnimationVariant }
+export {
+  InfiniteScrollOptimizedItem,
+  type InfiniteScrollOptimizedItemProps,
+} from './atoms/InfiniteScrollOptimizedItem'
 
 export interface InfiniteScrollProps {
   onLoadMore: () => Promise<void> | void
@@ -20,14 +35,24 @@ export interface InfiniteScrollProps {
   rootMargin?: string
   className?: string
   /**
-   * Variante opcional de animación perezosa al hacer scroll (LazyAnimationVariant: 'fade' | 'slideUp' | 'slideDown' | 'slideLeft' | 'slideRight' | 'zoomIn').
-   * Si se define, activa la animación mediante `whileInView` de Motion.
+   * Variante opcional de animación al aparecer el cierre/elementos.
+   * Por optimización GPU/RAM no envuelve toda la lista gigante en una capa `transform`.
    */
   animationVariant?: LazyAnimationVariant
   /** Margen de activación en el viewport para la animación perezosa. Por defecto '-100px'. */
   viewportMargin?: string
   /** Si la animación debe ejecutarse solo una vez al entrar en el viewport. Por defecto true. */
   once?: boolean
+  /** Pausa mínima entre lotes para balancear decodificación de imágenes y CPU (ms). Por defecto 140. */
+  cooldownMs?: number
+  /** Reintentos automáticos si `onLoadMore` falla. Por defecto 1. */
+  maxRetries?: number
+  /** Mensaje empático personalizado si `onLoadMore` falla tras los reintentos. */
+  errorMessage?: string
+  /** Callback opcional para reportar errores capturados por el balanceador. */
+  onError?: (error: unknown) => void
+  /** Aplica aislamiento CSS (`contain: layout style`) para reducir consumo de GPU/RAM. Por defecto true. */
+  optimizeGpuMemory?: boolean
 }
 
 export function InfiniteScroll({
@@ -43,17 +68,60 @@ export function InfiniteScroll({
   animationVariant,
   viewportMargin = '-100px',
   once = true,
+  cooldownMs = 140,
+  maxRetries = 1,
+  errorMessage,
+  onError,
+  optimizeGpuMemory = true,
 }: InfiniteScrollProps) {
   const sentinelRef = useRef<HTMLDivElement>(null)
-
   const onLoadMoreRef = useRef(onLoadMore)
+  const onErrorRef = useRef(onError)
   const isLoadingRef = useRef(isLoading)
-  const firingRef = useRef(false)
+  const hasMoreRef = useRef(hasMore)
+
+  const [isBalancing, setIsBalancing] = useState(false)
+  const [hasError, setHasError] = useState(false)
 
   useEffect(() => {
     onLoadMoreRef.current = onLoadMore
+    onErrorRef.current = onError
     isLoadingRef.current = isLoading
-  }, [onLoadMore, isLoading])
+    hasMoreRef.current = hasMore
+  }, [onLoadMore, onError, isLoading, hasMore])
+
+  const balancer = useMemo(
+    () => createInfiniteScrollBalancer({ cooldownMs, maxRetries }),
+    [cooldownMs, maxRetries]
+  )
+
+  useEffect(() => {
+    return () => {
+      balancer.cancel()
+    }
+  }, [balancer])
+
+  const triggerLoadMore = useCallback(async () => {
+    if (!hasMoreRef.current || isLoadingRef.current || balancer.isBusy()) {
+      return
+    }
+
+    setHasError(false)
+    setIsBalancing(true)
+
+    try {
+      const result = await balancer.run(() => onLoadMoreRef.current())
+      if (!result.ok) {
+        setHasError(true)
+        onErrorRef.current?.(result.error)
+      }
+    } catch (error) {
+      setHasError(true)
+      onErrorRef.current?.(error)
+    } finally {
+      setIsBalancing(false)
+    }
+  }, [balancer])
 
   // Sanitización defensiva del threshold para prevenir RangeError en IntersectionObserver
   const safeThreshold =
@@ -65,76 +133,63 @@ export function InfiniteScroll({
 
   useEffect(() => {
     const sentinel = sentinelRef.current
-    if (!sentinel || !hasMore) return
+    if (!sentinel || !hasMore || hasError) return
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0]
-        if (!entry.isIntersecting) return
-        if (!hasMore || isLoadingRef.current) return
-        if (firingRef.current) return
+    let observer: IntersectionObserver | null = null
+    try {
+      observer = new IntersectionObserver(
+        (entries) => {
+          const entry = entries[0]
+          if (!entry?.isIntersecting) return
+          void triggerLoadMore()
+        },
+        { root: null, rootMargin, threshold: safeThreshold }
+      )
+      observer.observe(sentinel)
+    } catch (error) {
+      onErrorRef.current?.(error)
+    }
 
-        firingRef.current = true
-        void Promise.resolve(onLoadMoreRef.current()).finally(() => {
-          firingRef.current = false
-        })
-      },
-      { root: null, rootMargin, threshold: safeThreshold },
-    )
+    return () => {
+      observer?.disconnect()
+    }
+  }, [hasMore, hasError, isLoading, isBalancing, rootMargin, safeThreshold, triggerLoadMore])
 
-    observer.observe(sentinel)
+  const containerStyle: CSSProperties | undefined = optimizeGpuMemory
+    ? { contain: 'layout style' }
+    : undefined
 
-    return () => observer.disconnect()
-  }, [hasMore, isLoading, rootMargin, safeThreshold])
-
-  const content = (
-    <div className={!animationVariant ? className : undefined}>
-      {children}
-
-      {isLoading ? (
-        loader ?? (
-          <div role="status" aria-live="polite" className="flex justify-center py-6">
-            <span className="inline-block size-6 animate-spin rounded-full border-2 border-primary/20 border-t-primary" />
-          </div>
-        )
-      ) : hasMore ? (
-        <div
-          ref={sentinelRef}
-          aria-hidden="true"
-          className="h-8 w-full pointer-events-none opacity-0"
-        />
-      ) : (
-        endMessage && (
-          animationVariant ? (
-            <LazyAnimatedWrapper
-              variant={animationVariant}
-              once={once}
-              viewportMargin={viewportMargin}
-            >
-              {endMessage}
-            </LazyAnimatedWrapper>
-          ) : (
-            endMessage
-          )
-        )
-      )}
-    </div>
-  )
-
-  if (animationVariant) {
-    return (
+  const resolvedEndMessage =
+    endMessage &&
+    (animationVariant ? (
       <LazyAnimatedWrapper
         variant={animationVariant}
-        viewportMargin={viewportMargin}
         once={once}
-        className={className}
+        viewportMargin={viewportMargin}
       >
-        {content}
+        {endMessage}
       </LazyAnimatedWrapper>
-    )
-  }
+    ) : (
+      endMessage
+    ))
 
-  return content
+  return (
+    <div style={containerStyle} className={className}>
+      {children}
+
+      <InfiniteScrollSentinel
+        sentinelRef={sentinelRef}
+        isLoading={isLoading}
+        isBalancing={isBalancing}
+        hasMore={hasMore}
+        hasError={hasError}
+        errorMessage={errorMessage}
+        loader={loader}
+        endMessage={resolvedEndMessage}
+        onRetry={() => void triggerLoadMore()}
+      />
+    </div>
+  )
 }
 
 export function InfiniteScrollEnd({
@@ -144,7 +199,9 @@ export function InfiniteScrollEnd({
   label?: string
   animationVariant?: LazyAnimationVariant
 }) {
-  const node = <p className={cn('py-6 text-center text-sm text-neutral')}>{label}</p>
+  const node = (
+    <p className={cn('py-6 text-center text-sm text-neutral')}>{label}</p>
+  )
   if (animationVariant) {
     return (
       <LazyAnimatedWrapper variant={animationVariant} once>
@@ -160,26 +217,31 @@ export interface InfiniteScrollAnimatedItemProps {
   variant?: LazyAnimationVariant
   className?: string
   viewportMargin?: string
+  estimatedHeight?: number
+  optimizeGpuMemory?: boolean
 }
 
 /**
- * Envoltorio atómico para ítems individuales dentro de un InfiniteScroll
- * que se animan individualmente al hacer scroll hacia abajo.
+ * Envoltorio atómico optimizado para ítems individuales dentro de un InfiniteScroll
+ * (aplica `content-visibility: auto` y aislamiento GPU/RAM).
  */
 export function InfiniteScrollAnimatedItem({
   children,
   variant = 'slideUp',
   className,
   viewportMargin = '-100px',
+  estimatedHeight = 320,
+  optimizeGpuMemory = true,
 }: InfiniteScrollAnimatedItemProps) {
   return (
-    <LazyAnimatedWrapper
+    <InfiniteScrollOptimizedItem
       variant={variant}
       viewportMargin={viewportMargin}
-      once
+      estimatedHeight={estimatedHeight}
+      optimizeGpuMemory={optimizeGpuMemory}
       className={className}
     >
       {children}
-    </LazyAnimatedWrapper>
+    </InfiniteScrollOptimizedItem>
   )
 }

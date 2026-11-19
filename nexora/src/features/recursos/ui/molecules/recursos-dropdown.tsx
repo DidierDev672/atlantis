@@ -280,28 +280,46 @@ export function RecursosDropdown({
         return;
       }
 
-      // 2. Otro endpoint genérico
+      // 2. Otro endpoint genérico (ej. /menu-category)
       if (endpoint) {
         const response = await executeBalancedRequest(
           () =>
-            api.get<unknown[]>(endpoint, {
+            api.get<unknown>(endpoint, {
               validateStatus: () => true,
             }),
           { maxRetries: 2 }
         );
         const validation = validateStatusCode(response.status);
-        if (validation.isValid && Array.isArray(response.data)) {
+        if (validation.isValid) {
+          const raw = response.data;
+          let itemsList: Array<{
+            id?: string;
+            value?: string;
+            name?: string;
+            label?: string;
+          }> = [];
+
+          if (Array.isArray(raw)) {
+            itemsList = raw as typeof itemsList;
+          } else if (raw && typeof raw === 'object') {
+            const obj = raw as Record<string, unknown>;
+            if (Array.isArray(obj.data)) {
+              itemsList = obj.data as typeof itemsList;
+            } else if (Array.isArray(obj.categories)) {
+              itemsList = obj.categories as typeof itemsList;
+            } else if (Array.isArray(obj.items)) {
+              itemsList = obj.items as typeof itemsList;
+            } else if ('name' in obj || 'id' in obj) {
+              itemsList = [obj as (typeof itemsList)[number]];
+            }
+          }
+
           setInternalOptions(
-            (
-              response.data as Array<{
-                id?: string;
-                value?: string;
-                name?: string;
-                label?: string;
-              }>
-            ).map((item) => ({
-              value: item.id ?? item.value ?? String(item),
+            itemsList.map((item) => ({
+              value: item.id ?? item.value ?? item.name ?? String(item),
               label: item.name ?? item.label ?? String(item),
+              id: item.id,
+              rawName: item.name,
             }))
           );
         } else if (response.status === 400) {

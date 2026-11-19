@@ -1,94 +1,25 @@
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { api } from '../../../lib/api'
 import { executeBalancedRequest } from '../../reservas/infrastructure/api-load-balancer'
-import {
-  validateStatusCode,
-  type AlertPlanet,
-  type AlertVariant,
-} from '../../../shared/lib/status-code-validator'
 import { readAuthTokenEmail } from '../../../shared/auth-storage'
 import {
   subirImagenSupabase,
   DEFAULT_ROOM_SERVICE_BUCKET,
 } from '../../../shared/services/supabase-storage.service'
-import { obtenerMenuCategoriasApi } from '../infrastructure/api-menu-categoria-repository'
-import type { DropdownOption } from '../../recursos/ui/molecules/recursos-dropdown'
+import { revocarBlobUrlSegura } from '../domain/item-menu'
 import type { MenuCategoria } from '../domain/menu-categoria'
+import {
+  DEFAULT_PRODUCT_IMAGE,
+  buildItemMenuPayload,
+  buildPostFeedback,
+  buildUnexpectedSubmitErrorFeedback,
+  buildValidationErrorFeedback,
+  type ProductoPostFeedback,
+} from './agregar-producto.helpers'
+import { useCategoriasMenuProducto } from './use-categorias-menu-producto'
 
-const DEFAULT_PRODUCT_IMAGE =
-  'https://images.pexels.com/photos/6823326/pexels-photo-6823326.jpeg'
-
-export interface ProductoPostFeedback {
-  id: number
-  isValid: boolean
-  status: number
-  variant: AlertVariant
-  planet: AlertPlanet
-  title: string
-  message?: string
-  rawError?: unknown
-}
-
-function buildPostFeedback(
-  status: number,
-  responseData?: unknown,
-  thrownError?: unknown
-): ProductoPostFeedback {
-  const validation = validateStatusCode(status)
-  const id = Date.now()
-
-  if (validation.isValid) {
-    const serverMessage =
-      typeof responseData === 'object' &&
-      responseData !== null &&
-      'message' in responseData &&
-      typeof (responseData as Record<string, unknown>).message === 'string'
-        ? ((responseData as Record<string, unknown>).message as string).trim()
-        : ''
-
-    return {
-      id,
-      isValid: true,
-      status,
-      variant: validation.variant,
-      planet: validation.planet,
-      title: validation.title ?? 'Producto registrado',
-      message:
-        validation.message ||
-        serverMessage ||
-        '¡Excelente! Producto registrado con éxito en la carta.',
-    }
-  }
-
-  const rawError =
-    thrownError ??
-    ({
-      response: {
-        status,
-        data:
-          responseData !== undefined && responseData !== null && responseData !== ''
-            ? responseData
-            : { message: validation.message ?? undefined },
-      },
-      message: validation.message ?? undefined,
-    } as const)
-
-  return {
-    id,
-    isValid: false,
-    status,
-    variant: validation.variant,
-    planet: validation.planet,
-    title: validation.title ?? 'No se pudo registrar el producto',
-    message:
-      responseData !== undefined && responseData !== null && responseData !== ''
-        ? undefined
-        : (validation.message ??
-          'No se pudo procesar la solicitud. Por favor intenta nuevamente.'),
-    rawError,
-  }
-}
+export type { ProductoPostFeedback }
 
 export interface UseFormularioAgregarProductoParams {
   categoriaInicial?: MenuCategoria | null
@@ -98,20 +29,30 @@ export interface UseFormularioAgregarProductoParams {
 
 /**
  * Hook de aplicación para el registro limpio de productos/platillos en POST /item-menu.
+ * Gestiona memoria sin conversión a Base64 (`FileReader.readAsDataURL`), conservando únicamente
+ * el `File` para Storage y una miniatura `blob:` liberada de forma segura.
  */
 export function useFormularioAgregarProducto({
   categoriaInicial,
   categoriasDisponibles = [],
   onProductoGuardado,
 }: UseFormularioAgregarProductoParams) {
-  const [categoriasCargadas, setCategoriasCargadas] = useState<MenuCategoria[]>([])
-  const [loadingCategorias, setLoadingCategorias] = useState(
-    () => categoriasDisponibles.length === 0
-  )
-  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState<string>(
-    () => categoriaInicial?.id || ''
-  )
-  const [categoriaError, setCategoriaError] = useState<string | undefined>()
+  const {
+    listaCategorias,
+    categoriaSeleccionada,
+    setCategoriaSeleccionada,
+    categoriaOptions,
+    loadingCategorias,
+    categoriaValidation,
+    setCategoriaValidation,
+    recargarCategorias,
+    categoriaError,
+    setCategoriaError,
+  } = useCategoriasMenuProducto({
+    categoriaInicial,
+    categoriasDisponibles,
+  })
+
   const [name, setName] = useState('')
   const [nameError, setNameError] = useState<string | undefined>()
   const [price, setPrice] = useState('')
@@ -127,78 +68,40 @@ export function useFormularioAgregarProducto({
 
   const [imagenArchivo, setImagenArchivo] = useState<File | null>(null)
   const [imagenPreview, setImagenPreview] = useState<string | null>(null)
-  const [assetUrl, setAssetUrl] = useState<string>(DEFAULT_PRODUCT_IMAGE)
   const [resetKey, setResetKey] = useState(0)
+  const activeBlobUrlRef = useRef<string | null>(null)
 
   const [saving, setSaving] = useState(false)
   const [productosRegistrados, setProductosRegistrados] = useState(0)
   const [feedback, setFeedback] = useState<ProductoPostFeedback | null>(null)
 
   useEffect(() => {
-    if (categoriasDisponibles.length > 0) return
-
-    let active = true
-    void obtenerMenuCategoriasApi()
-      .then((res) => {
-        if (!active) return
-        setCategoriasCargadas(res.categorias)
-        if (!categoriaInicial?.id && categoriaInicial?.name) {
-          const match = res.categorias.find(
-            (c) => c.name.toLowerCase() === categoriaInicial.name.toLowerCase()
-          )
-          if (match?.id) {
-            setCategoriaSeleccionada(match.id)
-          }
-        }
-      })
-      .finally(() => {
-        if (active) setLoadingCategorias(false)
-      })
-
     return () => {
-      active = false
+      revocarBlobUrlSegura(activeBlobUrlRef.current)
+      activeBlobUrlRef.current = null
     }
-  }, [categoriasDisponibles.length, categoriaInicial])
-
-  const listaCategorias = useMemo(
-    () => (categoriasDisponibles.length > 0 ? categoriasDisponibles : categoriasCargadas),
-    [categoriasDisponibles, categoriasCargadas]
-  )
-
-  const categoriaOptions: DropdownOption[] = useMemo(
-    () =>
-      listaCategorias
-        .filter((cat): cat is MenuCategoria & { id: string } => Boolean(cat.id))
-        .map((cat) => ({
-          value: cat.id,
-          label: cat.name,
-        })),
-    [listaCategorias]
-  )
+  }, [])
 
   const handleImageChange = useCallback(
     (file: File | null, previewUrl: string | null) => {
+      try {
+        if (activeBlobUrlRef.current && activeBlobUrlRef.current !== previewUrl) {
+          revocarBlobUrlSegura(activeBlobUrlRef.current)
+        }
+        activeBlobUrlRef.current =
+          previewUrl && previewUrl.startsWith('blob:') ? previewUrl : null
+      } catch {
+        activeBlobUrlRef.current = null
+      }
       setImagenArchivo(file)
       setImagenPreview(previewUrl)
-      if (file) {
-        const reader = new FileReader()
-        reader.onload = () => {
-          if (typeof reader.result === 'string') {
-            setAssetUrl(reader.result)
-          }
-        }
-        reader.readAsDataURL(file)
-      } else {
-        setAssetUrl(DEFAULT_PRODUCT_IMAGE)
-      }
     },
     []
   )
 
   const limpiarCampos = useCallback(() => {
-    if (imagenPreview && imagenPreview.startsWith('blob:')) {
-      URL.revokeObjectURL(imagenPreview)
-    }
+    revocarBlobUrlSegura(activeBlobUrlRef.current)
+    activeBlobUrlRef.current = null
     setName('')
     setNameError(undefined)
     setPrice('')
@@ -213,43 +116,66 @@ export function useFormularioAgregarProducto({
     setDescription('')
     setImagenArchivo(null)
     setImagenPreview(null)
-    setAssetUrl(DEFAULT_PRODUCT_IMAGE)
     setResetKey((prev) => prev + 1)
-  }, [imagenPreview])
+  }, [])
 
-  const validarFormulario = (): boolean => {
-    let valido = true
+  const validarFormulario = (): string[] => {
+    const errores: string[] = []
     const categoryIdActual = categoriaSeleccionada || categoriaInicial?.id || ''
     if (!categoryIdActual.trim()) {
-      setCategoriaError('Por favor selecciona la categoría a la que pertenece el producto.')
-      valido = false
+      const msg = 'Por favor selecciona la categoría a la que pertenece el producto.'
+      setCategoriaError(msg)
+      errores.push(`Categoría: ${msg}`)
     } else {
       setCategoriaError(undefined)
     }
 
     if (!name.trim()) {
-      setNameError('Por favor ingresa el nombre comercial del producto.')
-      valido = false
+      const msg = 'Por favor ingresa el nombre comercial del producto.'
+      setNameError(msg)
+      errores.push(`Nombre: ${msg}`)
     } else {
       setNameError(undefined)
     }
 
     const numPrecio = parseFloat(price)
-    if (isNaN(numPrecio) || numPrecio <= 0) {
-      setPriceError('El precio debe ser un número positivo mayor a 0.')
-      valido = false
+    if (Number.isNaN(numPrecio) || numPrecio <= 0) {
+      const msg = 'El precio debe ser un número positivo mayor a 0.'
+      setPriceError(msg)
+      errores.push(`Precio: ${msg}`)
     } else {
       setPriceError(undefined)
     }
 
-    return valido
+    if (taxPercentage.trim() !== '') {
+      const parsedTax = parseFloat(taxPercentage)
+      if (Number.isNaN(parsedTax) || parsedTax < 0) {
+        errores.push('Impuesto (%): debe ser un número mayor o igual a 0.')
+      }
+    }
+
+    if (prepTime.trim() !== '') {
+      const parsedPrep = parseInt(prepTime, 10)
+      if (Number.isNaN(parsedPrep) || parsedPrep < 0) {
+        errores.push('Tiempo de preparación: debe ser un número mayor o igual a 0.')
+      }
+    }
+
+    return errores
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (saving) return
 
-    if (!validarFormulario()) {
+    try {
+      const erroresValidacion = validarFormulario()
+      if (erroresValidacion.length > 0) {
+        setFeedback(buildValidationErrorFeedback(erroresValidacion))
+        return
+      }
+    } catch (validationErr) {
+      setFeedback(buildUnexpectedSubmitErrorFeedback(validationErr))
       return
     }
 
@@ -257,7 +183,9 @@ export function useFormularioAgregarProducto({
     setFeedback(null)
 
     try {
-      let finalImageUrl = assetUrl || DEFAULT_PRODUCT_IMAGE
+      let finalImageUrl = DEFAULT_PRODUCT_IMAGE
+      let avisoImagenFallback: string | null = null
+
       if (imagenArchivo) {
         try {
           const uploadResult = await subirImagenSupabase(imagenArchivo, {
@@ -265,45 +193,41 @@ export function useFormularioAgregarProducto({
           })
           if (uploadResult.success && uploadResult.publicUrl) {
             finalImageUrl = uploadResult.publicUrl
-            setAssetUrl(uploadResult.publicUrl)
+          } else {
+            console.warn(
+              'Aviso al subir imagen del producto a Supabase Storage (se usará imagen por defecto):',
+              uploadResult.error
+            )
+            avisoImagenFallback =
+              'Nota: el servicio de almacenamiento de imágenes no respondió, por lo que el producto se registró con la imagen por defecto.'
           }
         } catch (uploadErr) {
           console.warn(
-            'Aviso al subir imagen del producto a Supabase Storage:',
+            'Aviso al subir imagen del producto a Supabase Storage (se usará imagen por defecto):',
             uploadErr
           )
+          avisoImagenFallback =
+            'Nota: el servicio de almacenamiento de imágenes no respondió, por lo que el producto se registró con la imagen por defecto.'
         }
       }
 
-      const emailCreador = readAuthTokenEmail()
-      const selectedCat = listaCategorias.find(
-        (c) => c.id === categoriaSeleccionada || c.name === categoriaSeleccionada
-      )
-      const categoryId =
-        selectedCat?.id ||
-        categoriaSeleccionada ||
-        categoriaInicial?.id ||
-        ''
-
-      const prepMinutes = parseInt(prepTime, 10)
-      const parsedPrice = parseFloat(price)
-      const parsedTax = parseFloat(taxPercentage)
-
-      const payload = {
-        category_id: categoryId,
-        name: name.trim(),
-        description: description.trim(),
-        price: isNaN(parsedPrice) ? 0 : parsedPrice,
-        tax_percentage: isNaN(parsedTax) ? 0 : parsedTax,
-        prep_time: isNaN(prepMinutes) ? 0 : prepMinutes,
+      const payload = buildItemMenuPayload({
+        listaCategorias,
+        categoriaSeleccionada,
+        categoriaInicial,
+        name,
+        description,
+        price,
+        taxPercentage,
+        prepTime,
         isVegetarian,
         isVegan,
-        imageURL: finalImageUrl,
-        start_time: startTime || '08:00',
-        end_time: endTime || '22:00',
+        imageUrl: finalImageUrl,
+        startTime,
+        endTime,
         available,
-        created_by: emailCreador || 'ariasdev672@gmail.com',
-      }
+        emailCreador: readAuthTokenEmail(),
+      })
 
       const [response] = await Promise.all([
         executeBalancedRequest(() =>
@@ -316,25 +240,36 @@ export function useFormularioAgregarProducto({
       ])
 
       const postFeedback = buildPostFeedback(response.status, response.data)
+      if (postFeedback.isValid && avisoImagenFallback) {
+        postFeedback.message = postFeedback.message
+          ? `${postFeedback.message} ${avisoImagenFallback}`
+          : avisoImagenFallback
+      }
       setFeedback(postFeedback)
 
       if (postFeedback.isValid) {
         setProductosRegistrados((prev) => prev + 1)
-        limpiarCampos()
-        onProductoGuardado?.()
+        try {
+          limpiarCampos()
+          onProductoGuardado?.()
+        } catch (postHookErr) {
+          console.warn(
+            'El producto se guardó correctamente, pero ocurrió un error al actualizar la vista:',
+            postHookErr
+          )
+        }
       }
     } catch (err: unknown) {
-      let status = 500
-      let responseData: unknown
-      let thrownError: unknown
-      if (axios.isAxiosError(err) && err.response?.status) {
-        status = err.response.status
-        responseData = err.response.data
-        thrownError = err
-      } else if (axios.isAxiosError(err) && err.code === 'ECONNABORTED') {
-        status = 408
+      if (axios.isAxiosError(err)) {
+        if (err.response?.status) {
+          setFeedback(buildPostFeedback(err.response.status, err.response.data, err))
+          return
+        }
+        const networkStatus = err.code === 'ECONNABORTED' ? 408 : 503
+        setFeedback(buildPostFeedback(networkStatus, undefined, err))
+        return
       }
-      setFeedback(buildPostFeedback(status, responseData, thrownError))
+      setFeedback(buildUnexpectedSubmitErrorFeedback(err))
     } finally {
       setSaving(false)
     }
@@ -345,6 +280,9 @@ export function useFormularioAgregarProducto({
     setCategoriaSeleccionada,
     categoriaOptions,
     loadingCategorias,
+    categoriaValidation,
+    setCategoriaValidation,
+    recargarCategorias,
     categoriaError,
     setCategoriaError,
     name,

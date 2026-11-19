@@ -25,6 +25,7 @@ export const CATEGORIAS_CONFIGURACION: readonly CategoriaFiltro[] = [
 export const MODULO_A_CATEGORIA: Record<NavId, ModuloCategoria> = {
   // 1. Operación
   recepcion: 'operacion',
+  salidas: 'operacion',
   reservas: 'operacion',
   habitacion: 'operacion',
   servicios: 'operacion',
@@ -65,7 +66,7 @@ export const GRUPOS_CONFIGURACION: readonly GrupoModulosConfiguracion[] = [
     descripcion: 'Recepción, reservas, inventario de habitaciones y servicio a la habitación.',
     badge: 'Front Desk & Huéspedes',
     iconName: 'ConciergeBellIcon',
-    modulosIds: ['recepcion', 'reservas', 'habitacion', 'servicios'],
+    modulosIds: ['recepcion', 'salidas', 'reservas', 'habitacion', 'servicios'],
   },
   {
     categoria: 'configuracion_hotelera',

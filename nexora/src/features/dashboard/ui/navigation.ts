@@ -6,6 +6,7 @@ export type NavId =
   | 'cama'
   | 'reservas'
   | 'recepcion'
+  | 'salidas'
   | 'auditoria'
   | 'usuarios'
   | 'personas'
@@ -74,6 +75,12 @@ export const PAGE_META: Record<NavId, PageMeta> = {
     title: 'Recepción y check-in de huéspedes',
     subtitle:
       'Da la bienvenida a tus huéspedes, asigna su habitación, valida el depósito de garantía y entrega llaves.',
+    soonMessage: '',
+  },
+  salidas: {
+    title: 'Salidas de recepción',
+    subtitle:
+      'Consulta a los huéspedes con recepción o reserva que finalizan su estancia hoy o mañana.',
     soonMessage: '',
   },
   auditoria: {
@@ -148,6 +155,7 @@ export const BACK_TO_CONFIG_PAGES: readonly NavId[] = [
   'cama',
   'reservas',
   'recepcion',
+  'salidas',
   'auditoria',
   'usuarios',
   'personas',

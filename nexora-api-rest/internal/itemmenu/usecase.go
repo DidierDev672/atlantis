@@ -57,6 +57,7 @@ type CreateInput struct {
 // UpdateInput transporta los datos permitidos para modificar un ítem de menú.
 type UpdateInput struct {
 	ID            ID
+	CategoryID    string
 	Name          string
 	Description   string
 	Price         float64
@@ -153,6 +154,9 @@ func (uc *UseCase) Update(ctx context.Context, in UpdateInput) (ItemMenu, error)
 	}
 
 	now := uc.clock.Now()
+	if strings.TrimSpace(in.CategoryID) != "" {
+		existing.CategoryID = strings.TrimSpace(in.CategoryID)
+	}
 	if err := existing.Update(
 		in.Name,
 		in.Description,

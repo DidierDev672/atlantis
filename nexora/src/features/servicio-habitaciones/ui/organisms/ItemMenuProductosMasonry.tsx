@@ -1,172 +1,99 @@
-import { useState, useEffect, useMemo, useRef, useSyncExternalStore, useTransition } from 'react'
-import { AnimatePresence } from 'motion/react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons'
-import { requestProductosMenu } from '../../infrastructure/api-item-menu-repository'
+import { useState, useSyncExternalStore } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
 import {
   getImageLoadBalancerSnapshot,
   subscribeImageLoadBalancer,
-} from '../../infrastructure/image-load-balancer'
+} from '../../infrastructure/image-load-balancer';
+import { StatusCodeAlert } from '../../../../shared/lib/status-code-validator';
+import { Loading, useDelayVisibility } from '../../../../shared/loading';
+import { useItemMenuProductos } from '../../application/use-item-menu-productos';
 import {
-  StatusCodeAlert,
-  type StatusCodeValidationResult,
-} from '../../../../shared/lib/status-code-validator'
-import { Loading, useDelayVisibility } from '../../../../shared/loading'
-import { ItemMenuProductoCard } from '../molecules/ItemMenuProductoCard'
-import { ItemMenuProductoModalDetalle } from '../molecules/ItemMenuProductoModalDetalle'
+  resolverCategoriaDeProducto,
+  type ItemMenuProducto,
+} from '../../domain/item-menu';
+import { ItemMenuProductoCard } from '../molecules/ItemMenuProductoCard';
+import { ItemMenuProductoModalDetalle } from '../molecules/ItemMenuProductoModalDetalle';
+import { ProductosMasonryNavbar } from '../molecules/ProductosMasonryNavbar';
+import { ProductosVisualizacionNavbar } from '../molecules/ProductosVisualizacionNavbar';
+import { ItemMenuProductosEmptyState } from '../molecules/ItemMenuProductosEmptyState';
+import { EditarProductoDrawer } from './EditarProductoDrawer';
+import type { LayoutViewMode } from '../atoms/LayoutViewSwitch';
 import {
-  ProductosMasonryNavbar,
-  type FiltroDieta,
-} from '../molecules/ProductosMasonryNavbar'
-import { ProductosVisualizacionNavbar } from '../molecules/ProductosVisualizacionNavbar'
-import { ItemMenuProductosEmptyState } from '../molecules/ItemMenuProductosEmptyState'
-import type { LayoutViewMode } from '../atoms/LayoutViewSwitch'
-import {
-  LazyAnimatedWrapper,
   InfiniteScroll,
+  InfiniteScrollAnimatedItem,
   InfiniteScrollEnd,
-} from '../../../../shared/ui'
-import type { ItemMenuProducto } from '../../domain/item-menu'
-
-const PAGE_SIZE = 8
+} from '../../../../shared/ui';
 
 export interface ItemMenuProductosMasonryProps {
-  onAgregarNuevo?: () => void
+  onAgregarNuevo?: () => void;
 }
 
 export function ItemMenuProductosMasonry({
   onAgregarNuevo,
 }: ItemMenuProductosMasonryProps) {
-  const [productos, setProductos] = useState<ItemMenuProducto[]>([])
-  const [productoSeleccionado, setProductoSeleccionado] = useState<ItemMenuProducto | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(null)
-  const [busqueda, setBusqueda] = useState('')
-  const [filtroDieta, setFiltroDieta] = useState<FiltroDieta>('todos')
-  const [viewMode, setViewMode] = useState<LayoutViewMode>('grid')
-  const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE)
-  const [, startTransition] = useTransition()
-  const isMountedRef = useRef(true)
-  const [organizando, setOrganizando] = useState(false)
-  const showOrganizando = useDelayVisibility(organizando, { delay: 0, minDuration: 400 })
-  const showLoading = useDelayVisibility(loading, { delay: 0, minDuration: 450 })
+  const {
+    productos,
+    productosFiltrados,
+    visibleProductos,
+    categoriasMap,
+    loading,
+    organizando,
+    feedback,
+    setFeedback,
+    busqueda,
+    disponibilidad,
+    categoriasSeleccionadas,
+    ordenesSeleccionados,
+    hasMore,
+    handleLoadMore,
+    cargarProductos,
+    handleBusquedaChange,
+    handleLimpiarBusqueda,
+    handleDisponibilidadChange,
+    handleCategoriasChange,
+    handleOrdenesChange,
+    aplicarProductoActualizado,
+  } = useItemMenuProductos();
+
+  const [productoSeleccionado, setProductoSeleccionado] =
+    useState<ItemMenuProducto | null>(null);
+  const [productoParaEditar, setProductoParaEditar] =
+    useState<ItemMenuProducto | null>(null);
+  const [viewMode, setViewMode] = useState<LayoutViewMode>('grid');
+
+  const showOrganizando = useDelayVisibility(organizando, {
+    delay: 0,
+    minDuration: 400,
+  });
+  const showLoading = useDelayVisibility(loading, {
+    delay: 0,
+    minDuration: 450,
+  });
   const imageBalancer = useSyncExternalStore(
     subscribeImageLoadBalancer,
     getImageLoadBalancerSnapshot
-  )
+  );
   const showImageBalancerLoading = useDelayVisibility(
     imageBalancer.isRunning && !loading,
     { delay: 0, minDuration: 350 }
-  )
-
-  useEffect(() => {
-    isMountedRef.current = true
-    void requestProductosMenu().then((res) => {
-      if (!isMountedRef.current) return
-      setProductos(res.productos)
-      setFeedback(res.feedback)
-      setLoading(false)
-    })
-    return () => {
-      isMountedRef.current = false
-    }
-  }, [])
-
-  const cargarProductos = async () => {
-    setLoading(true)
-    setFeedback(null)
-    const res = await requestProductosMenu()
-    if (!isMountedRef.current) return
-    setProductos(res.productos)
-    setFeedback(res.feedback)
-    setLoading(false)
-  }
-
-  // Filtrado y ordenamiento reactivo fluido en memoria (Todos, Precio Alto, Precio Menor, Disponibles)
-  const productosFiltrados = useMemo(() => {
-    const filtrados = productos.filter((item) => {
-      // 1. Filtro textual
-      if (busqueda.trim()) {
-        const q = busqueda.toLowerCase().trim()
-        const coincideNombre = item.name.toLowerCase().includes(q)
-        const coincideDesc = item.description ? item.description.toLowerCase().includes(q) : false
-        if (!coincideNombre && !coincideDesc) return false
-      }
-
-      // 2. Filtro de disponibilidad
-      if (filtroDieta === 'disponibles') {
-        return item.available !== false
-      }
-
-      return true
-    })
-
-    // 3. Ordenamiento reactivo según el filtro de precio o alfabético seleccionado
-    if (filtroDieta === 'precio-alto') {
-      return [...filtrados].sort((a, b) => Number(b.price) - Number(a.price))
-    }
-    if (filtroDieta === 'precio-menor') {
-      return [...filtrados].sort((a, b) => Number(a.price) - Number(b.price))
-    }
-    if (filtroDieta === 'orden-az') {
-      return [...filtrados].sort((a, b) =>
-        a.name.localeCompare(b.name, 'es', { sensitivity: 'base' })
-      )
-    }
-    if (filtroDieta === 'orden-za') {
-      return [...filtrados].sort((a, b) =>
-        b.name.localeCompare(a.name, 'es', { sensitivity: 'base' })
-      )
-    }
-
-    return filtrados
-  }, [productos, busqueda, filtroDieta])
-
-  const visibleProductos = useMemo(
-    () => productosFiltrados.slice(0, visibleCount),
-    [productosFiltrados, visibleCount]
-  )
-  const hasMore = visibleCount < productosFiltrados.length
-  const handleLoadMore = () => {
-    setVisibleCount((prev) => prev + PAGE_SIZE)
-  }
-
-  const handleBusquedaChange = (val: string) => {
-    startTransition(() => {
-      setBusqueda(val)
-      setVisibleCount(PAGE_SIZE)
-    })
-  }
-
-  const handleLimpiarBusqueda = () => {
-    setBusqueda('')
-    setVisibleCount(PAGE_SIZE)
-  }
-
-  const handleFiltroChange = (nextFiltro: FiltroDieta) => {
-    if (nextFiltro === filtroDieta) return
-    setOrganizando(true)
-    startTransition(() => {
-      setFiltroDieta(nextFiltro)
-      setVisibleCount(PAGE_SIZE)
-    })
-    setTimeout(() => {
-      if (!isMountedRef.current) return
-      setOrganizando(false)
-    }, 450)
-  }
+  );
 
   return (
     <div className="space-y-6">
       {/* Barra Superior Atomic Design: Buscador, Filtros y Acciones */}
       <ProductosMasonryNavbar
         busqueda={busqueda}
-        filtroDieta={filtroDieta}
+        disponibilidad={disponibilidad}
+        categoriasSeleccionadas={categoriasSeleccionadas}
+        ordenesSeleccionados={ordenesSeleccionados}
         totalProductos={productos.length}
         loading={loading}
         onBusquedaChange={handleBusquedaChange}
         onLimpiarBusqueda={handleLimpiarBusqueda}
-        onFiltroChange={handleFiltroChange}
+        onDisponibilidadChange={handleDisponibilidadChange}
+        onCategoriasChange={handleCategoriasChange}
+        onOrdenesChange={handleOrdenesChange}
         onRefrescar={() => void cargarProductos()}
         onAgregarNuevo={onAgregarNuevo}
       />
@@ -246,11 +173,11 @@ export function ItemMenuProductosMasonry({
               onAgregarNuevo={onAgregarNuevo}
             />
           ) : (
-            /* 🌊 Layout Dinámico: Cuadrícula (Grid) o Cascada (Masonry) con InfiniteScroll y LazyAnimatedWrapper */
             <InfiniteScroll
               onLoadMore={handleLoadMore}
               hasMore={hasMore}
               isLoading={false}
+              cooldownMs={180}
               animationVariant="slideUp"
               loader={
                 <Loading
@@ -272,33 +199,37 @@ export function ItemMenuProductosMasonry({
                     : 'columns-1 gap-6 space-y-6 sm:columns-2 lg:columns-3 xl:columns-4 [&>*]:break-inside-avoid'
                 }
               >
-                <AnimatePresence mode="popLayout">
-                  {visibleProductos.map((item, idx) => {
-                    // Clave inmutable y estable para la técnica FLIP
-                    const itemKey =
-                      item.id || `${item.category_id || 'cat'}-${item.name}-${idx}`
+                {visibleProductos.map((item, idx) => {
+                  const itemKey =
+                    item.id ||
+                    `${item.category_id || 'cat'}-${item.name}-${idx}`;
 
-                    return (
-                      <LazyAnimatedWrapper
-                        key={itemKey}
-                        layout
-                        variant="slideUp"
-                        viewportMargin="-100px"
-                        once
-                        className={
-                          viewMode === 'grid' ? 'w-full h-full' : 'break-inside-avoid mb-6'
-                        }
-                      >
-                        <ItemMenuProductoCard
-                          producto={item}
-                          index={idx}
-                          viewMode={viewMode}
-                          onVerDetalle={setProductoSeleccionado}
-                        />
-                      </LazyAnimatedWrapper>
-                    )
-                  })}
-                </AnimatePresence>
+                  return (
+                    <InfiniteScrollAnimatedItem
+                      key={itemKey}
+                      variant="slideUp"
+                      viewportMargin="-100px"
+                      estimatedHeight={340}
+                      className={
+                        viewMode === 'grid'
+                          ? 'h-full w-full'
+                          : 'mb-6 break-inside-avoid'
+                      }
+                    >
+                      <ItemMenuProductoCard
+                        producto={item}
+                        index={idx}
+                        viewMode={viewMode}
+                        categoriaInfo={resolverCategoriaDeProducto(
+                          item.category_id,
+                          categoriasMap
+                        )}
+                        onVerDetalle={setProductoSeleccionado}
+                        onEditar={setProductoParaEditar}
+                      />
+                    </InfiniteScrollAnimatedItem>
+                  );
+                })}
               </div>
             </InfiniteScroll>
           )}
@@ -311,11 +242,20 @@ export function ItemMenuProductosMasonry({
         onClose={() => setProductoSeleccionado(null)}
       />
 
+      {/* Drawer lateral para modificar las características del producto */}
+      <EditarProductoDrawer
+        producto={productoParaEditar}
+        onClose={() => setProductoParaEditar(null)}
+        onProductoActualizado={(updated) => {
+          aplicarProductoActualizado(updated);
+        }}
+      />
+
       {/* Navbar flotante para alternar modo de visualización (Grid por defecto vs Masonry) */}
       <ProductosVisualizacionNavbar
         viewMode={viewMode}
         onViewModeChange={setViewMode}
       />
     </div>
-  )
+  );
 }

@@ -97,19 +97,21 @@ func TestHandler_HTTPFlow(t *testing.T) {
 		t.Fatalf("expected status 200 OK, got %d", wGet.Code)
 	}
 
-	// 4. Test PUT /item-menu/{id}
+	// 4. Test PUT /item-menu/{id} (including category_id and created_by as sent by the frontend)
 	updateBody := []byte(`{
-		"name": "Pizza Margarita Bufala",
-		"description": "Mozzarella di bufala campana DOP",
-		"price": 16.50,
-		"tax_percentage": 10.0,
-		"prep_time": 20,
+		"category_id": "18d5458dc0eef66e",
+		"name": "Bowl de Quiona y Aguacate",
+		"description": "Quinoa orgánica, aguacate hass, garbanzos crocantes, espinaca baby y aderezo de tahini con limón",
+		"price": 25000,
+		"tax_percentage": 10,
+		"prep_time": 15,
 		"isVegetarian": true,
-		"isVegan": false,
-		"imageURL": "https://example.com/bufala.jpg",
-		"start_time": "12:00",
-		"end_time": "23:00",
-		"available": true
+		"isVegan": true,
+		"imageURL": "https://images.pexels.com/photos/6823326/pexels-photo-6823326.jpeg",
+		"start_time": "08:00",
+		"end_time": "22:00",
+		"available": true,
+		"created_by": "ariasdev672@gmail.com"
 	}`)
 	reqUpdate := httptest.NewRequest(http.MethodPut, "/item-menu/item-test-1", bytes.NewReader(updateBody))
 	reqUpdate.Header.Set("Content-Type", "application/json")
@@ -124,11 +126,14 @@ func TestHandler_HTTPFlow(t *testing.T) {
 	if err := json.Unmarshal(wUpdate.Body.Bytes(), &updated); err != nil {
 		t.Fatalf("failed to decode updated response: %v", err)
 	}
-	if updated.Name != "Pizza Margarita Bufala" {
+	if updated.Name != "Bowl de Quiona y Aguacate" {
 		t.Errorf("expected updated name, got %s", updated.Name)
 	}
-	if updated.Price != 16.50 {
-		t.Errorf("expected price 16.50, got %f", updated.Price)
+	if updated.CategoryID != "18d5458dc0eef66e" {
+		t.Errorf("expected updated category_id '18d5458dc0eef66e', got %s", updated.CategoryID)
+	}
+	if updated.Price != 25000 {
+		t.Errorf("expected price 25000, got %f", updated.Price)
 	}
 
 	// 5. Test DELETE /item-menu/{id}
