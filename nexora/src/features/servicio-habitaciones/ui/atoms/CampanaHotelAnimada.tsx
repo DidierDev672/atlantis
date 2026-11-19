@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 
 export interface CampanaHotelAnimadaProps {
@@ -19,14 +19,27 @@ export function CampanaHotelAnimada({
 }: CampanaHotelAnimadaProps) {
   const [estaSonando, setEstaSonando] = useState(false)
   const [dingKey, setDingKey] = useState(0)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const activarCampana = () => {
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current)
+      }
+    }
+  }, [])
+
+  const activarCampana = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+    }
     setEstaSonando(true)
     setDingKey((prev) => prev + 1)
-    setTimeout(() => {
+    timerRef.current = setTimeout(() => {
       setEstaSonando(false)
+      timerRef.current = null
     }, 850)
-  }
+  }, [])
 
   const dimensionContenedor =
     size === 'sm' ? 'size-9' : size === 'lg' ? 'size-14' : 'size-11'

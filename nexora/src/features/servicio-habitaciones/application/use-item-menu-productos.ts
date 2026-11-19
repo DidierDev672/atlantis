@@ -15,16 +15,29 @@ import {
   FALLBACK_MENU_CATEGORIAS,
   obtenerMenuCategoriasApi,
 } from '../infrastructure/api-menu-categoria-repository'
+import {
+  actualizarProductoEnCache,
+  getCatalogoProductosCache,
+  invalidarCacheProductosMenu,
+  setCatalogoProductosCache,
+} from '../infrastructure/catalogo-productos-cache'
 import type { DisponibilidadFiltro } from '../ui/molecules/ProductosMasonryNavbar'
 
 const PAGE_SIZE = 12
+const INCREMENT_STEP = 5
 
 export function useItemMenuProductos() {
-  const [productos, setProductos] = useState<ItemMenuProducto[]>([])
-  const [categoriasLista, setCategoriasLista] = useState<MenuCategoria[]>([])
-  const [loading, setLoading] = useState(true)
+  const initialCache = useMemo(() => getCatalogoProductosCache(), [])
+
+  const [productos, setProductos] = useState<ItemMenuProducto[]>(
+    () => initialCache?.productos ?? []
+  )
+  const [categoriasLista, setCategoriasLista] = useState<MenuCategoria[]>(
+    () => initialCache?.categorias ?? []
+  )
+  const [loading, setLoading] = useState(() => !initialCache)
   const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(
-    null
+    () => initialCache?.feedback ?? null
   )
   const [busqueda, setBusqueda] = useState('')
   const [disponibilidad, setDisponibilidad] =
@@ -36,24 +49,43 @@ export function useItemMenuProductos() {
     OrdenProducto[]
   >([])
   const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE)
-  const [organizando, setOrganizando] = useState(false)
   const [, startTransition] = useTransition()
   const isMountedRef = useRef(true)
 
-  const cargarCatalogoInicial = useCallback(async () => {
+  const cargarCatalogo = useCallback(async (forceRefresh = false) => {
+    if (!forceRefresh) {
+      const cached = getCatalogoProductosCache()
+      if (cached) {
+        if (!isMountedRef.current) return
+        setProductos(cached.productos)
+        setCategoriasLista(cached.categorias)
+        setFeedback(cached.feedback)
+        setLoading(false)
+        return
+      }
+    }
+
     try {
       const [prodRes, catRes] = await Promise.all([
         requestProductosMenu(),
         obtenerMenuCategoriasApi(),
       ])
       if (!isMountedRef.current) return
-      setProductos(prodRes.productos)
-      setFeedback(prodRes.feedback)
+
       const categorias =
         catRes.categorias.length > 0
           ? catRes.categorias
           : FALLBACK_MENU_CATEGORIAS
+
+      setProductos(prodRes.productos)
+      setFeedback(prodRes.feedback)
       setCategoriasLista(categorias)
+
+      setCatalogoProductosCache({
+        productos: prodRes.productos,
+        categorias,
+        feedback: prodRes.feedback,
+      })
     } catch {
       if (!isMountedRef.current) return
       setProductos([])
@@ -64,6 +96,23 @@ export function useItemMenuProductos() {
       }
     }
   }, [])
+
+  useEffect(() => {
+    isMountedRef.current = true
+    if (!initialCache) {
+      void Promise.resolve().then(() => cargarCatalogo(false))
+    }
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [cargarCatalogo, initialCache])
+
+  const cargarProductos = useCallback(async () => {
+    setLoading(true)
+    setFeedback(null)
+    invalidarCacheProductosMenu()
+    await cargarCatalogo(true)
+  }, [cargarCatalogo])
 
   const categoriasMap: ReadonlyMap<string, CategoriaVinculadaInfo> = useMemo(() => {
     try {
@@ -87,20 +136,6 @@ export function useItemMenuProductos() {
       return []
     }
   }, [categoriasLista])
-
-  useEffect(() => {
-    isMountedRef.current = true
-    void Promise.resolve().then(() => cargarCatalogoInicial())
-    return () => {
-      isMountedRef.current = false
-    }
-  }, [cargarCatalogoInicial])
-
-  const cargarProductos = useCallback(async () => {
-    setLoading(true)
-    setFeedback(null)
-    await cargarCatalogoInicial()
-  }, [cargarCatalogoInicial])
 
   const productosFiltrados = useMemo(() => {
     const filtrados = productos.filter((item) => {
@@ -163,21 +198,11 @@ export function useItemMenuProductos() {
     setVisibleCount((prev) => prev + PAGE_SIZE)
   }, [])
 
-  const mostrarTodos = useCallback(() => {
-    setVisibleCount(productosFiltrados.length)
+  const mostrarCincoMas = useCallback(() => {
+    setVisibleCount((prev) =>
+      Math.min(productosFiltrados.length, prev + INCREMENT_STEP)
+    )
   }, [productosFiltrados.length])
-
-  const runOrganizeTransition = useCallback((updateFn: () => void) => {
-    setOrganizando(true)
-    startTransition(() => {
-      updateFn()
-      setVisibleCount(PAGE_SIZE)
-    })
-    setTimeout(() => {
-      if (!isMountedRef.current) return
-      setOrganizando(false)
-    }, 450)
-  }, [])
 
   const handleBusquedaChange = useCallback((val: string) => {
     startTransition(() => {
@@ -194,26 +219,30 @@ export function useItemMenuProductos() {
   const handleDisponibilidadChange = useCallback(
     (next: DisponibilidadFiltro) => {
       if (next === disponibilidad) return
-      runOrganizeTransition(() => setDisponibilidad(next))
+      startTransition(() => {
+        setDisponibilidad(next)
+        setVisibleCount(PAGE_SIZE)
+      })
     },
-    [disponibilidad, runOrganizeTransition]
+    [disponibilidad]
   )
 
-  const handleCategoriasChange = useCallback(
-    (nextCategorias: string[]) => {
-      runOrganizeTransition(() => setCategoriasSeleccionadas(nextCategorias))
-    },
-    [runOrganizeTransition]
-  )
+  const handleCategoriasChange = useCallback((nextCategorias: string[]) => {
+    startTransition(() => {
+      setCategoriasSeleccionadas(nextCategorias)
+      setVisibleCount(PAGE_SIZE)
+    })
+  }, [])
 
-  const handleOrdenesChange = useCallback(
-    (nextOrdenes: OrdenProducto[]) => {
-      runOrganizeTransition(() => setOrdenesSeleccionados(nextOrdenes))
-    },
-    [runOrganizeTransition]
-  )
+  const handleOrdenesChange = useCallback((nextOrdenes: OrdenProducto[]) => {
+    startTransition(() => {
+      setOrdenesSeleccionados(nextOrdenes)
+      setVisibleCount(PAGE_SIZE)
+    })
+  }, [])
 
   const aplicarProductoActualizado = useCallback((updated: ItemMenuProducto) => {
+    actualizarProductoEnCache(updated)
     setProductos((prev) =>
       prev.map((item) => {
         if (updated.id && item.id && item.id === updated.id) {
@@ -231,7 +260,6 @@ export function useItemMenuProductos() {
     categoriasMap,
     categoriaOptions,
     loading,
-    organizando,
     feedback,
     setFeedback,
     busqueda,
@@ -240,7 +268,7 @@ export function useItemMenuProductos() {
     ordenesSeleccionados,
     hasMore,
     handleLoadMore,
-    mostrarTodos,
+    mostrarCincoMas,
     cargarProductos,
     handleBusquedaChange,
     handleLimpiarBusqueda,

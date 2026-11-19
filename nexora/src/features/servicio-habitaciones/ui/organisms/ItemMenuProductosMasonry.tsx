@@ -1,8 +1,17 @@
-import { Suspense, lazy, useCallback, useState } from 'react';
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ComponentType,
+} from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
 import { StatusCodeAlert } from '../../../../shared/lib/status-code-validator';
-import { Loading, useDelayVisibility } from '../../../../shared/loading';
+import type { LoadingProps } from '../../../../shared/loading';
 import { useItemMenuProductos } from '../../application/use-item-menu-productos';
 import type { ItemMenuProducto } from '../../domain/item-menu';
 import { ProductosMasonryNavbar } from '../molecules/ProductosMasonryNavbar';
@@ -12,7 +21,17 @@ import { ImageBalancerStatusBanner } from '../molecules/ImageBalancerStatusBanne
 import { ProductosCatalogoGrid } from '../molecules/ProductosCatalogoGrid';
 import type { LayoutViewMode } from '../atoms/LayoutViewSwitch';
 
-// Carga perezosa bajo demanda: evita montar/descargar Modal y Drawer hasta que el usuario interactúe
+// Carga perezosa bajo demanda: evita montar/descargar Loading pesado, Modal y Drawer cuando no se requieren
+const LazySharedLoading = lazy<ComponentType<LoadingProps>>(async () => {
+  try {
+    const mod = await import('../../../../shared/loading');
+    return { default: mod.Loading };
+  } catch (error) {
+    console.error('Error cargando componente Loading:', error);
+    return { default: () => null };
+  }
+});
+
 const LazyItemMenuProductoModalDetalle = lazy(async () => {
   try {
     return await import('../molecules/ItemMenuProductoModalDetalle');
@@ -32,17 +51,37 @@ const LazyEditarProductoDrawer = lazy(async () => {
   }
 });
 
+type AgregarProductoDrawerProps = ComponentProps<
+  typeof import('./AgregarProductoDrawer')['AgregarProductoDrawer']
+>;
+
+const LazyAgregarProductoDrawer = lazy<ComponentType<AgregarProductoDrawerProps>>(
+  async () => {
+    try {
+      const mod = await import('./AgregarProductoDrawer');
+      return { default: mod.AgregarProductoDrawer };
+    } catch (error) {
+      console.error('Error cargando drawer de alta de producto:', error);
+      const Fallback: ComponentType<AgregarProductoDrawerProps> = () => null;
+      return { default: Fallback };
+    }
+  }
+);
+
 export interface ItemMenuProductosMasonryProps {
   onAgregarNuevo?: () => void;
+  /** Incrementar para refrescar el catálogo tras registrar un producto externamente */
+  refreshVersion?: number;
 }
 
 /**
  * Organismo: Catálogo principal de productos gastronómicos (`/item-menu`).
- * Mantiene `ImageBalancerStatusBanner` aislado, `ProductosVisualizacionNavbar` sin blur
- * y carga perezosa para modales/drawers evitando trabajo innecesario de GPU/RAM.
+ * Sin `backdrop-blur` en refresco manual, con virtualización compartida
+ * y carga perezosa para loader inicial, modal y drawer.
  */
 export function ItemMenuProductosMasonry({
   onAgregarNuevo,
+  refreshVersion = 0,
 }: ItemMenuProductosMasonryProps) {
   const {
     productos,
@@ -51,7 +90,6 @@ export function ItemMenuProductosMasonry({
     categoriasMap,
     categoriaOptions,
     loading,
-    organizando,
     feedback,
     setFeedback,
     busqueda,
@@ -60,7 +98,7 @@ export function ItemMenuProductosMasonry({
     ordenesSeleccionados,
     hasMore,
     handleLoadMore,
-    mostrarTodos,
+    mostrarCincoMas,
     cargarProductos,
     handleBusquedaChange,
     handleLimpiarBusqueda,
@@ -74,19 +112,44 @@ export function ItemMenuProductosMasonry({
     useState<ItemMenuProducto | null>(null);
   const [productoParaEditar, setProductoParaEditar] =
     useState<ItemMenuProducto | null>(null);
+  const [isAgregarDrawerOpen, setIsAgregarDrawerOpen] = useState(false);
   const [viewMode, setViewMode] = useState<LayoutViewMode>('grid');
+  const lastRefreshVersionRef = useRef(refreshVersion);
 
-  const showOrganizando = useDelayVisibility(organizando, {
-    delay: 0,
-    minDuration: 400,
-  });
-  const showLoading = useDelayVisibility(loading, {
-    delay: 0,
-    minDuration: 450,
-  });
+  useEffect(() => {
+    if (refreshVersion <= 0 || refreshVersion === lastRefreshVersionRef.current) {
+      return;
+    }
+    lastRefreshVersionRef.current = refreshVersion;
+    void Promise.resolve().then(() => cargarProductos());
+  }, [cargarProductos, refreshVersion]);
 
   const handleRefrescar = useCallback(() => {
     void cargarProductos();
+  }, [cargarProductos]);
+
+  const handleAbrirAgregarProducto = useCallback(() => {
+    try {
+      if (onAgregarNuevo) {
+        onAgregarNuevo();
+      } else {
+        setIsAgregarDrawerOpen(true);
+      }
+    } catch (error) {
+      console.error('Error al abrir drawer de agregar producto:', error);
+    }
+  }, [onAgregarNuevo]);
+
+  const handleCerrarAgregarProducto = useCallback(() => {
+    setIsAgregarDrawerOpen(false);
+  }, []);
+
+  const handleProductoCreadoLocal = useCallback(() => {
+    try {
+      void cargarProductos();
+    } catch (error) {
+      console.error('Error al recargar catálogo tras crear producto:', error);
+    }
   }, [cargarProductos]);
 
   const handleDismissFeedback = useCallback(() => {
@@ -100,8 +163,6 @@ export function ItemMenuProductosMasonry({
   const handleCerrarEditar = useCallback(() => {
     setProductoParaEditar(null);
   }, []);
-
-  const isOverlayLoading = showOrganizando || (showLoading && productos.length > 0);
 
   return (
     <div className="space-y-6">
@@ -119,7 +180,7 @@ export function ItemMenuProductosMasonry({
         onCategoriasChange={handleCategoriasChange}
         onOrdenesChange={handleOrdenesChange}
         onRefrescar={handleRefrescar}
-        onAgregarNuevo={onAgregarNuevo}
+        onAgregarNuevo={handleAbrirAgregarProducto}
       />
 
       <StatusCodeAlert
@@ -148,42 +209,47 @@ export function ItemMenuProductosMasonry({
 
       {loading && productos.length === 0 ? (
         <div className="border-line bg-panel flex min-h-[260px] flex-col items-center justify-center rounded-3xl border shadow-xs">
-          <Loading
-            visible={loading || showLoading}
-            variant="block"
-            size="lg"
-            label="Cargando productos del menú…"
-            description="Consultando catálogo (/item-menu)"
-            delay={0}
-            minDuration={450}
-          />
+          <Suspense
+            fallback={
+              <span className="text-ink-muted text-xs font-medium">
+                Cargando productos del menú…
+              </span>
+            }
+          >
+            <LazySharedLoading
+              visible={true}
+              variant="block"
+              size="lg"
+              label="Cargando productos del menú…"
+              description="Consultando catálogo (/item-menu)"
+              delay={0}
+              minDuration={0}
+            />
+          </Suspense>
         </div>
       ) : (
-        <div className="relative rounded-3xl">
-          {isOverlayLoading && (
-            <Loading
-              visible={true}
-              variant="overlay"
-              size="md"
-              label={
-                organizando
-                  ? 'Organizando productos gastronómicos…'
-                  : 'Actualizando productos (/item-menu)…'
-              }
-              description={
-                organizando
-                  ? 'Reordenando carta según la opción seleccionada'
-                  : 'Consultando catálogo (/item-menu)'
-              }
-              delay={0}
-              minDuration={400}
-            />
+        <div className="space-y-4 rounded-3xl">
+          {/* Refresco manual ligero sin backdrop-blur-sm ni SaturnLoader sobre toda la grilla */}
+          {loading && productos.length > 0 && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="border-line bg-panel text-ink-muted flex items-center justify-center gap-2 rounded-2xl border px-4 py-2 text-xs font-semibold shadow-2xs"
+            >
+              <FontAwesomeIcon
+                icon={faArrowsRotate}
+                spin
+                className="text-primary size-3.5"
+                aria-hidden="true"
+              />
+              <span>Actualizando catálogo de productos…</span>
+            </div>
           )}
 
           {productosFiltrados.length === 0 ? (
             <ItemMenuProductosEmptyState
               totalProductos={productos.length}
-              onAgregarNuevo={onAgregarNuevo}
+              onAgregarNuevo={handleAbrirAgregarProducto}
             />
           ) : (
             <ProductosCatalogoGrid
@@ -193,7 +259,7 @@ export function ItemMenuProductosMasonry({
               categoriasMap={categoriasMap}
               hasMore={hasMore}
               onLoadMore={handleLoadMore}
-              onMostrarTodos={mostrarTodos}
+              onMostrarCincoMas={mostrarCincoMas}
               onVerDetalle={setProductoSeleccionado}
               onEditar={setProductoParaEditar}
             />
@@ -216,6 +282,17 @@ export function ItemMenuProductosMasonry({
             producto={productoParaEditar}
             onClose={handleCerrarEditar}
             onProductoActualizado={aplicarProductoActualizado}
+          />
+        </Suspense>
+      )}
+
+      {isAgregarDrawerOpen && (
+        <Suspense fallback={null}>
+          <LazyAgregarProductoDrawer
+            categoria={null}
+            isOpen={isAgregarDrawerOpen}
+            onClose={handleCerrarAgregarProducto}
+            onProductoGuardado={handleProductoCreadoLocal}
           />
         </Suspense>
       )}

@@ -1,42 +1,27 @@
-import { useState, useMemo, useCallback, useSyncExternalStore } from 'react';
-import { AnimatePresence } from 'motion/react';
-import {
-  useMenuCategorias,
-  type CriterioOrden,
-} from '../../application/use-menu-categorias';
-import type { DropdownOption } from '../../../recursos/ui/molecules/recursos-dropdown';
-import { StatusCodeAlert } from '../../../../shared/lib/status-code-validator';
-import { Loading, useDelayVisibility } from '../../../../shared/loading';
-import {
-  getImageLoadBalancerSnapshot,
-  subscribeImageLoadBalancer,
-} from '../../infrastructure/image-load-balancer';
-import { MenuCategoriaCard } from '../molecules/MenuCategoriaCard';
-import { MenuCategoriaModalDetalle } from '../molecules/MenuCategoriaModalDetalle';
-import { MenuCategoriaModalProductos } from './MenuCategoriaModalProductos';
-import { MenuCategoriasEmptyState } from '../molecules/MenuCategoriasEmptyState';
-import { MenuCategoriasToolbar } from '../molecules/MenuCategoriasToolbar';
-import type { LayoutViewMode } from '../atoms/LayoutViewSwitch';
-import {
-  type MenuCategoria,
-  resolverNombreEntidad,
-} from '../../domain/menu-categoria';
-import {
-  InfiniteScroll,
-  InfiniteScrollEnd,
-  LazyAnimatedWrapper,
-  type LazyAnimationVariant,
-} from '../../../../shared/ui';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useMenuCategorias, type CriterioOrden } from '../../application/use-menu-categorias'
+import type { DropdownOption } from '../../../recursos/ui/molecules/recursos-dropdown'
+import { StatusCodeAlert } from '../../../../shared/lib/status-code-validator'
+import { MenuCategoriasToolbar } from '../molecules/MenuCategoriasToolbar'
+import { ImageBalancerStatusBanner } from '../molecules/ImageBalancerStatusBanner'
+import { MenuCategoriasContenido } from '../molecules/MenuCategoriasContenido'
+import { MenuCategoriasModalesHost } from '../molecules/MenuCategoriasModalesHost'
+import { invalidarCacheProductosMenu } from '../../infrastructure/catalogo-productos-cache'
+import type { LayoutViewMode } from '../atoms/LayoutViewSwitch'
+import { type MenuCategoria, resolverNombreEntidad } from '../../domain/menu-categoria'
+import type { LazyAnimationVariant } from '../../../../shared/ui'
 
-interface MenuCategoriasGridProps {
-  onNuevoRegistro?: () => void;
-  onAgregarProducto?: (categoria: MenuCategoria) => void;
-  /** Variante de animación perezosa para las tarjetas de servicios */
-  animationVariant?: LazyAnimationVariant;
+export interface MenuCategoriasGridProps {
+  onNuevoRegistro?: () => void
+  onAgregarProducto?: (categoria: MenuCategoria) => void
+  /** Incrementar para recargar el catálogo tras crear una categoría externamente */
+  refreshVersion?: number
+  /** Variante de animación opcional conservada por compatibilidad de API */
+  animationVariant?: LazyAnimationVariant
   /** Modo de visualización: cascada dinámica ('masonry') o cuadrícula uniforme ('grid') */
-  viewMode?: LayoutViewMode;
+  viewMode?: LayoutViewMode
   /** Callback al cambiar el modo de visualización */
-  onViewModeChange?: (mode: LayoutViewMode) => void;
+  onViewModeChange?: (mode: LayoutViewMode) => void
 }
 
 const ORDEN_OPTIONS: DropdownOption[] = [
@@ -44,12 +29,20 @@ const ORDEN_OPTIONS: DropdownOption[] = [
   { value: 'order-desc', label: 'Orden: Mayor a Menor (99→1)' },
   { value: 'name-asc', label: 'Alfabético (A→Z)' },
   { value: 'name-desc', label: 'Alfabético (Z→A)' },
-];
+]
 
+const PAGE_SIZE = 12
+const INCREMENT_STEP = 5
+
+/**
+ * Organismo: Grilla / Cascada del catálogo de categorías de Room Service.
+ * Aísla el balanceador de imágenes en `ImageBalancerStatusBanner`, virtualiza las tarjetas
+ * mediante `CategoriasCatalogoGrid` y delega los modales perezosos a `MenuCategoriasModalesHost`.
+ */
 export function MenuCategoriasGrid({
   onNuevoRegistro,
   onAgregarProducto,
-  animationVariant = 'slideUp',
+  refreshVersion = 0,
   viewMode: propViewMode,
   onViewModeChange,
 }: MenuCategoriasGridProps) {
@@ -67,89 +60,186 @@ export function MenuCategoriasGrid({
     edificiosDisponibles,
     recargar,
     limpiarFiltros,
-  } = useMenuCategorias();
+  } = useMenuCategorias()
 
-  const [internalViewMode, setInternalViewMode] =
-    useState<LayoutViewMode>('grid');
-  const activeViewMode = propViewMode ?? internalViewMode;
+  const [internalViewMode, setInternalViewMode] = useState<LayoutViewMode>('grid')
+  const activeViewMode = propViewMode ?? internalViewMode
 
   const handleViewModeChange = useCallback(
     (mode: LayoutViewMode) => {
       if (onViewModeChange) {
-        onViewModeChange(mode);
+        onViewModeChange(mode)
       } else {
-        setInternalViewMode(mode);
+        setInternalViewMode(mode)
       }
     },
-    [onViewModeChange]
-  );
+    [onViewModeChange],
+  )
 
-  const [categoriaSeleccionada, setCategoriaSeleccionada] =
-    useState<MenuCategoria | null>(null);
-  const [categoriaProductosModal, setCategoriaProductosModal] =
-    useState<MenuCategoria | null>(null);
+  const [categoriaSeleccionada, setCategoriaSeleccionada] = useState<MenuCategoria | null>(null)
+  const [categoriaProductosModal, setCategoriaProductosModal] = useState<MenuCategoria | null>(
+    null,
+  )
+  const [categoriaAgregarProducto, setCategoriaAgregarProducto] =
+    useState<MenuCategoria | null>(null)
+  const [isRegistrarCategoriaOpen, setIsRegistrarCategoriaOpen] = useState(false)
+  const lastRefreshVersionRef = useRef(refreshVersion)
 
-  const showLoading = useDelayVisibility(loading, { delay: 0, minDuration: 450 });
-  const imageBalancer = useSyncExternalStore(
-    subscribeImageLoadBalancer,
-    getImageLoadBalancerSnapshot
-  );
-  const showImageBalancerLoading = useDelayVisibility(
-    imageBalancer.isRunning && !loading,
-    { delay: 0, minDuration: 350 }
-  );
+  useEffect(() => {
+    if (refreshVersion <= 0 || refreshVersion === lastRefreshVersionRef.current) {
+      return
+    }
+    lastRefreshVersionRef.current = refreshVersion
+    void Promise.resolve().then(() => recargar())
+  }, [recargar, refreshVersion])
 
-  const edificioOptions: DropdownOption[] = useMemo(() => {
-    return [
+  const edificioOptions: DropdownOption[] = useMemo(
+    () => [
       { value: 'todos', label: 'Todos los edificios' },
       ...edificiosDisponibles.map((bId) => ({
         value: bId,
         label: resolverNombreEntidad(bId, 'Edificio'),
       })),
-    ];
-  }, [edificiosDisponibles]);
+    ],
+    [edificiosDisponibles],
+  )
 
-  // Paginación reactiva para InfiniteScroll según convención de src/agent.md
-  const PAGE_SIZE = 8;
-  const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE);
+  const [visibleCount, setVisibleCount] = useState<number>(PAGE_SIZE)
 
-  const handleSearchChange = (value: string) => {
-    setSearchTerm(value);
-    setVisibleCount(PAGE_SIZE);
-  };
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setSearchTerm(value)
+      setVisibleCount(PAGE_SIZE)
+    },
+    [setSearchTerm],
+  )
 
-  const handleClearSearch = () => {
-    setSearchTerm('');
-    setVisibleCount(PAGE_SIZE);
-  };
+  const handleClearSearch = useCallback(() => {
+    setSearchTerm('')
+    setVisibleCount(PAGE_SIZE)
+  }, [setSearchTerm])
 
-  const handleBuildingChange = (buildingId: string) => {
-    setSelectedBuilding(buildingId);
-    setVisibleCount(PAGE_SIZE);
-  };
+  const handleBuildingChange = useCallback(
+    (buildingId: string) => {
+      setSelectedBuilding(buildingId)
+      setVisibleCount(PAGE_SIZE)
+    },
+    [setSelectedBuilding],
+  )
 
-  const handleOrdersChange = (newOrdenes: string[]) => {
-    setOrdenes(newOrdenes as CriterioOrden[]);
-    setVisibleCount(PAGE_SIZE);
-  };
+  const handleOrdersChange = useCallback(
+    (newOrdenes: string[]) => {
+      setOrdenes(newOrdenes as CriterioOrden[])
+      setVisibleCount(PAGE_SIZE)
+    },
+    [setOrdenes],
+  )
 
-  const handleResetFilters = () => {
-    limpiarFiltros();
-    setVisibleCount(PAGE_SIZE);
-  };
+  const handleResetFilters = useCallback(() => {
+    limpiarFiltros()
+    setVisibleCount(PAGE_SIZE)
+  }, [limpiarFiltros])
+
+  const handleRecargar = useCallback(async () => {
+    try {
+      await recargar()
+    } catch (error) {
+      console.error('Error al recargar las categorías:', error)
+    }
+  }, [recargar])
 
   const visibleCategorias = useMemo(
     () => categoriasFiltradas.slice(0, visibleCount),
-    [categoriasFiltradas, visibleCount]
-  );
-  const hasMore = visibleCount < categoriasFiltradas.length;
+    [categoriasFiltradas, visibleCount],
+  )
+  const hasMore = visibleCount < categoriasFiltradas.length
+
   const handleLoadMore = useCallback(() => {
-    setVisibleCount((prev) => prev + PAGE_SIZE);
-  }, []);
+    setVisibleCount((prev) => prev + PAGE_SIZE)
+  }, [])
+
+  const handleMostrarCincoMas = useCallback(() => {
+    setVisibleCount((prev) => prev + INCREMENT_STEP)
+  }, [])
+
+  const handleOpenDetalle = useCallback((item: MenuCategoria) => {
+    try {
+      setCategoriaSeleccionada(item)
+    } catch (error) {
+      console.error('Error al abrir modal de detalle de categoría:', error)
+    }
+  }, [])
+
+  const handleCloseDetalle = useCallback(() => {
+    setCategoriaSeleccionada(null)
+  }, [])
+
+  const handleOpenProductos = useCallback((item: MenuCategoria) => {
+    try {
+      setCategoriaProductosModal(item)
+    } catch (error) {
+      console.error('Error al abrir modal de productos de categoría:', error)
+    }
+  }, [])
+
+  const handleCloseProductos = useCallback(() => {
+    setCategoriaProductosModal(null)
+  }, [])
+
+  const handleAgregarProducto = useCallback(
+    (item: MenuCategoria) => {
+      try {
+        if (onAgregarProducto) {
+          onAgregarProducto(item)
+        } else {
+          setCategoriaAgregarProducto(item)
+        }
+      } catch (error) {
+        console.error('Error al iniciar alta de producto desde categoría:', error)
+      }
+    },
+    [onAgregarProducto],
+  )
+
+  const handleCloseAgregarProducto = useCallback(() => {
+    setCategoriaAgregarProducto(null)
+  }, [])
+
+  const handleProductoGuardadoLocal = useCallback(() => {
+    try {
+      invalidarCacheProductosMenu()
+    } catch (error) {
+      console.error('Error al invalidar caché de productos:', error)
+    }
+  }, [])
+
+  const handleNuevoRegistro = useCallback(() => {
+    try {
+      if (onNuevoRegistro) {
+        onNuevoRegistro()
+      } else {
+        setIsRegistrarCategoriaOpen(true)
+      }
+    } catch (error) {
+      console.error('Error al iniciar registro de categoría:', error)
+    }
+  }, [onNuevoRegistro])
+
+  const handleCloseRegistrarCategoria = useCallback(() => {
+    setIsRegistrarCategoriaOpen(false)
+  }, [])
+
+  const handleCategoriaGuardadaLocal = useCallback(() => {
+    try {
+      invalidarCacheProductosMenu()
+      void recargar()
+    } catch (error) {
+      console.error('Error al refrescar categorías tras registro:', error)
+    }
+  }, [recargar])
 
   return (
     <div className="space-y-6">
-      {/* 1. Barra de Herramientas, Filtros y Switch Masonry/Grid */}
       <MenuCategoriasToolbar
         searchTerm={searchTerm}
         onSearchChange={handleSearchChange}
@@ -163,18 +253,17 @@ export function MenuCategoriasGrid({
         viewMode={activeViewMode}
         onViewModeChange={handleViewModeChange}
         loading={loading}
-        onRecargar={() => void recargar()}
-        onNuevoRegistro={onNuevoRegistro}
+        onRecargar={() => void handleRecargar()}
+        onNuevoRegistro={handleNuevoRegistro}
       />
 
-      {/* 2. Alerta de status code reutilizable (/shared/lib/status-code-validator) */}
       <StatusCodeAlert
         validation={feedback}
         dismissible
         actions={
           <button
             type="button"
-            onClick={() => void recargar()}
+            onClick={() => void handleRecargar()}
             disabled={loading}
             className="border-line bg-panel text-ink hover:border-primary/40 inline-flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-60"
           >
@@ -183,141 +272,38 @@ export function MenuCategoriasGrid({
         }
       />
 
-      {/* Indicador del balanceador de cargas de imágenes (/shared/loading) */}
-      {showImageBalancerLoading && (
-        <div className="border-line bg-panel/90 flex items-center justify-center rounded-2xl border px-4 py-1.5 shadow-2xs backdrop-blur-xs">
-          <Loading
-            visible={true}
-            variant="inline"
-            size="sm"
-            label={`Balanceando carga de imágenes (${imageBalancer.activeCount} activas · ${imageBalancer.queuedCount} en cola)…`}
-            delay={0}
-            minDuration={350}
-          />
-        </div>
-      )}
+      <ImageBalancerStatusBanner suppressed={loading} />
 
-      {/* 3. Estado de Carga y Contenido con /shared/loading */}
-      {loading && categorias.length === 0 ? (
-        <div className="border-line bg-panel flex min-h-[260px] flex-col items-center justify-center rounded-3xl border shadow-xs">
-          <Loading
-            visible={loading || showLoading}
-            variant="block"
-            size="lg"
-            label="Cargando categorías de la carta…"
-            description="Consultando menú (/menu-category)"
-            delay={0}
-            minDuration={450}
-          />
-        </div>
-      ) : (
-        <div className="relative rounded-3xl">
-          <Loading
-            visible={showLoading && categorias.length > 0}
-            variant="overlay"
-            size="md"
-            label="Actualizando categorías (/menu-category)…"
-            delay={0}
-            minDuration={450}
-          />
-
-          {categoriasFiltradas.length > 0 ? (
-            /* Contenedor InfiniteScroll y Layout adaptable (Masonry o Grid) */
-            <InfiniteScroll
-              onLoadMore={handleLoadMore}
-              hasMore={hasMore}
-              isLoading={false}
-              animationVariant={animationVariant}
-              loader={
-                <Loading
-                  variant="inline"
-                  size="sm"
-                  label="Cargando más categorías…"
-                  delay={0}
-                  minDuration={300}
-                />
-              }
-              endMessage={
-                <InfiniteScrollEnd label="Has visualizado todas las categorías gastronómicas de Room Service." />
-              }
-            >
-              {activeViewMode === 'masonry' ? (
-                /* Disposición Masonry (Cascada / Pinterest) */
-                <div className="columns-1 gap-6 space-y-6 sm:columns-2 lg:columns-3 xl:columns-4">
-                  <AnimatePresence mode="popLayout">
-                    {visibleCategorias.map((cat, idx) => (
-                      <LazyAnimatedWrapper
-                        key={`${cat.headquartes_id}-${cat.building_id}-${cat.order}-${cat.name}`}
-                        layout
-                        variant={animationVariant}
-                        viewportMargin="-100px"
-                        once
-                        className="mb-6 break-inside-avoid"
-                      >
-                        <MenuCategoriaCard
-                          categoria={cat}
-                          index={idx}
-                          viewMode="masonry"
-                          onVerDetalle={(item) => setCategoriaSeleccionada(item)}
-                          onVerProductos={(item) => setCategoriaProductosModal(item)}
-                          onAgregarProducto={(item) => onAgregarProducto?.(item)}
-                        />
-                      </LazyAnimatedWrapper>
-                    ))}
-                  </AnimatePresence>
-                </div>
-              ) : (
-                /* Disposición Grid (Cuadrícula simétrica uniforme) */
-                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  <AnimatePresence mode="popLayout">
-                    {visibleCategorias.map((cat, idx) => (
-                      <LazyAnimatedWrapper
-                        key={`${cat.headquartes_id}-${cat.building_id}-${cat.order}-${cat.name}`}
-                        layout
-                        variant={animationVariant}
-                        viewportMargin="-100px"
-                        once
-                        className="w-full"
-                      >
-                        <MenuCategoriaCard
-                          categoria={cat}
-                          index={idx}
-                          viewMode="grid"
-                          onVerDetalle={(item) => setCategoriaSeleccionada(item)}
-                          onVerProductos={(item) => setCategoriaProductosModal(item)}
-                          onAgregarProducto={(item) => onAgregarProducto?.(item)}
-                        />
-                      </LazyAnimatedWrapper>
-                    ))}
-                  </AnimatePresence>
-                </div>
-              )}
-            </InfiniteScroll>
-          ) : (
-            <MenuCategoriasEmptyState
-              totalCategorias={categorias.length}
-              loading={loading}
-              onNuevoRegistro={onNuevoRegistro}
-              onRecargar={() => void recargar()}
-              onResetFiltros={handleResetFilters}
-            />
-          )}
-        </div>
-      )}
-
-      {/* 4. Modal de Ficha Técnica Detallada con iconos FontAwesome */}
-      <MenuCategoriaModalDetalle
-        categoria={categoriaSeleccionada}
-        onClose={() => setCategoriaSeleccionada(null)}
-        onAgregarProducto={onAgregarProducto}
+      <MenuCategoriasContenido
+        loading={loading}
+        totalCategorias={categorias.length}
+        categoriasFiltradasCount={categoriasFiltradas.length}
+        visibleCategorias={visibleCategorias}
+        viewMode={activeViewMode}
+        hasMore={hasMore}
+        onLoadMore={handleLoadMore}
+        onMostrarCincoMas={handleMostrarCincoMas}
+        onVerDetalle={handleOpenDetalle}
+        onVerProductos={handleOpenProductos}
+        onAgregarProducto={handleAgregarProducto}
+        onNuevoRegistro={handleNuevoRegistro}
+        onRecargar={() => void handleRecargar()}
+        onResetFiltros={handleResetFilters}
       />
 
-      {/* 5. Modal de Productos vinculados a la Categoría */}
-      <MenuCategoriaModalProductos
-        categoria={categoriaProductosModal}
-        onClose={() => setCategoriaProductosModal(null)}
-        onAgregarProducto={onAgregarProducto}
+      <MenuCategoriasModalesHost
+        categoriaSeleccionada={categoriaSeleccionada}
+        categoriaProductosModal={categoriaProductosModal}
+        categoriaAgregarProducto={categoriaAgregarProducto}
+        isRegistrarCategoriaOpen={isRegistrarCategoriaOpen}
+        onCloseDetalle={handleCloseDetalle}
+        onCloseProductos={handleCloseProductos}
+        onCloseAgregarProducto={handleCloseAgregarProducto}
+        onCloseRegistrarCategoria={handleCloseRegistrarCategoria}
+        onAgregarProducto={handleAgregarProducto}
+        onProductoGuardado={handleProductoGuardadoLocal}
+        onCategoriaGuardada={handleCategoriaGuardadaLocal}
       />
     </div>
-  );
+  )
 }

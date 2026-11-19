@@ -1,22 +1,22 @@
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faClock } from '@fortawesome/free-solid-svg-icons'
-import { Input } from '../../../../shared/ui/Input'
-import { Textarea } from '../../../../shared/ui/Textarea'
-import { Switch } from '../atoms/Switch'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faClock } from '@fortawesome/free-solid-svg-icons';
+import { Input } from '../../../../shared/ui/Input';
+import { Textarea } from '../../../../shared/ui/Textarea';
+import { Switch } from '../atoms/Switch';
 
 export interface ProductoHorarioYDietaFieldsProps {
-  startTime: string
-  onStartTimeChange: (value: string) => void
-  endTime: string
-  onEndTimeChange: (value: string) => void
-  isVegetarian: boolean
-  onIsVegetarianChange: (value: boolean) => void
-  isVegan: boolean
-  onIsVeganChange: (value: boolean) => void
-  available: boolean
-  onAvailableChange: (value: boolean) => void
-  description: string
-  onDescriptionChange: (value: string) => void
+  startTime: string;
+  onStartTimeChange: (value: string) => void;
+  endTime: string;
+  onEndTimeChange: (value: string) => void;
+  isVegetarian: boolean;
+  onIsVegetarianChange: (value: boolean) => void;
+  isVegan: boolean;
+  onIsVeganChange: (value: boolean) => void;
+  available: boolean;
+  onAvailableChange: (value: boolean) => void;
+  description: string;
+  onDescriptionChange: (value: string) => void;
 }
 
 /**
@@ -80,21 +80,21 @@ export function ProductoHorarioYDietaFields({
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Switch
             label="¿Es vegetariano?"
-            description="Apto para dietas sin carnes"
+            description=""
             checked={isVegetarian}
             onChange={onIsVegetarianChange}
           />
 
           <Switch
             label="¿Es vegano?"
-            description="Libre de derivados animales"
+            description=""
             checked={isVegan}
             onChange={onIsVeganChange}
           />
 
           <Switch
             label="Disponible"
-            description="Habilitado para pedidos hoy"
+            description=""
             checked={available}
             onChange={onAvailableChange}
           />
@@ -113,5 +113,5 @@ export function ProductoHorarioYDietaFields({
         placeholder="Describe los ingredientes principales, alérgenos o maridajes recomendados..."
       />
     </>
-  )
+  );
 }

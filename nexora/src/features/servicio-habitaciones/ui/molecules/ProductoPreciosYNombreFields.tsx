@@ -1,23 +1,23 @@
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faDollarSign,
   faPercent,
   faStopwatch,
   faUtensils,
-} from '@fortawesome/free-solid-svg-icons'
-import { Input } from '../../../../shared/ui/Input'
+} from '@fortawesome/free-solid-svg-icons';
+import { Input } from '../../../../shared/ui/Input';
 
 export interface ProductoPreciosYNombreFieldsProps {
-  name: string
-  onNameChange: (value: string) => void
-  nameError?: string
-  price: string
-  onPriceChange: (value: string) => void
-  priceError?: string
-  taxPercentage: string
-  onTaxPercentageChange: (value: string) => void
-  prepTime: string
-  onPrepTimeChange: (value: string) => void
+  name: string;
+  onNameChange: (value: string) => void;
+  nameError?: string;
+  price: string;
+  onPriceChange: (value: string) => void;
+  priceError?: string;
+  taxPercentage: string;
+  onTaxPercentageChange: (value: string) => void;
+  prepTime: string;
+  onPrepTimeChange: (value: string) => void;
 }
 
 /**
@@ -40,7 +40,7 @@ export function ProductoPreciosYNombreFields({
       {/* Fila 1: Nombre y Precio */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Input
-          label="Nombre del producto o platillo"
+          label="Nombre del producto"
           placeholder="Ej. Bowl de Quinoa y Aguacate"
           value={name}
           onChange={(e) => onNameChange(e.target.value)}
@@ -77,7 +77,7 @@ export function ProductoPreciosYNombreFields({
         />
 
         <Input
-          label="Tiempo de preparación (minutos)"
+          label="Tiempo de preparación"
           type="number"
           min="1"
           placeholder="Ej. 15"
@@ -87,5 +87,5 @@ export function ProductoPreciosYNombreFields({
         />
       </div>
     </>
-  )
+  );
 }

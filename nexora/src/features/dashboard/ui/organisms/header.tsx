@@ -87,7 +87,10 @@ export function Header({
   }
 
   return (
-    <motion.header className="sticky top-0 z-30 border-b border-line bg-canvas/85 backdrop-blur-md">
+    <motion.header
+      style={{ contain: 'layout style paint' }}
+      className="sticky top-0 z-30 border-b border-line bg-canvas"
+    >
       <div className="flex h-16 items-center gap-3 px-4 sm:px-6 lg:px-8">
         <motion.button
           type="button"

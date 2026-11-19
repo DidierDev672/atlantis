@@ -1,15 +1,15 @@
-import { memo } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons'
+import { memo } from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faArrowUpRightFromSquare } from '@fortawesome/free-solid-svg-icons';
 import {
   type ItemMenuProducto,
   resolverImagenProducto,
-} from '../../domain/item-menu'
-import { useBalancedProductImage } from '../../application/use-balanced-product-image'
-import { Skeleton } from '../../../../shared/loading'
+} from '../../domain/item-menu';
+import { useBalancedProductImage } from '../../application/use-balanced-product-image';
+import { Skeleton } from '../../../../shared/loading';
 
 export interface ProductoImagenHeaderProps {
-  producto: ItemMenuProducto
+  producto: ItemMenuProducto;
 }
 
 /**
@@ -20,16 +20,16 @@ export interface ProductoImagenHeaderProps {
 export const ProductoImagenHeader = memo(function ProductoImagenHeader({
   producto,
 }: ProductoImagenHeaderProps) {
-  const primaryUrl = resolverImagenProducto(producto)
+  const primaryUrl = resolverImagenProducto(producto);
   const { activeSrc, isImageReady, handleImageError } =
-    useBalancedProductImage(primaryUrl)
+    useBalancedProductImage(primaryUrl);
 
   return (
-    <div className="bg-canvas relative h-44 w-full overflow-hidden">
+    <div className="bg-canvas relative h-32 w-full overflow-hidden sm:h-36">
       {!isImageReady && (
         <Skeleton
           variant="rectangular"
-          animation="pulse"
+          animation="none"
           className="absolute inset-0 size-full"
         />
       )}
@@ -47,10 +47,10 @@ export const ProductoImagenHeader = memo(function ProductoImagenHeader({
 
       <span
         title="Ver detalle completo"
-        className="absolute top-3 right-3 grid size-7 place-items-center rounded-full bg-black/65 text-white/95 transition-colors group-hover:bg-primary group-hover:text-white"
+        className="group-hover:bg-primary absolute top-2.5 right-2.5 grid size-7 place-items-center rounded-full bg-black/65 text-white/95 transition-colors group-hover:text-white"
       >
         <FontAwesomeIcon icon={faArrowUpRightFromSquare} className="size-3" />
       </span>
     </div>
-  )
-})
+  );
+});
