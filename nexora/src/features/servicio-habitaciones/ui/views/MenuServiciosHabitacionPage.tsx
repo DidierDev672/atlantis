@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useState, type ComponentProps, type ComponentType } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import {
@@ -8,7 +8,7 @@ import {
   faClipboardList,
   faPlus,
 } from '@fortawesome/free-solid-svg-icons';
-import { slideIn, fadeIn } from '../../../../design-tokens/motion';
+import { slideIn } from '../../../../design-tokens/motion';
 import { Loading } from '../../../../shared/loading';
 import type { LayoutViewMode } from '../atoms/LayoutViewSwitch';
 import { ItemMenuProductosMasonry } from '../organisms/ItemMenuProductosMasonry';
@@ -17,7 +17,11 @@ import type { RegistrarCategoriaDrawerProps } from '../organisms/RegistrarCatego
 import type { CarritoProductosDrawerProps } from '../organisms/CarritoProductosDrawer';
 import { CarritoFlotanteFab } from '../atoms/CarritoFlotanteFab';
 import { useCarritoStore } from '../../application/carrito-store';
-import { invalidarCacheProductosMenu } from '../../infrastructure/catalogo-productos-cache';
+import {
+  invalidarCacheCategoriasMenu,
+  invalidarCacheProductosMenu,
+} from '../../infrastructure/catalogo-productos-cache';
+import { invalidarPedidosServicioCache } from '../../infrastructure/pedidos-cache';
 import type { MenuCategoria } from '../../domain/menu-categoria';
 
 type MenuCategoriasGridProps = ComponentProps<
@@ -109,6 +113,7 @@ const NAV_ITEMS: NavTabItem[] = [
 
 export function MenuServiciosHabitacionPage() {
   const [vistaActiva, setVistaActiva] = useState<VistaActiva>('productos');
+  const [visitedTabs, setVisitedTabs] = useState<VistaActiva[]>(['productos']);
   const [viewModeCategorias, setViewModeCategorias] =
     useState<LayoutViewMode>('grid');
   const [isAgregarDrawerOpen, setIsAgregarDrawerOpen] = useState(false);
@@ -117,6 +122,7 @@ export function MenuServiciosHabitacionPage() {
   const [productosRefreshVersion, setProductosRefreshVersion] = useState(0);
   const [isCategoriaDrawerOpen, setIsCategoriaDrawerOpen] = useState(false);
   const [categoriasRefreshVersion, setCategoriasRefreshVersion] = useState(0);
+  const [pedidosRefreshVersion, setPedidosRefreshVersion] = useState(0);
   const [isCarritoDrawerOpen, setIsCarritoDrawerOpen] = useState(false);
 
   const totalArticulos = useCarritoStore((s) =>
@@ -125,6 +131,7 @@ export function MenuServiciosHabitacionPage() {
 
   const handleCambiarVista = useCallback((vista: VistaActiva) => {
     setVistaActiva(vista);
+    setVisitedTabs((prev) => (prev.includes(vista) ? prev : [...prev, vista]));
   }, []);
 
   const handleAbrirDrawerProducto = useCallback((cat?: MenuCategoria) => {
@@ -177,6 +184,7 @@ export function MenuServiciosHabitacionPage() {
   const handleCategoriaGuardadaDrawer = useCallback(() => {
     try {
       invalidarCacheProductosMenu();
+      invalidarCacheCategoriasMenu();
       setCategoriasRefreshVersion((prev) => prev + 1);
     } catch (error) {
       console.error('Error al refrescar categorías tras registro:', error);
@@ -231,71 +239,63 @@ export function MenuServiciosHabitacionPage() {
         </div>
       </div>
 
-      {/* 2. Contenido según la vista activa (productos usa caché en memoria para evitar re-fetches al cambiar de pestaña) */}
-      <AnimatePresence mode="wait">
-        {vistaActiva === 'catalogo' ? (
-          <motion.div
-            key="catalogo"
-            variants={fadeIn}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-          >
-            <Suspense fallback={tabFallback}>
-              <LazyMenuCategoriasGrid
-                viewMode={viewModeCategorias}
-                onViewModeChange={setViewModeCategorias}
-                refreshVersion={categoriasRefreshVersion}
-                onNuevoRegistro={handleAbrirDrawerCategoria}
-                onAgregarProducto={handleAbrirDrawerProducto}
-              />
-            </Suspense>
-          </motion.div>
-        ) : vistaActiva === 'productos' ? (
-          <motion.div
-            key="productos"
-            variants={fadeIn}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-          >
-            <ItemMenuProductosMasonry
-              refreshVersion={productosRefreshVersion}
-              onAgregarNuevo={handleAbrirDrawerNuevoProducto}
+      {/* 2. Contenido según la vista activa (conserva montadas las pestañas visitadas para evitar re-fetches al cambiar de tab) */}
+      {visitedTabs.includes('catalogo') && (
+        <div
+          className={vistaActiva === 'catalogo' ? 'block' : 'hidden'}
+          aria-hidden={vistaActiva !== 'catalogo'}
+        >
+          <Suspense fallback={tabFallback}>
+            <LazyMenuCategoriasGrid
+              viewMode={viewModeCategorias}
+              onViewModeChange={setViewModeCategorias}
+              refreshVersion={categoriasRefreshVersion}
+              onNuevoRegistro={handleAbrirDrawerCategoria}
+              onAgregarProducto={handleAbrirDrawerProducto}
             />
-          </motion.div>
-        ) : vistaActiva === 'pedidos' ? (
-          <motion.div
-            key="pedidos"
-            variants={fadeIn}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-          >
-            <Suspense fallback={tabFallback}>
-              <LazyPedidosServicioHabitacionOrganism
-                onIrAProductos={() => handleCambiarVista('productos')}
-                onIrACarrito={() => setIsCarritoDrawerOpen(true)}
-              />
-            </Suspense>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="nuevo"
-            variants={fadeIn}
-            initial="hidden"
-            animate="visible"
-            exit="exit"
-            className="mx-auto max-w-4xl"
-          >
-            <Suspense fallback={tabFallback}>
-              <LazyFormularioServicioHabitacionCard
-                onCategoriaGuardada={handleCategoriaGuardadaDrawer}
-              />
-            </Suspense>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </Suspense>
+        </div>
+      )}
+
+      {visitedTabs.includes('productos') && (
+        <div
+          className={vistaActiva === 'productos' ? 'block' : 'hidden'}
+          aria-hidden={vistaActiva !== 'productos'}
+        >
+          <ItemMenuProductosMasonry
+            refreshVersion={productosRefreshVersion}
+            onAgregarNuevo={handleAbrirDrawerNuevoProducto}
+          />
+        </div>
+      )}
+
+      {visitedTabs.includes('pedidos') && (
+        <div
+          className={vistaActiva === 'pedidos' ? 'block' : 'hidden'}
+          aria-hidden={vistaActiva !== 'pedidos'}
+        >
+          <Suspense fallback={tabFallback}>
+            <LazyPedidosServicioHabitacionOrganism
+              refreshTrigger={pedidosRefreshVersion}
+              onIrAProductos={() => handleCambiarVista('productos')}
+              onIrACarrito={() => setIsCarritoDrawerOpen(true)}
+            />
+          </Suspense>
+        </div>
+      )}
+
+      {visitedTabs.includes('nuevo') && (
+        <div
+          className={vistaActiva === 'nuevo' ? 'mx-auto block max-w-4xl' : 'hidden'}
+          aria-hidden={vistaActiva !== 'nuevo'}
+        >
+          <Suspense fallback={tabFallback}>
+            <LazyFormularioServicioHabitacionCard
+              onCategoriaGuardada={handleCategoriaGuardadaDrawer}
+            />
+          </Suspense>
+        </div>
+      )}
 
       {isAgregarDrawerOpen && (
         <Suspense fallback={null}>
@@ -325,6 +325,8 @@ export function MenuServiciosHabitacionPage() {
             onClose={() => setIsCarritoDrawerOpen(false)}
             onPedidoConfirmado={() => {
               setIsCarritoDrawerOpen(false);
+              invalidarPedidosServicioCache();
+              setPedidosRefreshVersion((prev) => prev + 1);
               handleCambiarVista('pedidos');
             }}
           />

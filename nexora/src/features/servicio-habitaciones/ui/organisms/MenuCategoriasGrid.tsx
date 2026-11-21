@@ -6,7 +6,10 @@ import { MenuCategoriasToolbar } from '../molecules/MenuCategoriasToolbar'
 import { ImageBalancerStatusBanner } from '../molecules/ImageBalancerStatusBanner'
 import { MenuCategoriasContenido } from '../molecules/MenuCategoriasContenido'
 import { MenuCategoriasModalesHost } from '../molecules/MenuCategoriasModalesHost'
-import { invalidarCacheProductosMenu } from '../../infrastructure/catalogo-productos-cache'
+import {
+  invalidarCacheCategoriasMenu,
+  invalidarCacheProductosMenu,
+} from '../../infrastructure/catalogo-productos-cache'
 import type { LayoutViewMode } from '../atoms/LayoutViewSwitch'
 import { type MenuCategoria, resolverNombreEntidad } from '../../domain/menu-categoria'
 import type { LazyAnimationVariant } from '../../../../shared/ui'
@@ -142,6 +145,7 @@ export function MenuCategoriasGrid({
 
   const handleRecargar = useCallback(async () => {
     try {
+      invalidarCacheCategoriasMenu()
       await recargar()
     } catch (error) {
       console.error('Error al recargar las categorías:', error)

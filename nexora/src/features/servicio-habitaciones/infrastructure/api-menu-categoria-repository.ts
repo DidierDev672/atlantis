@@ -6,6 +6,11 @@ import {
   type StatusCodeValidationResult,
 } from '../../../shared/lib/status-code-validator'
 import type { MenuCategoria } from '../domain/menu-categoria'
+import {
+  getMenuCategoriasCache,
+  setMenuCategoriasCache,
+} from './catalogo-productos-cache'
+import { detectarPerfilRedDisponible } from './network-quality'
 
 /**
  * Catálogo de respaldo gastronómico de alta calidad (fallback)
@@ -112,66 +117,102 @@ function resolveAxiosErrorValidation(error: unknown): StatusCodeValidationResult
   return validateStatusCode(status)
 }
 
+let inFlightMenuCategoriasRequest: Promise<ObtenerMenuCategoriasRespuesta> | null = null
+
 /**
- * Consulta el endpoint GET /menu-category con Axios y valida la respuesta
- * con el validador estricto de códigos de estado HTTP del proyecto.
+ * Consulta el endpoint GET /menu-category con deduplicación en vuelo, caché compartida en memoria
+ * y validación de códigos HTTP.
  */
-export async function obtenerMenuCategoriasApi(): Promise<ObtenerMenuCategoriasRespuesta> {
-  try {
-    const response = await executeBalancedRequest(() =>
-      api.get('/menu-category', {
-        skipAuth: true,
-        validateStatus: () => true,
-      })
-    )
-
-    // Validación formal con status-code-validator
-    const validation = validateStatusCode(response.status)
-
-    if (validation.isValid && response.data) {
-      let itemsCrudos: unknown[] = []
-
-      if (Array.isArray(response.data)) {
-        itemsCrudos = response.data
-      } else if (response.data && typeof response.data === 'object') {
-        const payload = response.data as Record<string, unknown>
-        if (Array.isArray(payload.data)) {
-          itemsCrudos = payload.data
-        } else if (Array.isArray(payload.categories)) {
-          itemsCrudos = payload.categories
-        } else if (Array.isArray(payload.items)) {
-          itemsCrudos = payload.items
-        }
-      }
-
-      if (itemsCrudos.length > 0) {
-        const categoriasMapeadas: MenuCategoria[] = itemsCrudos.map((item) =>
-          mapRawMenuCategoria(
-            (item && typeof item === 'object' ? item : {}) as Record<string, unknown>
-          )
-        )
-
-        return {
-          categorias: categoriasMapeadas,
-          validation,
-          usandoFallback: false,
-        }
+export async function obtenerMenuCategoriasApi(
+  options?: { forceRefresh?: boolean }
+): Promise<ObtenerMenuCategoriasRespuesta> {
+  if (!options?.forceRefresh) {
+    const cached = getMenuCategoriasCache()
+    if (cached && cached.categorias.length > 0) {
+      return {
+        categorias: cached.categorias,
+        validation: cached.validation ?? validateStatusCode(200),
+        usandoFallback: cached.usandoFallback,
       }
     }
-
-    // Si el servidor devolvió éxito pero sin elementos o array vacío ([]), se respeta la respuesta del servidor
-    return {
-      categorias: [],
-      validation,
-      usandoFallback: false,
+    if (!detectarPerfilRedDisponible().online) {
+      return {
+        categorias: cached?.categorias ?? [],
+        validation: validateStatusCode(503),
+        usandoFallback: false,
+      }
     }
-  } catch (error) {
-    return {
-      categorias: [],
-      validation: resolveAxiosErrorValidation(error),
-      usandoFallback: false,
+    if (inFlightMenuCategoriasRequest) {
+      return inFlightMenuCategoriasRequest
     }
   }
+
+  const req = (async (): Promise<ObtenerMenuCategoriasRespuesta> => {
+    try {
+      const response = await executeBalancedRequest(() =>
+        api.get('/menu-category', {
+          skipAuth: true,
+          validateStatus: () => true,
+        })
+      )
+
+      const validation = validateStatusCode(response.status)
+
+      if (validation.isValid && response.data) {
+        let itemsCrudos: unknown[] = []
+
+        if (Array.isArray(response.data)) {
+          itemsCrudos = response.data
+        } else if (response.data && typeof response.data === 'object') {
+          const payload = response.data as Record<string, unknown>
+          if (Array.isArray(payload.data)) {
+            itemsCrudos = payload.data
+          } else if (Array.isArray(payload.categories)) {
+            itemsCrudos = payload.categories
+          } else if (Array.isArray(payload.items)) {
+            itemsCrudos = payload.items
+          }
+        }
+
+        if (itemsCrudos.length > 0) {
+          const categoriasMapeadas: MenuCategoria[] = itemsCrudos.map((item) =>
+            mapRawMenuCategoria(
+              (item && typeof item === 'object' ? item : {}) as Record<string, unknown>
+            )
+          )
+
+          setMenuCategoriasCache({
+            categorias: categoriasMapeadas,
+            validation,
+            usandoFallback: false,
+          })
+
+          return {
+            categorias: categoriasMapeadas,
+            validation,
+            usandoFallback: false,
+          }
+        }
+      }
+
+      return {
+        categorias: [],
+        validation,
+        usandoFallback: false,
+      }
+    } catch (error) {
+      return {
+        categorias: [],
+        validation: resolveAxiosErrorValidation(error),
+        usandoFallback: false,
+      }
+    } finally {
+      inFlightMenuCategoriasRequest = null
+    }
+  })()
+
+  inFlightMenuCategoriasRequest = req
+  return req
 }
 
 /**

@@ -18,6 +18,12 @@ import {
   fetchPedidosServiceRequestApi,
 } from '../infrastructure/api-pedidos-servicio-repository'
 import {
+  getPedidosServicioCache,
+  invalidarPedidosServicioCache,
+  patchPedidosCacheMetadatos,
+  setPedidosServicioCache,
+} from '../infrastructure/pedidos-cache'
+import {
   construirEtiquetaCategoriaOrden,
   resolverMapaItemCategoriaPedidos,
   resolverNombresHuespedesPedidos,
@@ -80,16 +86,26 @@ function calcularPrecioTotalPedido(orden: ServiceRequestOrder): number {
  * Resuelve en paralelo nombres de huéspedes, categorías y habitaciones una sola vez
  * por carga (`pedidosIndexados`), optimizando filtros, memoria y re-renders.
  */
-export function usePedidosServicioHabitacion() {
-  const [pedidos, setPedidos] = useState<ServiceRequestOrder[]>([])
-  const [roomsMap, setRoomsMap] = useState<Map<string, string>>(() => new Map())
-  const [personasMap, setPersonasMap] = useState<Map<string, string>>(() => new Map())
-  const [itemCategoriaMap, setItemCategoriaMap] = useState<Map<string, string>>(
-    () => new Map(),
+export function usePedidosServicioHabitacion(refreshTrigger: number = 0) {
+  const initialCache = useMemo(() => getPedidosServicioCache(), [])
+
+  const [pedidos, setPedidos] = useState<ServiceRequestOrder[]>(
+    () => initialCache?.lista ?? [],
   )
-  const [loading, setLoading] = useState(true)
+  const [roomsMap, setRoomsMap] = useState<Map<string, string>>(
+    () => initialCache?.roomsMap ?? new Map(),
+  )
+  const [personasMap, setPersonasMap] = useState<Map<string, string>>(
+    () => initialCache?.personasMap ?? new Map(),
+  )
+  const [itemCategoriaMap, setItemCategoriaMap] = useState<Map<string, string>>(
+    () => initialCache?.itemCategoriaMap ?? new Map(),
+  )
+  const [loading, setLoading] = useState(() => !initialCache)
   const [cargandoMetadatos, setCargandoMetadatos] = useState(false)
-  const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(null)
+  const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(
+    () => initialCache?.validation ?? null,
+  )
 
   const [busqueda, setBusqueda] = useState('')
   const busquedaDiferida = useDeferredValue(busqueda)
@@ -98,13 +114,14 @@ export function usePedidosServicioHabitacion() {
   const [filtroFechaVenta, setFiltroFechaVenta] = useState<Date | null>(null)
   const [estadosPorPedido, setEstadosPorPedido] = useState<
     Record<string, EstadoActualizablePedido>
-  >({})
+  >(() => initialCache?.estadosPorPedido ?? {})
   const [openDropdownOrderId, setOpenDropdownOrderId] = useState<string | null>(null)
   const [actualizandoOrdenId, setActualizandoOrdenId] = useState<string | null>(null)
   const [ordenDetalleKey, setOrdenDetalleKey] = useState<string | null>(null)
   const [visibleCountPedidos, setVisibleCountPedidos] = useState<number>(PAGE_SIZE_PEDIDOS)
 
   const isMountedRef = useRef(true)
+  const lastRefreshTriggerRef = useRef(refreshTrigger)
 
   useEffect(() => {
     if (!openDropdownOrderId) return
@@ -124,15 +141,20 @@ export function usePedidosServicioHabitacion() {
         ])
         if (!isMountedRef.current) return
 
-        if (roomsRes.status === 'fulfilled' && roomsRes.value) {
-          setRoomsMap(roomsRes.value)
-        }
-        if (categoriasRes.status === 'fulfilled') {
-          setItemCategoriaMap(categoriasRes.value)
-        }
-        if (personasRes.status === 'fulfilled') {
-          setPersonasMap(personasRes.value)
-        }
+        const nextRooms = roomsRes.status === 'fulfilled' ? roomsRes.value : null
+        const nextCategorias =
+          categoriasRes.status === 'fulfilled' ? categoriasRes.value : null
+        const nextPersonas = personasRes.status === 'fulfilled' ? personasRes.value : null
+
+        if (nextRooms) setRoomsMap(nextRooms)
+        if (nextCategorias) setItemCategoriaMap(nextCategorias)
+        if (nextPersonas) setPersonasMap(nextPersonas)
+
+        patchPedidosCacheMetadatos({
+          roomsMap: nextRooms ?? undefined,
+          itemCategoriaMap: nextCategorias ?? undefined,
+          personasMap: nextPersonas ?? undefined,
+        })
       } catch (error) {
         console.error('Error al resolver metadatos de tabla de pedidos:', error)
       } finally {
@@ -142,34 +164,73 @@ export function usePedidosServicioHabitacion() {
     [],
   )
 
+  const cargarPedidosInterno = useCallback(
+    async (forceRefresh: boolean) => {
+      if (!forceRefresh) {
+        const cached = getPedidosServicioCache()
+        if (cached) {
+          if (!isMountedRef.current) return
+          setPedidos(cached.lista)
+          setRoomsMap(cached.roomsMap)
+          setPersonasMap(cached.personasMap)
+          setItemCategoriaMap(cached.itemCategoriaMap)
+          setFeedback(cached.validation)
+          setLoading(false)
+          return
+        }
+      } else {
+        invalidarPedidosServicioCache()
+      }
+
+      setLoading(true)
+      setFeedback(null)
+      try {
+        const { lista, validation } = await fetchPedidosServiceRequestApi()
+        if (!isMountedRef.current) return
+        setPedidos(lista)
+        setFeedback(validation)
+        setPedidosServicioCache({
+          lista,
+          validation,
+          roomsMap: new Map(),
+          personasMap: new Map(),
+          itemCategoriaMap: new Map(),
+          estadosPorPedido: {},
+        })
+        void resolverMetadatosEnSegundoPlano(lista)
+      } catch (error) {
+        console.error('Error al cargar historial de ventas (/service-request):', error)
+        if (isMountedRef.current) {
+          setFeedback(validateStatusCode(500))
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setLoading(false)
+        }
+      }
+    },
+    [resolverMetadatosEnSegundoPlano],
+  )
+
   const cargarPedidos = useCallback(async () => {
-    setLoading(true)
-    setFeedback(null)
-    try {
-      const { lista, validation } = await fetchPedidosServiceRequestApi()
-      if (!isMountedRef.current) return
-      setPedidos(lista)
-      setFeedback(validation)
-      void resolverMetadatosEnSegundoPlano(lista)
-    } catch (error) {
-      console.error('Error al cargar historial de ventas (/service-request):', error)
-      if (isMountedRef.current) {
-        setFeedback(validateStatusCode(500))
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setLoading(false)
-      }
-    }
-  }, [resolverMetadatosEnSegundoPlano])
+    await cargarPedidosInterno(true)
+  }, [cargarPedidosInterno])
 
   useEffect(() => {
     isMountedRef.current = true
-    void Promise.resolve().then(() => cargarPedidos())
+    if (!initialCache) {
+      void Promise.resolve().then(() => cargarPedidosInterno(false))
+    }
     return () => {
       isMountedRef.current = false
     }
-  }, [cargarPedidos])
+  }, [cargarPedidosInterno, initialCache])
+
+  useEffect(() => {
+    if (refreshTrigger <= 0 || refreshTrigger === lastRefreshTriggerRef.current) return
+    lastRefreshTriggerRef.current = refreshTrigger
+    void Promise.resolve().then(() => cargarPedidosInterno(true))
+  }, [cargarPedidosInterno, refreshTrigger])
 
   const handleToggleDropdownById = useCallback((ordenKey: string) => {
     setOpenDropdownOrderId((prev) => (prev === ordenKey ? null : ordenKey))
@@ -200,13 +261,25 @@ export function usePedidosServicioHabitacion() {
         ])
         if (isMountedRef.current) {
           if (validation.isValid) {
-            setPedidos((prev) =>
-              prev.map((item, idx) =>
+            setPedidos((prev) => {
+              const next = prev.map((item, idx) =>
                 resolverOrdenKey(item, idx) === ordenKey
                   ? { ...item, status: estadoActual }
                   : item,
-              ),
-            )
+              )
+              setPedidosServicioCache({
+                lista: next,
+                validation,
+                roomsMap,
+                personasMap,
+                itemCategoriaMap,
+                estadosPorPedido: {
+                  ...estadosPorPedido,
+                  [ordenKey]: estadoActual,
+                },
+              })
+              return next
+            })
           }
           setFeedback(validation)
         }
@@ -224,7 +297,7 @@ export function usePedidosServicioHabitacion() {
         }
       }
     },
-    [],
+    [estadosPorPedido, itemCategoriaMap, personasMap, roomsMap],
   )
 
   // Índice memoizado con Huésped (solo nombre), Categoría, Precio a pagar y Prioridad

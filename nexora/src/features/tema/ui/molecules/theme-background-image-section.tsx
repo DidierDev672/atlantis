@@ -1,7 +1,6 @@
 import { useState, useRef, type ChangeEvent, useEffect } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import { useTemaStore } from '../../application/tema-store'
-import { SparklesIcon } from '../../../dashboard/ui/icons'
+import { DEFAULT_HOTEL_LOGO, useTemaStore } from '../../application/tema-store'
 
 /**
  * Optimiza y redimensiona el logo del hotel en el cliente a un tamaño adecuado
@@ -281,15 +280,11 @@ export function ThemeBackgroundImageSection() {
               <div className="rounded-xl border border-white/10 bg-sidebar p-3.5 shadow-md">
                 <div className="flex items-center gap-3">
                   <span className="grid size-11 place-items-center rounded-xl bg-cream text-primary shadow-sm overflow-hidden shrink-0">
-                    {hotelLogo ? (
-                      <img
-                        src={hotelLogo}
-                        alt="Logo del hotel cargado"
-                        className="size-full object-cover"
-                      />
-                    ) : (
-                      <SparklesIcon className="size-5 text-primary" />
-                    )}
+                    <img
+                      src={hotelLogo || DEFAULT_HOTEL_LOGO}
+                      alt="Logo del proyecto"
+                      className={hotelLogo ? 'size-full object-cover' : 'size-full object-contain p-0.5'}
+                    />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-base font-bold text-cream truncate">Nexora</p>
@@ -315,15 +310,11 @@ export function ThemeBackgroundImageSection() {
               <div className="rounded-xl border border-line bg-panel p-3.5 shadow-xs flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="grid size-10 place-items-center rounded-xl bg-cream text-primary shadow-xs overflow-hidden shrink-0">
-                    {hotelLogo ? (
-                      <img
-                        src={hotelLogo}
-                        alt="Logo en bienvenida"
-                        className="size-full object-cover"
-                      />
-                    ) : (
-                      <SparklesIcon className="size-5 text-primary" />
-                    )}
+                    <img
+                      src={hotelLogo || DEFAULT_HOTEL_LOGO}
+                      alt="Logo en bienvenida"
+                      className={hotelLogo ? 'size-full object-cover' : 'size-full object-contain p-0.5'}
+                    />
                   </span>
                   <div className="min-w-0">
                     <p className="text-xs font-bold text-ink truncate">Nexora · {hotelName}</p>

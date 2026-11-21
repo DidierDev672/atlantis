@@ -5,8 +5,7 @@ import { DEFAULT_SIZE_BY_VARIANT } from '../lib/sizes';
 import { LoadingMessage } from '../molecules/LoadingMessage';
 import { SaturnLoader } from '../molecules/SaturnLoader';
 import type { LoadingProps, LoadingVariant } from '../type';
-import { useTemaStore } from '../../../features/tema/application/tema-store';
-import { SparklesIcon } from '../../../features/dashboard/ui/icons';
+import { DEFAULT_HOTEL_LOGO, useTemaStore } from '../../../features/tema/application/tema-store';
 
 const CONTAINER_STYLES: Record<LoadingVariant, string> = {
   inline: 'inline-flex flex-row items-center gap-2.5 py-1',
@@ -65,15 +64,11 @@ export function Loading({
               className="flex items-center gap-2.5 rounded-2xl border border-line/60 bg-panel/90 px-3.5 py-1.5 shadow-xs mb-1 backdrop-blur-xs"
             >
               <span className="grid size-7 place-items-center rounded-lg bg-cream text-primary overflow-hidden shadow-xs shrink-0">
-                {hotelLogo ? (
-                  <img
-                    src={hotelLogo}
-                    alt={hotelName || 'Logo del hotel'}
-                    className="size-full object-cover"
-                  />
-                ) : (
-                  <SparklesIcon className="size-3.5 text-primary" />
-                )}
+                <img
+                  src={hotelLogo || DEFAULT_HOTEL_LOGO}
+                  alt={hotelName || 'Logo del proyecto'}
+                  className={hotelLogo ? 'size-full object-cover' : 'size-full object-contain p-0.5'}
+                />
               </span>
               <div className="text-left">
                 <p className="text-[11px] font-bold text-ink leading-tight">Nexora</p>

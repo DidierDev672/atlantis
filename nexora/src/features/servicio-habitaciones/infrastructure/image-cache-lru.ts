@@ -6,11 +6,28 @@ export interface ImageCacheEntry {
   isBlob: boolean
 }
 
-const MAX_CACHE_ENTRIES = 50
+const MAX_CACHE_ENTRIES = 120
+const REUSABLE_DIMENSIONS = [640, 480, 320] as const
 const loadedUrlCache = new Map<string, ImageCacheEntry>()
 
 export function buildImageCacheKey(url: string, maxDimension: number): string {
   return maxDimension === 640 ? url : `${url}::${maxDimension}`
+}
+
+function findReusableCacheKey(url: string, maxDimension: number): string | null {
+  const exactKey = buildImageCacheKey(url, maxDimension)
+  if (loadedUrlCache.has(exactKey)) return exactKey
+
+  // Si se solicita una miniatura (<= 160px) o versión menor, reutiliza textura mayor ya descargada sin tocar la red
+  for (const dim of REUSABLE_DIMENSIONS) {
+    if (dim >= maxDimension) {
+      const candidateKey = buildImageCacheKey(url, dim)
+      if (loadedUrlCache.has(candidateKey)) {
+        return candidateKey
+      }
+    }
+  }
+  return null
 }
 
 export function getImageCacheEntry(
@@ -18,8 +35,10 @@ export function getImageCacheEntry(
   maxDimension: number = 640
 ): ImageCacheEntry | undefined {
   if (!url) return undefined
-  const key = buildImageCacheKey(url, maxDimension)
   try {
+    const key = findReusableCacheKey(url, maxDimension)
+    if (!key) return undefined
+
     const entry = loadedUrlCache.get(key)
     if (!entry) return undefined
 
@@ -71,5 +90,9 @@ export function hasImageCacheEntry(
   maxDimension: number = 640
 ): boolean {
   if (!url) return false
-  return loadedUrlCache.has(buildImageCacheKey(url, maxDimension))
+  try {
+    return findReusableCacheKey(url, maxDimension) !== null
+  } catch {
+    return false
+  }
 }

@@ -19,14 +19,13 @@ import {
   formatBuilding,
   formatearFechaHora,
 } from '../domain/estadias-recepcion'
+import { detectarPerfilRedDisponible } from './network-quality'
 
 interface BuildingSummaryApi {
   id?: string
   _id?: string
   name?: string
 }
-
-const MAX_CONCURRENT_DETAIL_REQUESTS = 4
 
 // Cachés compartidas en memoria para deduplicar entidades entre aperturas y vistas
 const roomCache = new Map<string, RoomDetailApi>()
@@ -38,6 +37,68 @@ const roomInFlight = new Map<string, Promise<RoomDetailApi>>()
 const reserveInFlight = new Map<string, Promise<ReserveDetailApi | null>>()
 const personInFlight = new Map<string, Promise<PersonDetailApi>>()
 const buildingInFlight = new Map<string, Promise<string>>()
+
+let roomsCatalogLoadedAt = 0
+let reservesCatalogLoadedAt = 0
+let personsCatalogLoadedAt = 0
+let buildingsCatalogLoadedAt = 0
+
+let personsCatalogCache: { list: PersonDetailApi[]; updatedAt: number } | null = null
+let personsCatalogInFlight: Promise<PersonDetailApi[]> | null = null
+
+let recepcionesCache: { data: FetchRecepcionesResult; updatedAt: number } | null = null
+let recepcionesInFlight: Promise<FetchRecepcionesResult> | null = null
+
+let habitacionesMapCache: { data: Map<string, string>; updatedAt: number } | null = null
+let habitacionesMapInFlight: Promise<Map<string, string> | null> | null = null
+
+function isTimestampFresh(updatedAt: number): boolean {
+  if (!updatedAt) return false
+  try {
+    return Date.now() - updatedAt <= detectarPerfilRedDisponible().cacheTtlMs
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Consulta compartida y deduplicada del catálogo `/persons` con caché TTL adaptativa por red.
+ * Reutilizable desde `ModalSeleccionarRecepcion`, `ModalConfirmarPedidoCocina` y `pedidos-metadatos-resolver`.
+ */
+export async function obtenerPersonsCatalogoShared(options?: {
+  forceRefresh?: boolean
+}): Promise<PersonDetailApi[]> {
+  if (!options?.forceRefresh && personsCatalogCache && isTimestampFresh(personsCatalogCache.updatedAt)) {
+    return personsCatalogCache.list
+  }
+  if (!detectarPerfilRedDisponible().online) {
+    return personsCatalogCache?.list ?? []
+  }
+  if (personsCatalogInFlight) {
+    return personsCatalogInFlight
+  }
+
+  const req = (async (): Promise<PersonDetailApi[]> => {
+    try {
+      const lista = await fetchCatalogoOpcional<PersonDetailApi>('/persons')
+      if (lista.length > 0) {
+        for (const p of lista) {
+          if (p?.id) personCache.set(p.id, p)
+        }
+        personsCatalogCache = { list: lista, updatedAt: Date.now() }
+        personsCatalogLoadedAt = personsCatalogCache.updatedAt
+      }
+      return lista
+    } catch {
+      return personsCatalogCache?.list ?? []
+    } finally {
+      personsCatalogInFlight = null
+    }
+  })()
+
+  personsCatalogInFlight = req
+  return req
+}
 
 function extraerLista<T>(raw: unknown): T[] {
   if (Array.isArray(raw)) return raw as T[]
@@ -254,222 +315,296 @@ export interface FetchRecepcionesResult {
 
 /**
  * Elimina el patrón N+1 al cargar recepciones:
- * 1. Consulta en paralelo y con balanceo de carga los catálogos maestros (`/stays`, `/room`, `/reserve`, `/persons`).
- * 2. Deduplica IDs únicos faltantes y los resuelve con concurrencia acotada (`MAX_CONCURRENT_DETAIL_REQUESTS`).
- * 3. Valida cada código de respuesta con `validateStatusCode`.
+ * 1. Usa caché compartida con TTL adaptativo según calidad de red y deduplicación en vuelo.
+ * 2. Al forzar recarga (`forceRefresh: true`), reutiliza entidades ya cacheadas y solo consulta lo faltante.
+ * 3. Resuelve IDs únicos faltantes con concurrencia adaptada a la red disponible.
  */
 export async function fetchRecepcionesEnriquecidas(options?: {
   forceRefresh?: boolean
 }): Promise<FetchRecepcionesResult> {
-  if (options?.forceRefresh) {
-    roomCache.clear()
-    reserveCache.clear()
-    personCache.clear()
-    buildingCache.clear()
+  const forceRefresh = Boolean(options?.forceRefresh)
+  const networkProfile = detectarPerfilRedDisponible()
+
+  if (!forceRefresh && recepcionesCache && isTimestampFresh(recepcionesCache.updatedAt)) {
+    return recepcionesCache.data
+  }
+  if (!networkProfile.online) {
+    return (
+      recepcionesCache?.data ?? {
+        recepciones: construirFallbackRecepciones(),
+        feedback: validateStatusCode(503),
+      }
+    )
+  }
+  if (!forceRefresh && recepcionesInFlight) {
+    return recepcionesInFlight
   }
 
-  try {
-    // Fase 1: 4 peticiones paralelas balanceadas (O(1) en lugar de 1 + 3N)
-    const [staysResponse, roomsCatalog, reservesCatalog, personsCatalog] =
-      await Promise.all([
+  const req = (async (): Promise<FetchRecepcionesResult> => {
+    try {
+      const needRooms = roomCache.size === 0 || !isTimestampFresh(roomsCatalogLoadedAt)
+      const needReserves = reserveCache.size === 0 || !isTimestampFresh(reservesCatalogLoadedAt)
+      const needPersons = personCache.size === 0 || !isTimestampFresh(personsCatalogLoadedAt)
+
+      // Fase 1: Solo consulta catálogos globales si no están frescos en caché
+      const [staysResponse, roomsCatalog, reservesCatalog, personsCatalog] =
+        await Promise.all([
+          executeBalancedRequest(() =>
+            api.get<RawStayApi[] | { data?: RawStayApi[] }>('/stays', {
+              validateStatus: () => true,
+            })
+          ),
+          needRooms ? fetchCatalogoOpcional<RoomDetailApi>('/room') : Promise.resolve([]),
+          needReserves ? fetchCatalogoOpcional<ReserveDetailApi>('/reserve') : Promise.resolve([]),
+          needPersons ? obtenerPersonsCatalogoShared() : Promise.resolve([]),
+        ])
+
+      const now = Date.now()
+      if (roomsCatalog.length > 0) {
+        for (const room of roomsCatalog) {
+          if (room?.id) roomCache.set(room.id, room)
+        }
+        roomsCatalogLoadedAt = now
+      }
+      if (reservesCatalog.length > 0) {
+        for (const reserve of reservesCatalog) {
+          if (reserve?.id) reserveCache.set(reserve.id, reserve)
+        }
+        reservesCatalogLoadedAt = now
+      }
+      if (personsCatalog.length > 0) {
+        for (const person of personsCatalog) {
+          if (person?.id) personCache.set(person.id, person)
+        }
+        personsCatalogLoadedAt = now
+      }
+
+      const staysValidation = validateStatusCode(staysResponse.status)
+      let staysList: RawStayApi[] = STAYS_FALLBACK
+      let feedback: StatusCodeValidationResult | null = null
+
+      if (staysValidation.isValid && staysResponse.status >= 200 && staysResponse.status < 300) {
+        const lista = extraerLista<RawStayApi>(staysResponse.data)
+        if (lista.length > 0) {
+          staysList = lista
+        }
+      } else {
+        feedback = staysValidation
+      }
+
+      // Fase 2: Solo consultar IDs únicos faltantes en caché con concurrencia adaptada a la red
+      if (networkProfile.enableBackgroundMetadata || roomCache.size === 0 || personCache.size === 0) {
+        const missingRoomIds = recolectarIdsFaltantes(
+          staysList.map((s) => s.room_id),
+          roomCache
+        )
+
+        const missingReserveIds = recolectarIdsFaltantes(
+          staysList.map((s) => s.reservation_id),
+          reserveCache
+        )
+
+        await Promise.all([
+          ejecutarConConcurrenciaLimitada(
+            missingRoomIds,
+            networkProfile.maxConcurrentRequests,
+            obtenerRoomPorIdDedup
+          ),
+          ejecutarConConcurrenciaLimitada(
+            missingReserveIds,
+            networkProfile.maxConcurrentRequests,
+            obtenerReservePorIdDedup
+          ),
+        ])
+
+        const missingPersonIds = recolectarIdsFaltantes(
+          staysList.map((stay) => {
+            const reserveData = stay.reservation_id
+              ? reserveCache.get(stay.reservation_id) ?? RESERVES_FALLBACK[stay.reservation_id] ?? null
+              : null
+            return (
+              reserveData?.person_id ||
+              (stay.person_ids && stay.person_ids.length > 0 ? stay.person_ids[0] : 'person-1')
+            )
+          }),
+          personCache
+        )
+
+        await ejecutarConConcurrenciaLimitada(
+          missingPersonIds,
+          networkProfile.maxConcurrentRequests,
+          obtenerPersonPorIdDedup
+        )
+      }
+
+      // Fase 3: Ensamblaje O(N) puro en memoria
+      const recepciones: RecepcionSeleccionada[] = staysList.map((stay) => {
+        const roomData = roomCache.get(stay.room_id) ?? crearRoomFallback(stay.room_id)
+        const reserveData = stay.reservation_id
+          ? reserveCache.get(stay.reservation_id) ?? RESERVES_FALLBACK[stay.reservation_id] ?? null
+          : null
+        const personIdTarget =
+          reserveData?.person_id ||
+          (stay.person_ids && stay.person_ids.length > 0 ? stay.person_ids[0] : 'person-1')
+        const personData = personCache.get(personIdTarget) ?? crearPersonFallback(personIdTarget)
+
+        const checkIn = reserveData?.check_in_date || stay.check_in_date
+        const checkOut = reserveData?.check_out_date || stay.check_out_date
+        const numGuests =
+          reserveData?.number_of_guests ||
+          (stay.person_ids && stay.person_ids.length > 0 ? stay.person_ids.length : 1)
+
+        return {
+          id: stay.id,
+          label: `Habitación ${roomData.number} · ${personData.name}`,
+          huespedNombre: personData.name,
+          habitacionNumero: roomData.number,
+          habitacionNombre: `Habitación ${roomData.number}`,
+          tieneReserva: Boolean(stay.reservation_id || reserveData),
+          cantidadHuespedes: numGuests,
+          checkInFormateado: formatearFechaHora(checkIn),
+          checkOutFormateado: formatearFechaHora(checkOut),
+          roomId: stay.room_id,
+          reservationId: stay.reservation_id ?? null,
+          personIds: stay.person_ids,
+          sedeNombre: formatBuilding(roomData.building_id),
+          room: roomData,
+          reserve: reserveData,
+          person: personData,
+        }
+      })
+
+      const result = { recepciones, feedback }
+      recepcionesCache = { data: result, updatedAt: Date.now() }
+      return result
+    } catch (error: unknown) {
+      const status = isAxiosError(error) && error.response ? error.response.status : 0
+      return {
+        recepciones: recepcionesCache?.data.recepciones ?? construirFallbackRecepciones(),
+        feedback: validateStatusCode(status),
+      }
+    } finally {
+      recepcionesInFlight = null
+    }
+  })()
+
+  recepcionesInFlight = req
+  return req
+}
+
+/**
+ * Resuelve etiquetas amigables de habitación y edificio por `stay_id` / `room_id`
+ * con caché TTL adaptativa por red, deduplicación en vuelo y concurrencia acotada.
+ */
+export async function obtenerMapaHabitacionesEstadias(options?: {
+  forceRefresh?: boolean
+}): Promise<Map<string, string> | null> {
+  const forceRefresh = Boolean(options?.forceRefresh)
+  const networkProfile = detectarPerfilRedDisponible()
+
+  if (!forceRefresh && habitacionesMapCache && isTimestampFresh(habitacionesMapCache.updatedAt)) {
+    return habitacionesMapCache.data
+  }
+  if (!networkProfile.online) {
+    return habitacionesMapCache?.data ?? null
+  }
+  if (!forceRefresh && habitacionesMapInFlight) {
+    return habitacionesMapInFlight
+  }
+
+  const req = (async (): Promise<Map<string, string> | null> => {
+    try {
+      const needRooms = roomCache.size === 0 || !isTimestampFresh(roomsCatalogLoadedAt)
+      const needBuildings = buildingCache.size === 0 || !isTimestampFresh(buildingsCatalogLoadedAt)
+
+      const [staysResponse, roomsCatalog, buildingsCatalog] = await Promise.all([
         executeBalancedRequest(() =>
           api.get<RawStayApi[] | { data?: RawStayApi[] }>('/stays', {
             validateStatus: () => true,
           })
         ),
-        fetchCatalogoOpcional<RoomDetailApi>('/room'),
-        fetchCatalogoOpcional<ReserveDetailApi>('/reserve'),
-        fetchCatalogoOpcional<PersonDetailApi>('/persons'),
+        needRooms ? fetchCatalogoOpcional<RoomDetailApi>('/room') : Promise.resolve([]),
+        needBuildings ? fetchCatalogoOpcional<BuildingSummaryApi>('/building') : Promise.resolve([]),
       ])
 
-    for (const room of roomsCatalog) {
-      if (room?.id) roomCache.set(room.id, room)
-    }
-    for (const reserve of reservesCatalog) {
-      if (reserve?.id) reserveCache.set(reserve.id, reserve)
-    }
-    for (const person of personsCatalog) {
-      if (person?.id) personCache.set(person.id, person)
-    }
-
-    const staysValidation = validateStatusCode(staysResponse.status)
-    let staysList: RawStayApi[] = STAYS_FALLBACK
-    let feedback: StatusCodeValidationResult | null = null
-
-    if (staysValidation.isValid && staysResponse.status >= 200 && staysResponse.status < 300) {
-      const lista = extraerLista<RawStayApi>(staysResponse.data)
-      if (lista.length > 0) {
-        staysList = lista
+      const staysValidation = validateStatusCode(staysResponse.status)
+      if (!staysValidation.isValid || staysResponse.status < 200 || staysResponse.status >= 300) {
+        return habitacionesMapCache?.data ?? null
       }
-    } else {
-      feedback = staysValidation
-    }
 
-    // Fase 2: Solo consultar IDs únicos faltantes en caché con concurrencia acotada
-    const missingRoomIds = recolectarIdsFaltantes(
-      staysList.map((s) => s.room_id),
-      roomCache
-    )
+      const now = Date.now()
+      if (roomsCatalog.length > 0) {
+        for (const room of roomsCatalog) {
+          if (room?.id) roomCache.set(room.id, room)
+        }
+        roomsCatalogLoadedAt = now
+      }
+      if (buildingsCatalog.length > 0) {
+        for (const building of buildingsCatalog) {
+          const bId = building.id ?? building._id
+          if (bId && building.name) {
+            buildingCache.set(bId, building.name)
+          }
+        }
+        buildingsCatalogLoadedAt = now
+      }
 
-    const missingReserveIds = recolectarIdsFaltantes(
-      staysList.map((s) => s.reservation_id),
-      reserveCache
-    )
+      const staysList = extraerLista<RawStayApi>(staysResponse.data)
+      if (staysList.length === 0) return habitacionesMapCache?.data ?? null
 
-    await Promise.all([
-      ejecutarConConcurrenciaLimitada(
-        missingRoomIds,
-        MAX_CONCURRENT_DETAIL_REQUESTS,
-        obtenerRoomPorIdDedup
-      ),
-      ejecutarConConcurrenciaLimitada(
-        missingReserveIds,
-        MAX_CONCURRENT_DETAIL_REQUESTS,
-        obtenerReservePorIdDedup
-      ),
-    ])
-
-    // Resolver IDs de huésped únicos faltantes (incluyendo person_id de reservas ya resueltas)
-    const missingPersonIds = recolectarIdsFaltantes(
-      staysList.map((stay) => {
-        const reserveData = stay.reservation_id
-          ? reserveCache.get(stay.reservation_id) ?? RESERVES_FALLBACK[stay.reservation_id] ?? null
-          : null
-        return (
-          reserveData?.person_id ||
-          (stay.person_ids && stay.person_ids.length > 0 ? stay.person_ids[0] : 'person-1')
+      // Solo resuelve puntualmente por ID si hay red media/alta y faltan entradas tras cargar catálogos
+      if (networkProfile.enableBackgroundMetadata) {
+        const missingRoomIds = recolectarIdsFaltantes(
+          staysList.map((s) => s.room_id),
+          roomCache
         )
-      }),
-      personCache
-    )
 
-    await ejecutarConConcurrenciaLimitada(
-      missingPersonIds,
-      MAX_CONCURRENT_DETAIL_REQUESTS,
-      obtenerPersonPorIdDedup
-    )
+        await ejecutarConConcurrenciaLimitada(
+          missingRoomIds,
+          networkProfile.maxConcurrentRequests,
+          obtenerRoomPorIdDedup
+        )
 
-    // Fase 3: Ensamblaje O(N) puro en memoria
-    const recepciones: RecepcionSeleccionada[] = staysList.map((stay) => {
-      const roomData = roomCache.get(stay.room_id) ?? crearRoomFallback(stay.room_id)
-      const reserveData = stay.reservation_id
-        ? reserveCache.get(stay.reservation_id) ?? RESERVES_FALLBACK[stay.reservation_id] ?? null
-        : null
-      const personIdTarget =
-        reserveData?.person_id ||
-        (stay.person_ids && stay.person_ids.length > 0 ? stay.person_ids[0] : 'person-1')
-      const personData = personCache.get(personIdTarget) ?? crearPersonFallback(personIdTarget)
+        const missingBuildingIds = recolectarIdsFaltantes(
+          staysList.map((s) => roomCache.get(s.room_id)?.building_id),
+          buildingCache
+        )
 
-      const checkIn = reserveData?.check_in_date || stay.check_in_date
-      const checkOut = reserveData?.check_out_date || stay.check_out_date
-      const numGuests =
-        reserveData?.number_of_guests ||
-        (stay.person_ids && stay.person_ids.length > 0 ? stay.person_ids.length : 1)
-
-      return {
-        id: stay.id,
-        label: `Habitación ${roomData.number} · ${personData.name}`,
-        huespedNombre: personData.name,
-        habitacionNumero: roomData.number,
-        habitacionNombre: `Habitación ${roomData.number}`,
-        tieneReserva: Boolean(stay.reservation_id || reserveData),
-        cantidadHuespedes: numGuests,
-        checkInFormateado: formatearFechaHora(checkIn),
-        checkOutFormateado: formatearFechaHora(checkOut),
-        roomId: stay.room_id,
-        reservationId: stay.reservation_id ?? null,
-        personIds: stay.person_ids,
-        sedeNombre: formatBuilding(roomData.building_id),
-        room: roomData,
-        reserve: reserveData,
-        person: personData,
+        await ejecutarConConcurrenciaLimitada(
+          missingBuildingIds,
+          networkProfile.maxConcurrentRequests,
+          obtenerBuildingNombreDedup
+        )
       }
-    })
 
-    return { recepciones, feedback }
-  } catch (error: unknown) {
-    const status = isAxiosError(error) && error.response ? error.response.status : 0
-    return {
-      recepciones: construirFallbackRecepciones(),
-      feedback: validateStatusCode(status),
-    }
-  }
-}
+      const mapa = new Map<string, string>()
+      for (const stay of staysList) {
+        const room = roomCache.get(stay.room_id)
+        if (!room) continue
 
-/**
- * Resuelve etiquetas amigables de habitación y edificio por `stay_id` / `room_id`
- * sin consultas N+1 (batch-first `/stays` + `/room` + `/building` y pool acotado para faltantes).
- */
-export async function obtenerMapaHabitacionesEstadias(): Promise<Map<string, string> | null> {
-  try {
-    const [staysResponse, roomsCatalog, buildingsCatalog] = await Promise.all([
-      executeBalancedRequest(() =>
-        api.get<RawStayApi[] | { data?: RawStayApi[] }>('/stays', {
-          validateStatus: () => true,
-        })
-      ),
-      fetchCatalogoOpcional<RoomDetailApi>('/room'),
-      fetchCatalogoOpcional<BuildingSummaryApi>('/building'),
-    ])
+        const edificio =
+          (room.building_id && buildingCache.get(room.building_id)) ||
+          formatBuilding(room.building_id)
 
-    const staysValidation = validateStatusCode(staysResponse.status)
-    if (!staysValidation.isValid || staysResponse.status < 200 || staysResponse.status >= 300) {
-      return null
-    }
-
-    for (const room of roomsCatalog) {
-      if (room?.id) roomCache.set(room.id, room)
-    }
-    for (const building of buildingsCatalog) {
-      const bId = building.id ?? building._id
-      if (bId && building.name) {
-        buildingCache.set(bId, building.name)
+        mapa.set(
+          stay.room_id,
+          `Habitación ${room.number || '101'} · Piso ${room.floor ?? 1} (${edificio})`
+        )
+        mapa.set(stay.id, `Habitación ${room.number || '101'} (${edificio})`)
       }
+
+      if (mapa.size > 0) {
+        habitacionesMapCache = { data: mapa, updatedAt: Date.now() }
+        return mapa
+      }
+      return habitacionesMapCache?.data ?? null
+    } catch {
+      return habitacionesMapCache?.data ?? null
+    } finally {
+      habitacionesMapInFlight = null
     }
+  })()
 
-    const staysList = extraerLista<RawStayApi>(staysResponse.data)
-    if (staysList.length === 0) return null
-
-    const missingRoomIds = recolectarIdsFaltantes(
-      staysList.map((s) => s.room_id),
-      roomCache
-    )
-
-    await ejecutarConConcurrenciaLimitada(
-      missingRoomIds,
-      MAX_CONCURRENT_DETAIL_REQUESTS,
-      obtenerRoomPorIdDedup
-    )
-
-    const missingBuildingIds = recolectarIdsFaltantes(
-      staysList.map((s) => roomCache.get(s.room_id)?.building_id),
-      buildingCache
-    )
-
-    await ejecutarConConcurrenciaLimitada(
-      missingBuildingIds,
-      MAX_CONCURRENT_DETAIL_REQUESTS,
-      obtenerBuildingNombreDedup
-    )
-
-    const mapa = new Map<string, string>()
-    for (const stay of staysList) {
-      const room = roomCache.get(stay.room_id)
-      if (!room) continue
-
-      const edificio =
-        (room.building_id && buildingCache.get(room.building_id)) ||
-        formatBuilding(room.building_id)
-
-      mapa.set(
-        stay.room_id,
-        `Habitación ${room.number || '101'} · Piso ${room.floor ?? 1} (${edificio})`
-      )
-      mapa.set(stay.id, `Habitación ${room.number || '101'} (${edificio})`)
-    }
-
-    return mapa.size > 0 ? mapa : null
-  } catch {
-    return null
-  }
+  habitacionesMapInFlight = req
+  return req
 }

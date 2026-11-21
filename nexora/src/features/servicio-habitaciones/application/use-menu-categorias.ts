@@ -5,14 +5,26 @@ import {
 } from '../../../shared/lib/status-code-validator'
 import type { MenuCategoria } from '../domain/menu-categoria'
 import { obtenerMenuCategoriasApi } from '../infrastructure/api-menu-categoria-repository'
+import {
+  getMenuCategoriasCache,
+  invalidarCacheCategoriasMenu,
+} from '../infrastructure/catalogo-productos-cache'
 
 export type CriterioOrden = 'order-asc' | 'order-desc' | 'name-asc' | 'name-desc'
 
 export function useMenuCategorias() {
-  const [categorias, setCategorias] = useState<MenuCategoria[]>([])
-  const [loading, setLoading] = useState<boolean>(true)
-  const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(null)
-  const [usandoFallback, setUsandoFallback] = useState<boolean>(false)
+  const initialCache = useMemo(() => getMenuCategoriasCache(), [])
+
+  const [categorias, setCategorias] = useState<MenuCategoria[]>(
+    () => initialCache?.categorias ?? [],
+  )
+  const [loading, setLoading] = useState<boolean>(() => !initialCache)
+  const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(
+    () => initialCache?.validation ?? null,
+  )
+  const [usandoFallback, setUsandoFallback] = useState<boolean>(
+    () => initialCache?.usandoFallback ?? false,
+  )
 
   const [searchTerm, setSearchTerm] = useState<string>('')
   const [selectedBuilding, setSelectedBuilding] = useState<string>('todos')
@@ -20,9 +32,9 @@ export function useMenuCategorias() {
   const [ordenes, setOrdenes] = useState<CriterioOrden[]>(['order-asc'])
   const isMountedRef = useRef(true)
 
-  const fetchCategorias = useCallback(async () => {
+  const fetchCategorias = useCallback(async (forceRefresh: boolean = false) => {
     try {
-      const res = await obtenerMenuCategoriasApi()
+      const res = await obtenerMenuCategoriasApi({ forceRefresh })
       if (!isMountedRef.current) return
       setCategorias(res.categorias)
       setFeedback(res.validation)
@@ -42,16 +54,19 @@ export function useMenuCategorias() {
   const cargarCategorias = useCallback(async () => {
     setLoading(true)
     setFeedback(null)
-    await fetchCategorias()
+    invalidarCacheCategoriasMenu()
+    await fetchCategorias(true)
   }, [fetchCategorias])
 
   useEffect(() => {
     isMountedRef.current = true
-    void Promise.resolve().then(() => fetchCategorias())
+    if (!initialCache) {
+      void Promise.resolve().then(() => fetchCategorias(false))
+    }
     return () => {
       isMountedRef.current = false
     }
-  }, [fetchCategorias])
+  }, [fetchCategorias, initialCache])
 
   const edificiosDisponibles = useMemo(() => {
     const set = new Set<string>()

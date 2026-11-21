@@ -5,7 +5,7 @@ import {
 } from '../infrastructure/image-load-balancer'
 
 const DEFAULT_FALLBACK_PRODUCT_IMG =
-  'https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg?auto=compress&cs=tinysrgb&w=800'
+  'https://images.pexels.com/photos/1640777/pexels-photo-1640777.jpeg?auto=compress&cs=tinysrgb&w=400'
 
 /**
  * Hook de aplicación compartido para cargar de forma asíncrona la imagen optimizada

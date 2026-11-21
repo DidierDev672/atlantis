@@ -12,7 +12,11 @@ import {
   hasImageCacheEntry,
   setImageCacheEntry,
 } from './image-cache-lru'
-import { downscaleImageToBlobUrl } from './image-downscaler'
+import { downscaleImageWithDiagnostics } from './image-downscaler'
+import {
+  detectarPerfilRedDisponible,
+  optimizarUrlImagenParaRed,
+} from './network-quality'
 
 export interface ImageLoadBalancerOptions {
   /** Máximo de imágenes descargándose en paralelo (pool compartido) */
@@ -92,18 +96,30 @@ export function getImageLoadBalancerSnapshot(): ImageLoadBalancerSnapshot {
   return currentSnapshot
 }
 
+export function resolveNetworkImageDimension(
+  requestedMaxDimension: number = DEFAULT_MAX_DIMENSION
+): number {
+  const networkProfile = detectarPerfilRedDisponible()
+  return requestedMaxDimension <= 160
+    ? Math.min(requestedMaxDimension, networkProfile.thumbnailWidth)
+    : Math.min(requestedMaxDimension, networkProfile.imageWidth)
+}
+
 export function isImageCached(
   url: string,
   maxDimension: number = DEFAULT_MAX_DIMENSION
 ): boolean {
-  return hasImageCacheEntry(url, maxDimension)
+  return hasImageCacheEntry(url, resolveNetworkImageDimension(maxDimension))
 }
 
 export function getCachedImageUrl(
   url: string,
   maxDimension: number = DEFAULT_MAX_DIMENSION
 ): string | null {
-  return getImageCacheEntry(url, maxDimension)?.resolvedUrl ?? null
+  return (
+    getImageCacheEntry(url, resolveNetworkImageDimension(maxDimension))
+      ?.resolvedUrl ?? null
+  )
 }
 
 function attemptSingleImageLoad(url: string, timeoutMs: number): Promise<boolean> {
@@ -139,16 +155,25 @@ async function resolveOptimizedImage(
   timeoutMs: number
 ): Promise<{ ok: boolean; resolvedUrl: string; isBlob: boolean }> {
   try {
-    const downscaledBlobUrl = await downscaleImageToBlobUrl(url, {
+    const downscaleRes = await downscaleImageWithDiagnostics(url, {
       maxDimension,
       timeoutMs,
     })
-    if (downscaledBlobUrl) {
-      return { ok: true, resolvedUrl: downscaledBlobUrl, isBlob: true }
+    if (downscaleRes.blobUrl) {
+      return { ok: true, resolvedUrl: downscaleRes.blobUrl, isBlob: true }
     }
 
-    const loaded = await attemptSingleImageLoad(url, timeoutMs)
-    return { ok: loaded, resolvedUrl: url, isBlob: false }
+    // Evita doble descarga cuando el servidor devolvió 404/403 explícito
+    if (downscaleRes.httpFailed) {
+      return { ok: false, resolvedUrl: downscaleRes.networkUrl, isBlob: false }
+    }
+
+    const loaded = await attemptSingleImageLoad(downscaleRes.networkUrl, timeoutMs)
+    return {
+      ok: loaded,
+      resolvedUrl: downscaleRes.networkUrl,
+      isBlob: false,
+    }
   } catch {
     return { ok: false, resolvedUrl: url, isBlob: false }
   }
@@ -257,14 +282,21 @@ export function loadBalancedImage(
   url: string,
   options: ImageLoadBalancerOptions = {}
 ): Promise<BalancedImageResult> {
+  const networkProfile = detectarPerfilRedDisponible()
+  const defaultRetries = networkProfile.tier === 'low' || networkProfile.tier === 'offline' ? 1 : 2
+  const defaultConcurrent =
+    networkProfile.maxConcurrentImages > 0 ? networkProfile.maxConcurrentImages : 1
+
   const {
-    maxConcurrent = DEFAULT_MAX_CONCURRENT,
-    maxRetries = 2,
+    maxConcurrent = defaultConcurrent || DEFAULT_MAX_CONCURRENT,
+    maxRetries = defaultRetries,
     backoffMultiplier = 1.5,
     timeoutMs = 10000,
     fallbackUrl,
-    maxDimension = DEFAULT_MAX_DIMENSION,
+    maxDimension: requestedMaxDimension = DEFAULT_MAX_DIMENSION,
   } = options
+
+  const maxDimension = resolveNetworkImageDimension(requestedMaxDimension)
 
   const cached = getImageCacheEntry(url, maxDimension)
   if (cached) {
@@ -275,16 +307,30 @@ export function loadBalancedImage(
     })
   }
 
+  // Sin conexión: no intentar descargas remotas innecesarias; devolver respaldo o URL optimizada
+  if (!networkProfile.online && !url.startsWith('data:') && !url.startsWith('blob:')) {
+    const safeFallback = fallbackUrl || url
+    return Promise.resolve({
+      resolvedUrl: safeFallback,
+      usedFallback: Boolean(fallbackUrl),
+      fromCache: false,
+    })
+  }
+
   const cacheKey = buildImageCacheKey(url, maxDimension)
   const existing = inFlightByKey.get(cacheKey)
   if (existing) {
     return existing
   }
 
+  const optimizedFallback = fallbackUrl
+    ? optimizarUrlImagenParaRed(fallbackUrl, maxDimension)
+    : undefined
+
   const taskPromise = new Promise<BalancedImageResult>((resolve) => {
     pendingQueue.push({
       url,
-      fallbackUrl,
+      fallbackUrl: optimizedFallback,
       maxRetries,
       backoffMultiplier,
       timeoutMs,

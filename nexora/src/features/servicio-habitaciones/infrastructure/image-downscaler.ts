@@ -1,9 +1,16 @@
 import { revocarBlobUrlSegura } from '../domain/item-menu'
+import {
+  detectarPerfilRedDisponible,
+  optimizarUrlImagenParaRed,
+} from './network-quality'
 
 const DEFAULT_MAX_CARD_DIMENSION = 640
 const DEFAULT_WEBP_QUALITY = 0.82
 const SMALL_RASTER_THRESHOLD_BYTES = 35 * 1024
 const PASSTHROUGH_RASTER_MAX_BYTES = 100 * 1024
+
+// Evita reintentar fetch CORS repetidamente contra orígenes que ya bloquearon CORS
+const corsBlockedOrigins = new Set<string>()
 
 export interface DownscaleImageOptions {
   /** Dimensión máxima en píxeles (ancho o alto) para la textura en tarjeta. Por defecto 640px. */
@@ -12,6 +19,25 @@ export interface DownscaleImageOptions {
   quality?: number
   /** Timeout máximo de descarga en ms. */
   timeoutMs?: number
+}
+
+export interface DownscaleDiagnosticsResult {
+  blobUrl: string | null
+  /** URL ya optimizada para el perfil de red actual (CDN resize si aplica) */
+  networkUrl: string
+  /** True si el servidor respondió error HTTP definitivo (4xx/5xx), evitando doble descarga con <img> */
+  httpFailed: boolean
+  /** True si el origen bloqueó CORS */
+  corsBlocked: boolean
+}
+
+function getSafeOrigin(url: string): string | null {
+  try {
+    if (!url || url.startsWith('data:') || url.startsWith('blob:')) return null
+    return new URL(url, typeof window !== 'undefined' ? window.location.origin : 'https://localhost').origin
+  } catch {
+    return null
+  }
 }
 
 function calcularTamanoProporcional(
@@ -104,15 +130,35 @@ async function decodificarViaImage(blob: Blob): Promise<{
  * Retorna `null` si el origen bloquea CORS o falla la decodificación, para caer
  * de forma segura al flujo estándar `<img src>`.
  */
-export async function downscaleImageToBlobUrl(
+export async function downscaleImageWithDiagnostics(
   url: string,
   options: DownscaleImageOptions = {}
-): Promise<string | null> {
-  if (!url || typeof window === 'undefined') return null
-
-  const maxDimension = options.maxDimension ?? DEFAULT_MAX_CARD_DIMENSION
-  const quality = options.quality ?? DEFAULT_WEBP_QUALITY
+): Promise<DownscaleDiagnosticsResult> {
+  const networkProfile = detectarPerfilRedDisponible()
+  const requestedDim = options.maxDimension ?? DEFAULT_MAX_CARD_DIMENSION
+  const maxDimension =
+    requestedDim <= 160
+      ? Math.min(requestedDim, networkProfile.thumbnailWidth)
+      : Math.min(requestedDim, networkProfile.imageWidth)
+  const quality = options.quality ?? Math.min(DEFAULT_WEBP_QUALITY, networkProfile.imageQuality)
   const timeoutMs = options.timeoutMs ?? 10000
+  const networkUrl = optimizarUrlImagenParaRed(url, maxDimension)
+
+  if (!url || typeof window === 'undefined') {
+    return { blobUrl: null, networkUrl, httpFailed: false, corsBlocked: false }
+  }
+
+  const isDataUrl = url.startsWith('data:')
+  const origin = getSafeOrigin(networkUrl)
+
+  // Si el origen ya falló por CORS antes o la red está en Save-Data/2G con URL externa ya optimizada,
+  // evita descarga por fetch + decodificación duplicada y pasa directo a carga única ligera.
+  if (!isDataUrl && origin && corsBlockedOrigins.has(origin)) {
+    return { blobUrl: null, networkUrl, httpFailed: false, corsBlocked: true }
+  }
+  if (!isDataUrl && networkProfile.preferLightweightImages) {
+    return { blobUrl: null, networkUrl, httpFailed: false, corsBlocked: false }
+  }
 
   const controller = new AbortController()
   const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
@@ -122,29 +168,51 @@ export async function downscaleImageToBlobUrl(
   let surface: OffscreenCanvas | HTMLCanvasElement | null = null
 
   try {
-    const isDataUrl = url.startsWith('data:')
-    const response = await fetch(
-      url,
-      isDataUrl
-        ? { signal: controller.signal }
-        : {
-            signal: controller.signal,
-            mode: 'cors',
-            credentials: 'omit',
-          }
-    )
+    let response: Response
+    try {
+      response = await fetch(
+        networkUrl,
+        isDataUrl
+          ? { signal: controller.signal }
+          : {
+              signal: controller.signal,
+              mode: 'cors',
+              credentials: 'omit',
+            }
+      )
+    } catch (fetchError) {
+      if (origin && fetchError instanceof TypeError) {
+        corsBlockedOrigins.add(origin)
+        return { blobUrl: null, networkUrl, httpFailed: false, corsBlocked: true }
+      }
+      return { blobUrl: null, networkUrl, httpFailed: false, corsBlocked: false }
+    }
 
-    if (!response.ok) return null
+    if (!response.ok) {
+      return { blobUrl: null, networkUrl, httpFailed: true, corsBlocked: false }
+    }
 
     const sourceBlob = await response.blob()
-    if (!sourceBlob || !sourceBlob.type.startsWith('image/')) return null
+    if (!sourceBlob || !sourceBlob.type.startsWith('image/')) {
+      return { blobUrl: null, networkUrl, httpFailed: true, corsBlocked: false }
+    }
 
     if (sourceBlob.type === 'image/svg+xml') {
-      return URL.createObjectURL(sourceBlob)
+      return {
+        blobUrl: URL.createObjectURL(sourceBlob),
+        networkUrl,
+        httpFailed: false,
+        corsBlocked: false,
+      }
     }
 
     if (!isDataUrl && sourceBlob.size <= SMALL_RASTER_THRESHOLD_BYTES) {
-      return URL.createObjectURL(sourceBlob)
+      return {
+        blobUrl: URL.createObjectURL(sourceBlob),
+        networkUrl,
+        httpFailed: false,
+        corsBlocked: false,
+      }
     }
 
     let source: CanvasImageSource
@@ -159,7 +227,9 @@ export async function downscaleImageToBlobUrl(
         srcHeight = bitmap.height
       } catch {
         const loaded = await decodificarViaImage(sourceBlob)
-        if (!loaded) return null
+        if (!loaded) {
+          return { blobUrl: null, networkUrl, httpFailed: false, corsBlocked: false }
+        }
         source = loaded.image
         tempImgUrl = loaded.tempUrl
         srcWidth = loaded.image.naturalWidth || loaded.image.width
@@ -167,7 +237,9 @@ export async function downscaleImageToBlobUrl(
       }
     } else {
       const loaded = await decodificarViaImage(sourceBlob)
-      if (!loaded) return null
+      if (!loaded) {
+        return { blobUrl: null, networkUrl, httpFailed: false, corsBlocked: false }
+      }
       source = loaded.image
       tempImgUrl = loaded.tempUrl
       srcWidth = loaded.image.naturalWidth || loaded.image.width
@@ -180,7 +252,12 @@ export async function downscaleImageToBlobUrl(
       Math.max(srcWidth, srcHeight) <= maxDimension &&
       sourceBlob.size <= PASSTHROUGH_RASTER_MAX_BYTES
     ) {
-      return URL.createObjectURL(sourceBlob)
+      return {
+        blobUrl: URL.createObjectURL(sourceBlob),
+        networkUrl,
+        httpFailed: false,
+        corsBlocked: false,
+      }
     }
 
     const { targetWidth, targetHeight } = calcularTamanoProporcional(
@@ -204,7 +281,9 @@ export async function downscaleImageToBlobUrl(
       | OffscreenCanvasRenderingContext2D
       | CanvasRenderingContext2D
       | null
-    if (!ctx) return null
+    if (!ctx) {
+      return { blobUrl: null, networkUrl, httpFailed: false, corsBlocked: false }
+    }
 
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = maxDimension <= 200 ? 'low' : 'medium'
@@ -218,11 +297,18 @@ export async function downscaleImageToBlobUrl(
         : 'image/jpeg'
 
     const optimizedBlob = await encodeSurfaceToBlob(surface, outputMime, quality)
-    if (!optimizedBlob) return null
+    if (!optimizedBlob) {
+      return { blobUrl: null, networkUrl, httpFailed: false, corsBlocked: false }
+    }
 
-    return URL.createObjectURL(optimizedBlob)
+    return {
+      blobUrl: URL.createObjectURL(optimizedBlob),
+      networkUrl,
+      httpFailed: false,
+      corsBlocked: false,
+    }
   } catch {
-    return null
+    return { blobUrl: null, networkUrl, httpFailed: false, corsBlocked: false }
   } finally {
     window.clearTimeout(timeoutId)
     try {
@@ -236,4 +322,12 @@ export async function downscaleImageToBlobUrl(
       surface.height = 0
     }
   }
+}
+
+export async function downscaleImageToBlobUrl(
+  url: string,
+  options: DownscaleImageOptions = {}
+): Promise<string | null> {
+  const result = await downscaleImageWithDiagnostics(url, options)
+  return result.blobUrl
 }

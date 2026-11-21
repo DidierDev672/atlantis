@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { slideIn, fadeIn } from '../../../../design-tokens/motion'
-import { useTemaStore } from '../../application/tema-store'
+import { DEFAULT_HOTEL_LOGO, useTemaStore } from '../../application/tema-store'
 import {
   applyPaletteToDocument,
   clearPaletteFromDocument,
@@ -15,7 +15,6 @@ import {
   THEME_BOTTOM_ITEMS,
 } from '../molecules/theme-bottom-menu'
 import { ThemeBackgroundImageSection } from '../molecules/theme-background-image-section'
-import { SparklesIcon } from '../../../dashboard/ui/icons'
 
 export interface CustomThemePageProps {
   onBack: () => void
@@ -343,15 +342,11 @@ export function CustomThemePage({ onBack }: CustomThemePageProps) {
               className="grid size-9 place-items-center rounded-lg bg-cream text-primary overflow-hidden shadow-inner ring-1 ring-black/10 dark:ring-white/10 shrink-0"
               aria-hidden="true"
             >
-              {hotelLogo ? (
-                <img
-                  src={hotelLogo}
-                  alt="Logo del hotel"
-                  className="size-full object-cover"
-                />
-              ) : (
-                <SparklesIcon className="size-4 text-primary" />
-              )}
+              <img
+                src={hotelLogo || DEFAULT_HOTEL_LOGO}
+                alt="Logo del proyecto"
+                className={hotelLogo ? 'size-full object-cover' : 'size-full object-contain p-0.5'}
+              />
             </span>
             <div>
               <div className="flex items-center gap-2">
@@ -361,7 +356,7 @@ export function CustomThemePage({ onBack }: CustomThemePageProps) {
                 <span className="font-bold text-primary">Logo representativo del hotel</span>
               </div>
               <p className="text-xs text-ink-muted">
-                {hotelLogo ? 'Logo personalizado cargado' : 'Ícono predeterminado'} · Se ubica a la izquierda del nombre Nexora en el menú principal.
+                {hotelLogo ? 'Logo personalizado cargado' : 'Logo predeterminado'} · Se ubica a la izquierda del nombre Nexora en el menú principal.
               </p>
             </div>
           </div>
@@ -468,15 +463,11 @@ export function CustomThemePage({ onBack }: CustomThemePageProps) {
               {/* Cabecera del sidebar mostrando el logo a la izquierda de Nexora */}
               <div className="flex items-center gap-2 mb-2 pb-1.5 border-b border-white/10">
                 <span className="grid size-6 place-items-center rounded-lg bg-cream text-primary overflow-hidden shrink-0 shadow-xs">
-                  {hotelLogo ? (
-                    <img
-                      src={hotelLogo}
-                      alt="Logo del hotel"
-                      className="size-full object-cover"
-                    />
-                  ) : (
-                    <SparklesIcon className="size-3 text-primary" />
-                  )}
+                  <img
+                    src={hotelLogo || DEFAULT_HOTEL_LOGO}
+                    alt="Logo del proyecto"
+                    className={hotelLogo ? 'size-full object-cover' : 'size-full object-contain p-0.5'}
+                  />
                 </span>
                 <div className="min-w-0">
                   <span className="text-xs font-bold text-white truncate block">Nexora</span>
