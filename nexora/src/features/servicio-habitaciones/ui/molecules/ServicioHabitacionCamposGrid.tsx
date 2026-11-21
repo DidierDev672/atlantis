@@ -1,10 +1,27 @@
-import { memo, useCallback, type ChangeEvent } from 'react'
+import { Suspense, memo, useCallback, type ChangeEvent } from 'react'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faLocationDot } from '@fortawesome/free-solid-svg-icons'
 import { Input } from '../../../../shared/ui/Input'
 import { Textarea } from '../../../../shared/ui/Textarea'
 import {
   RecursosDropdown,
   type DropdownOption,
 } from '../../../recursos/ui/molecules/recursos-dropdown'
+import { lazyWithFallback } from '../../application/lazy-with-fallback'
+import {
+  FORMULARIO_FIELD_IDS,
+  type FormularioServicioErrors,
+} from '../../domain/menu-categoria'
+import type { UbicacionManualToggleButtonProps } from '../atoms/UbicacionManualToggleButton'
+
+const LazyUbicacionManualToggleButton =
+  lazyWithFallback<UbicacionManualToggleButtonProps>(
+    () =>
+      import('../atoms/UbicacionManualToggleButton').then(
+        (m) => m.UbicacionManualToggleButton,
+      ),
+    'UbicacionManualToggleButton',
+  )
 
 export interface ServicioHabitacionCamposGridProps {
   order: string
@@ -25,6 +42,9 @@ export interface ServicioHabitacionCamposGridProps {
   onNombreServicioChange: (value: string) => void
   descripcion: string
   onDescripcionChange: (value: string) => void
+  locationFieldsDisabled?: boolean
+  onToggleManualLocation?: () => void
+  errors?: FormularioServicioErrors
 }
 
 /**
@@ -50,6 +70,9 @@ export const ServicioHabitacionCamposGrid = memo(function ServicioHabitacionCamp
   onNombreServicioChange,
   descripcion,
   onDescripcionChange,
+  locationFieldsDisabled = true,
+  onToggleManualLocation,
+  errors,
 }: ServicioHabitacionCamposGridProps) {
   const handleOrderInput = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
@@ -74,83 +97,126 @@ export const ServicioHabitacionCamposGrid = memo(function ServicioHabitacionCamp
 
   return (
     <>
+      {onToggleManualLocation && (
+        <div className="border-line bg-canvas/60 flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border px-3.5 py-2">
+          <span className="text-ink-muted inline-flex items-center gap-2 text-xs font-medium">
+            <FontAwesomeIcon
+              icon={faLocationDot}
+              className="text-primary size-3.5 shrink-0"
+              aria-hidden="true"
+            />
+            <span>
+              {locationFieldsDisabled
+                ? 'Ubicación asignada'
+                : 'Selección manual'}
+            </span>
+          </span>
+
+          <Suspense fallback={null}>
+            <LazyUbicacionManualToggleButton
+              isManualMode={!locationFieldsDisabled}
+              disabled={loadingSedes || loadingSubSedes || loadingEdificios}
+              onToggle={onToggleManualLocation}
+            />
+          </Suspense>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
         <div>
           <Input
-            label="Order (Código de orden)"
+            id={FORMULARIO_FIELD_IDS.order}
+            label="Código de orden"
             value={order}
             onChange={handleOrderInput}
             placeholder="Ej: 17"
             maxLength={2}
             inputMode="numeric"
+            error={errors?.order}
             required
-            hint="Código numérico de 2 dígitos generado automáticamente."
           />
         </div>
 
         <div>
           <RecursosDropdown
+            id={FORMULARIO_FIELD_IDS.sedeId}
             label="Sede"
-            placeholder={loadingSedes ? 'Consultando sedes…' : 'Selecciona una sede…'}
+            placeholder={
+              loadingSedes
+                ? 'Cargando…'
+                : locationFieldsDisabled
+                  ? 'Sede asignada'
+                  : 'Elige una sede'
+            }
             value={sedeId}
             onChange={onSedeChange}
             options={sedeOptions}
+            error={errors?.sedeId}
             required
             isLoading={loadingSedes}
-            disabled={loadingSedes}
-            emptyLabel="No hay sedes disponibles."
+            isDisabled={locationFieldsDisabled}
+            emptyLabel="Sin sedes"
           />
         </div>
 
         <div>
           <RecursosDropdown
+            id={FORMULARIO_FIELD_IDS.subSedeId}
             label="Sub sede"
             placeholder={
-              !sedeId
-                ? 'Primero selecciona una sede…'
-                : loadingSubSedes
-                  ? 'Consultando sub sedes…'
-                  : 'Selecciona una sub sede…'
+              loadingSubSedes
+                ? 'Cargando…'
+                : locationFieldsDisabled
+                  ? 'Sub sede asignada'
+                  : !sedeId
+                    ? 'Elige una sede'
+                    : 'Elige una sub sede'
             }
             value={subSedeId}
             onChange={onSubSedeChange}
             options={subSedeOptions}
+            error={errors?.subSedeId}
             required
             isLoading={loadingSubSedes}
-            disabled={!sedeId || loadingSubSedes}
-            emptyLabel={
-              !sedeId
-                ? 'Debes elegir una sede para consultar sus sub sedes'
-                : 'No hay sub sedes disponibles para esta sede.'
-            }
+            isDisabled={locationFieldsDisabled || !sedeId}
+            emptyLabel="Sin sub sedes"
           />
         </div>
 
         <div>
           <RecursosDropdown
+            id={FORMULARIO_FIELD_IDS.edificioId}
             label="Edificio"
             placeholder={
-              loadingEdificios ? 'Consultando edificios…' : 'Selecciona un edificio…'
+              loadingEdificios
+                ? 'Cargando…'
+                : locationFieldsDisabled
+                  ? 'Edificio asignado'
+                  : !sedeId
+                    ? 'Elige una sede'
+                    : 'Elige un edificio'
             }
             value={edificioId}
             onChange={onEdificioChange}
             options={edificioOptions}
+            error={errors?.edificioId}
             required
             isLoading={loadingEdificios}
-            disabled={loadingEdificios}
-            emptyLabel="No hay edificios disponibles."
+            isDisabled={locationFieldsDisabled || !sedeId}
+            emptyLabel="Sin edificios"
           />
         </div>
       </div>
 
       <div>
         <Input
-          label="Nombre del servicio"
+          id={FORMULARIO_FIELD_IDS.nombreServicio}
+          label="Nombre de la categoría"
           value={nombreServicio}
           onChange={handleNombreInput}
-          placeholder="Ej: Bebidas y Cocteleria"
+          placeholder="Ej: Bebidas y Coctelería"
+          error={errors?.nombreServicio}
           required
-          hint="Nombre de la categoría o servicio gastronómico."
         />
       </div>
 
@@ -160,8 +226,7 @@ export const ServicioHabitacionCamposGrid = memo(function ServicioHabitacionCamp
           rows={3}
           value={descripcion}
           onChange={handleDescripcionInput}
-          placeholder="Describe los ingredientes, horarios de servicio o cocteles de autor..."
-          hint="Detalla los ingredientes, horarios de servicio o notas destacadas de la categoría."
+          placeholder="Ej: Bebidas frías, jugos y cocteles (opcional)"
           autoResize
         />
       </div>

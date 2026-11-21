@@ -1,9 +1,8 @@
 import {
   Suspense,
-  lazy,
   memo,
   useCallback,
-  type ComponentType,
+  useRef,
   type FormEvent,
 } from 'react'
 import { motion } from 'motion/react'
@@ -15,43 +14,43 @@ import {
   validateStatusCode,
 } from '../../../../shared/lib/status-code-validator'
 import type { LoadingProps } from '../../../../shared/loading'
+import { lazyWithFallback } from '../../application/lazy-with-fallback'
+import { useFormularioServicioHabitacion } from '../../application/use-formulario-servicio-habitacion'
+import { FORMULARIO_FIELD_IDS } from '../../domain/menu-categoria'
 import { CampanaHotelAnimada } from '../atoms/CampanaHotelAnimada'
 import { SeccionCargaImagen } from '../molecules/SeccionCargaImagen'
 import { ServicioHabitacionCamposGrid } from '../molecules/ServicioHabitacionCamposGrid'
 import type { ServicioHabitacionGuardadoOverlayProps } from '../molecules/ServicioHabitacionGuardadoOverlay'
-import { useFormularioServicioHabitacion } from '../../application/use-formulario-servicio-habitacion'
 
-const LazySharedLoading = lazy<ComponentType<LoadingProps>>(async () => {
-  try {
-    const mod = await import('../../../../shared/loading')
-    return { default: mod.Loading }
-  } catch (error) {
-    console.error('Error al cargar Loading de /shared/loading:', error)
-    const Fallback: ComponentType<LoadingProps> = () => null
-    return { default: Fallback }
-  }
-})
+const LazySharedLoading = lazyWithFallback<LoadingProps>(
+  () => import('../../../../shared/loading').then((m) => m.Loading),
+  'Loading de /shared/loading',
+)
 
-const LazyServicioHabitacionGuardadoOverlay = lazy<
-  ComponentType<ServicioHabitacionGuardadoOverlayProps>
->(async () => {
-  try {
-    const mod = await import('../molecules/ServicioHabitacionGuardadoOverlay')
-    return { default: mod.ServicioHabitacionGuardadoOverlay }
-  } catch (error) {
-    console.error('Error al cargar ServicioHabitacionGuardadoOverlay:', error)
-    const Fallback: ComponentType<ServicioHabitacionGuardadoOverlayProps> = () => null
-    return { default: Fallback }
-  }
-})
+const LazyServicioHabitacionGuardadoOverlay =
+  lazyWithFallback<ServicioHabitacionGuardadoOverlayProps>(
+    () =>
+      import('../molecules/ServicioHabitacionGuardadoOverlay').then(
+        (m) => m.ServicioHabitacionGuardadoOverlay,
+      ),
+    'ServicioHabitacionGuardadoOverlay',
+  )
+
+export interface FormularioServicioHabitacionCardProps {
+  onCategoriaGuardada?: () => void
+}
 
 /**
- * Organismo de formulario para el registro y alta de servicios gastronómicos / categorías.
- * Descompuesto bajo Atomic Design con `React.memo`, `React.lazy` para el overlay de guardado
- * y el indicador de carga de catálogos, sin `backdrop-blur`, y manejo defensivo `try/catch`.
+ * Organismo de formulario para el registro de categorías del menú de Room Service.
+ * Descompuesto bajo Atomic Design con `React.memo`, `React.lazy`, validación por campo
+ * con foco/scroll al primer error y manejo defensivo `try/catch`.
  */
 export const FormularioServicioHabitacionCard = memo(
-  function FormularioServicioHabitacionCard() {
+  function FormularioServicioHabitacionCard({
+    onCategoriaGuardada,
+  }: FormularioServicioHabitacionCardProps) {
+    const alertContainerRef = useRef<HTMLDivElement>(null)
+
     const {
       order,
       setOrder,
@@ -67,6 +66,8 @@ export const FormularioServicioHabitacionCard = memo(
       handleEdificioChange,
       edificioOptions,
       loadingEdificios,
+      locationFieldsDisabled,
+      handleToggleManualLocation,
       nombreServicio,
       setNombreServicio,
       descripcion,
@@ -77,33 +78,60 @@ export const FormularioServicioHabitacionCard = memo(
       saving,
       feedback,
       setFeedback,
+      fieldErrors,
       handleSubmit,
       limpiarFormulario,
       resetKey,
       isLoadingEndpoints,
-    } = useFormularioServicioHabitacion()
+    } = useFormularioServicioHabitacion({ onCategoriaGuardada })
 
-    const handleFormSubmit = useCallback(
-      async (e: FormEvent<HTMLFormElement>) => {
+    const scrollAndFocusValidation = useCallback(
+      (firstInvalidKey: keyof typeof FORMULARIO_FIELD_IDS | null) => {
         try {
-          await handleSubmit(e)
-        } catch (error) {
-          console.error('Error al enviar formulario de servicio a la habitación:', error)
-          setFeedback({
-            ...validateStatusCode(500),
-            title: 'Error inesperado al registrar',
-            message: 'No pudimos completar el envío del formulario. Inténtalo de nuevo.',
+          alertContainerRef.current?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'nearest',
           })
+          if (firstInvalidKey) {
+            const targetId = FORMULARIO_FIELD_IDS[firstInvalidKey]
+            const element = document.getElementById(targetId)
+            element?.focus({ preventScroll: true })
+          }
+        } catch (scrollError) {
+          console.error('Error al enfocar campo inválido:', scrollError)
         }
       },
-      [handleSubmit, setFeedback],
+      [],
+    )
+
+    const handleFormSubmit = useCallback(
+      (e: FormEvent<HTMLFormElement>) => {
+        void (async () => {
+          try {
+            const result = await handleSubmit(e)
+            if (!result.isValid) {
+              scrollAndFocusValidation(result.firstInvalidKey)
+            }
+          } catch (error) {
+            console.error('Error al enviar formulario de categoría:', error)
+            setFeedback({
+              ...validateStatusCode(500),
+              title: 'Error inesperado al registrar',
+              message:
+                'No pudimos completar el envío del formulario. Inténtalo de nuevo.',
+            })
+            scrollAndFocusValidation(null)
+          }
+        })()
+      },
+      [handleSubmit, scrollAndFocusValidation, setFeedback],
     )
 
     const handleLimpiarClick = useCallback(() => {
       try {
         limpiarFormulario()
       } catch (error) {
-        console.error('Error al limpiar el formulario de servicio:', error)
+        console.error('Error al limpiar el formulario de categoría:', error)
       }
     }, [limpiarFormulario])
 
@@ -123,25 +151,24 @@ export const FormularioServicioHabitacionCard = memo(
           variants={fadeIn}
           initial="hidden"
           animate="visible"
-          className="border-line bg-panel w-full rounded-3xl border p-6 shadow-xs sm:p-8"
+          className="border-line bg-panel w-full rounded-3xl border p-6 font-sans shadow-xs sm:p-8"
         >
           {/* Cabecera con microinteracción visual */}
           <div className="border-line flex flex-col gap-3 border-b pb-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <CampanaHotelAnimada />
               <div>
-                <h2 className="text-ink font-serif text-xl font-bold tracking-tight sm:text-2xl">
-                  Registro de Servicios a la Habitación
+                <h2 className="text-ink font-sans text-xl font-bold tracking-tight sm:text-2xl">
+                  Nueva Categoría de Menú
                 </h2>
-                <p className="text-ink-muted text-xs leading-relaxed">
-                  Asigna la ubicación de sede y edificio, ingresa la orden con precisión y añade la
-                  fotografía del servicio.
+                <p className="text-ink-muted text-xs">
+                  Completa el nombre, descripción e imagen.
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="mt-5">
+          <div ref={alertContainerRef} className="mt-5">
             <StatusCodeAlert
               validation={feedback}
               dismissible
@@ -149,13 +176,13 @@ export const FormularioServicioHabitacionCard = memo(
             />
           </div>
 
-          {/* Indicador liviano sin backdrop-blur-xs mientras cargan catálogos */}
+          {/* Indicador liviano sin backdrop-blur ni rutas técnicas expuestas */}
           {isLoadingEndpoints && (
             <div className="border-line bg-canvas mt-4 flex items-center justify-center rounded-2xl border p-3 shadow-2xs">
               <Suspense
                 fallback={
                   <span className="text-ink-muted text-xs font-medium">
-                    Consultando sedes, subsedes y edificios…
+                    Cargando ubicación…
                   </span>
                 }
               >
@@ -163,7 +190,7 @@ export const FormularioServicioHabitacionCard = memo(
                   visible={true}
                   variant="inline"
                   size="sm"
-                  label="Consultando y balanceando catálogos de sedes, subsedes y edificios (/headquarters, /sub-headquarters, /building)…"
+                  label="Cargando ubicación…"
                   delay={0}
                   minDuration={250}
                 />
@@ -172,7 +199,7 @@ export const FormularioServicioHabitacionCard = memo(
           )}
 
           {/* Formulario de Registro */}
-          <form onSubmit={(e) => void handleFormSubmit(e)} noValidate className="mt-6 space-y-6">
+          <form onSubmit={handleFormSubmit} noValidate className="mt-6 space-y-6">
             <ServicioHabitacionCamposGrid
               order={order}
               onOrderChange={setOrder}
@@ -188,10 +215,13 @@ export const FormularioServicioHabitacionCard = memo(
               onEdificioChange={handleEdificioChange}
               edificioOptions={edificioOptions}
               loadingEdificios={loadingEdificios}
+              locationFieldsDisabled={locationFieldsDisabled}
+              onToggleManualLocation={handleToggleManualLocation}
               nombreServicio={nombreServicio}
               onNombreServicioChange={setNombreServicio}
               descripcion={descripcion}
               onDescripcionChange={setDescripcion}
+              errors={fieldErrors}
             />
 
             <div className="pt-2">
@@ -211,7 +241,7 @@ export const FormularioServicioHabitacionCard = memo(
                 className="border-line bg-canvas text-ink hover:bg-panel hover:border-primary/40 inline-flex cursor-pointer items-center gap-2 rounded-2xl border px-5 py-3 text-xs font-bold shadow-2xs transition-colors active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <FontAwesomeIcon icon={faEraser} className="size-3.5" />
-                <span>Limpiar formulario</span>
+                <span>Limpiar</span>
               </button>
 
               <button
@@ -228,7 +258,7 @@ export const FormularioServicioHabitacionCard = memo(
                 ) : (
                   <>
                     <FontAwesomeIcon icon={faPaperPlane} className="size-3.5" />
-                    <span>Guardar y emitir orden de servicio</span>
+                    <span>Guardar categoría</span>
                   </>
                 )}
               </button>

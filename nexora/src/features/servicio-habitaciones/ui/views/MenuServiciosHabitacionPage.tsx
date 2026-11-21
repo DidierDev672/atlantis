@@ -26,6 +26,9 @@ type MenuCategoriasGridProps = ComponentProps<
 type PedidosServicioHabitacionOrganismProps = ComponentProps<
   typeof import('../organisms/PedidosServicioHabitacionOrganism')['PedidosServicioHabitacionOrganism']
 >;
+type FormularioServicioHabitacionCardProps = ComponentProps<
+  typeof import('../organisms/FormularioServicioHabitacionCard')['FormularioServicioHabitacionCard']
+>;
 
 function lazyWithFallback<TProps extends object>(
   loader: () => Promise<ComponentType<TProps>>,
@@ -56,13 +59,14 @@ const LazyPedidosServicioHabitacionOrganism =
     'historial de pedidos'
   );
 
-const LazyFormularioServicioHabitacionCard = lazyWithFallback<Record<string, never>>(
-  () =>
-    import('../organisms/FormularioServicioHabitacionCard').then(
-      (m) => m.FormularioServicioHabitacionCard
-    ),
-  'formulario de categoría'
-);
+const LazyFormularioServicioHabitacionCard =
+  lazyWithFallback<FormularioServicioHabitacionCardProps>(
+    () =>
+      import('../organisms/FormularioServicioHabitacionCard').then(
+        (m) => m.FormularioServicioHabitacionCard
+      ),
+    'formulario de categoría'
+  );
 
 const LazyAgregarProductoDrawer = lazyWithFallback<AgregarProductoDrawerProps>(
   () =>
@@ -285,7 +289,9 @@ export function MenuServiciosHabitacionPage() {
             className="mx-auto max-w-4xl"
           >
             <Suspense fallback={tabFallback}>
-              <LazyFormularioServicioHabitacionCard />
+              <LazyFormularioServicioHabitacionCard
+                onCategoriaGuardada={handleCategoriaGuardadaDrawer}
+              />
             </Suspense>
           </motion.div>
         )}

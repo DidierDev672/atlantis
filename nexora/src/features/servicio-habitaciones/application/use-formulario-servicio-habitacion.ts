@@ -1,24 +1,23 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   validateStatusCode,
   type StatusCodeValidationResult,
 } from '../../../shared/lib/status-code-validator'
 import {
-  fetchSedesApi,
-  fetchSubSedesApi,
-  fetchEdificiosApi,
   guardarMenuCategoriaApi,
   obtenerEmailCreador,
-  type SedeOption,
-  type SubSedeOption,
-  type EdificioOption,
 } from '../infrastructure/api-formulario-servicio-repository'
 import {
   subirImagenSupabase,
   DEFAULT_ROOM_SERVICE_BUCKET,
 } from '../../../shared/services/supabase-storage.service'
 import { revocarBlobUrlSegura } from '../domain/item-menu'
-import type { DropdownOption } from '../../recursos/ui/molecules/recursos-dropdown'
+import {
+  validateFormularioServicioFields,
+  type FormularioServicioErrors,
+  type FormularioServicioFieldKey,
+} from '../domain/menu-categoria'
+import { useUbicacionRecepcionista } from './use-ubicacion-recepcionista'
 
 const DEFAULT_ASSET_URL =
   'https://images.pexels.com/photos/3136318/pexels-photo-3136318.jpeg'
@@ -34,26 +33,14 @@ export interface UseFormularioServicioHabitacionParams {
 
 /**
  * Hook de aplicación que orquesta la lógica, balanceo de carga y validación de status codes
- * para el registro de categorías y servicios gastronómicos de habitación.
- * Evita convertir imágenes a Base64 en RAM conservando solo el `File` y miniatura `blob:`.
+ * para el registro de categorías de servicio gastronómico.
+ * Delega la autodetección de sede, sub-sede y edificio a `useUbicacionRecepcionista`.
  */
 export function useFormularioServicioHabitacion(
   params?: UseFormularioServicioHabitacionParams,
 ) {
   const onCategoriaGuardada = params?.onCategoriaGuardada
   const [order, setOrder] = useState<string>(generarNumeroDosDigitos)
-  const [sedeId, setSedeId] = useState('')
-  const [sedes, setSedes] = useState<SedeOption[]>([])
-  const [loadingSedes, setLoadingSedes] = useState(true)
-
-  const [subSedeId, setSubSedeId] = useState('')
-  const [subSedes, setSubSedes] = useState<SubSedeOption[]>([])
-  const [loadingSubSedes, setLoadingSubSedes] = useState(false)
-
-  const [edificioId, setEdificioId] = useState('')
-  const [edificios, setEdificios] = useState<EdificioOption[]>([])
-  const [loadingEdificios, setLoadingEdificios] = useState(true)
-
   const [nombreServicio, setNombreServicio] = useState('')
   const [descripcion, setDescripcion] = useState('')
 
@@ -65,67 +52,40 @@ export function useFormularioServicioHabitacion(
 
   const [saving, setSaving] = useState(false)
   const [feedback, setFeedback] = useState<StatusCodeValidationResult | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<FormularioServicioErrors>({})
 
-  const loadSubSedes = useCallback(async (headquarterId: string) => {
-    if (!headquarterId) {
-      setSubSedes([])
-      setSubSedeId('')
-      return
-    }
-    setLoadingSubSedes(true)
-    try {
-      const res = await fetchSubSedesApi(headquarterId)
-      if (isMountedRef.current) {
-        setSubSedes(res.subSedes)
+  const handleUbicacionFeedback = useCallback(
+    (validation: StatusCodeValidationResult) => {
+      if (isMountedRef.current && !validation.isValid) {
+        setFeedback((prev) => prev ?? validation)
       }
-    } catch (error) {
-      console.error('Error al cargar sub sedes:', error)
-      if (isMountedRef.current) {
-        setSubSedes([])
-      }
-    } finally {
-      if (isMountedRef.current) {
-        setLoadingSubSedes(false)
-      }
-    }
-  }, [])
+    },
+    [],
+  )
+
+  const {
+    sedeId,
+    setSedeId,
+    sedeOptions,
+    loadingSedes,
+    subSedeId,
+    setSubSedeId,
+    subSedeOptions,
+    loadingSubSedes,
+    loadUbicacionesPorSede,
+    edificioId,
+    setEdificioId,
+    edificioOptions,
+    loadingEdificios,
+    locationFieldsDisabled,
+    toggleManualLocation,
+    restoreDetectedLocation,
+  } = useUbicacionRecepcionista({
+    onValidationFeedback: handleUbicacionFeedback,
+  })
 
   useEffect(() => {
     isMountedRef.current = true
-
-    const cargarCatalogosIniciales = async () => {
-      try {
-        const [sedesRes, edificiosRes] = await Promise.allSettled([
-          fetchSedesApi(),
-          fetchEdificiosApi(),
-        ])
-        if (!isMountedRef.current) return
-
-        if (sedesRes.status === 'fulfilled') {
-          setSedes(sedesRes.value.sedes)
-        } else {
-          console.error('Error al cargar sedes:', sedesRes.reason)
-          setSedes([])
-        }
-
-        if (edificiosRes.status === 'fulfilled') {
-          setEdificios(edificiosRes.value.edificios)
-        } else {
-          console.error('Error al cargar edificios:', edificiosRes.reason)
-          setEdificios([])
-        }
-      } catch (error) {
-        console.error('Error cargando catálogos de ubicación:', error)
-      } finally {
-        if (isMountedRef.current) {
-          setLoadingSedes(false)
-          setLoadingEdificios(false)
-        }
-      }
-    }
-
-    void Promise.resolve().then(() => cargarCatalogosIniciales())
-
     return () => {
       isMountedRef.current = false
       revocarBlobUrlSegura(activeBlobUrlRef.current)
@@ -133,46 +93,85 @@ export function useFormularioServicioHabitacion(
     }
   }, [])
 
+  const clearFieldError = useCallback((field: FormularioServicioFieldKey) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev
+      const next = { ...prev }
+      delete next[field]
+      return next
+    })
+  }, [])
+
   const handleSedeChange = useCallback(
     (nuevaSedeId: string) => {
       setSedeId(nuevaSedeId)
+      clearFieldError('sedeId')
+      clearFieldError('subSedeId')
+      clearFieldError('edificioId')
       setSubSedeId('')
-      if (nuevaSedeId) {
-        void loadSubSedes(nuevaSedeId)
-      } else {
-        setSubSedes([])
-      }
+      setEdificioId('')
+      void loadUbicacionesPorSede(nuevaSedeId)
     },
-    [loadSubSedes],
+    [clearFieldError, loadUbicacionesPorSede, setEdificioId, setSedeId, setSubSedeId],
   )
 
-  const handleSubSedeChange = useCallback((nuevaSubSedeId: string) => {
-    setSubSedeId(nuevaSubSedeId)
-  }, [])
+  const handleToggleManualLocation = useCallback(() => {
+    clearFieldError('sedeId')
+    clearFieldError('subSedeId')
+    clearFieldError('edificioId')
+    void toggleManualLocation()
+  }, [clearFieldError, toggleManualLocation])
 
-  const handleEdificioChange = useCallback((nuevoEdificioId: string) => {
-    setEdificioId(nuevoEdificioId)
-  }, [])
+  const handleSubSedeChange = useCallback(
+    (nuevaSubSedeId: string) => {
+      setSubSedeId(nuevaSubSedeId)
+      clearFieldError('subSedeId')
+    },
+    [clearFieldError, setSubSedeId],
+  )
+
+  const handleEdificioChange = useCallback(
+    (nuevoEdificioId: string) => {
+      setEdificioId(nuevoEdificioId)
+      clearFieldError('edificioId')
+    },
+    [clearFieldError, setEdificioId],
+  )
+
+  const handleOrderChange = useCallback(
+    (nuevoOrder: string) => {
+      setOrder(nuevoOrder)
+      clearFieldError('order')
+    },
+    [clearFieldError],
+  )
+
+  const handleNombreServicioChange = useCallback(
+    (nuevoNombre: string) => {
+      setNombreServicio(nuevoNombre)
+      clearFieldError('nombreServicio')
+    },
+    [clearFieldError],
+  )
 
   const generarOrderAleatorio = useCallback(() => {
     setOrder(generarNumeroDosDigitos())
-  }, [])
+    clearFieldError('order')
+  }, [clearFieldError])
 
   const limpiarFormulario = useCallback(() => {
     revocarBlobUrlSegura(activeBlobUrlRef.current)
     activeBlobUrlRef.current = null
     setOrder(generarNumeroDosDigitos())
-    setSedeId('')
-    setSubSedeId('')
-    setSubSedes([])
-    setEdificioId('')
+    restoreDetectedLocation()
     setNombreServicio('')
     setDescripcion('')
     setImagenArchivo(null)
     setImagenPreview(null)
     setFeedback(null)
+    setFieldErrors({})
     setResetKey((prev) => prev + 1)
-  }, [])
+  }, [restoreDetectedLocation])
 
   const handleImageChange = useCallback((file: File | null, previewUrl: string | null) => {
     try {
@@ -188,41 +187,41 @@ export function useFormularioServicioHabitacion(
     setImagenPreview(previewUrl)
   }, [])
 
-  const sedeOptions: DropdownOption[] = useMemo(
-    () => sedes.map((s) => ({ value: s.id, label: s.name })),
-    [sedes],
-  )
-
-  const subSedeOptions: DropdownOption[] = useMemo(
-    () => subSedes.map((sub) => ({ value: sub.id, label: sub.name })),
-    [subSedes],
-  )
-
-  const edificioOptions: DropdownOption[] = useMemo(
-    () => edificios.map((ed) => ({ value: ed.id, label: ed.name })),
-    [edificios],
-  )
-
   const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
+    async (
+      e: React.FormEvent,
+    ): Promise<{
+      isValid: boolean
+      firstInvalidKey: FormularioServicioFieldKey | null
+    }> => {
       e.preventDefault()
-      if (saving) return
+      if (saving) return { isValid: false, firstInvalidKey: null }
 
-      if (!sedeId || !subSedeId || !edificioId || !nombreServicio.trim()) {
+      const { errors, firstInvalidKey } = validateFormularioServicioFields({
+        order,
+        sedeId,
+        subSedeId,
+        edificioId,
+        nombreServicio,
+      })
+
+      if (firstInvalidKey) {
+        setFieldErrors(errors)
         setFeedback({
           ...validateStatusCode(400),
-          title: 'Campos obligatorios pendientes',
-          message:
-            'Selecciona una sede, sub sede y edificio, e ingresa el nombre del servicio antes de guardar.',
+          title: 'Campos obligatorios',
+          message: 'Completa los campos marcados para continuar.',
         })
-        return
+        return { isValid: false, firstInvalidKey }
       }
 
+      setFieldErrors({})
       setSaving(true)
       setFeedback(null)
 
       try {
         let finalAssetUrl = DEFAULT_ASSET_URL
+        let imageUploadFailed = false
         if (imagenArchivo) {
           try {
             const uploadResult = await subirImagenSupabase(imagenArchivo, {
@@ -230,8 +229,11 @@ export function useFormularioServicioHabitacion(
             })
             if (uploadResult.success && uploadResult.publicUrl) {
               finalAssetUrl = uploadResult.publicUrl
+            } else {
+              imageUploadFailed = true
             }
           } catch (uploadErr) {
+            imageUploadFailed = true
             console.warn('Aviso al subir imagen a Supabase Storage:', uploadErr)
           }
         }
@@ -255,7 +257,19 @@ export function useFormularioServicioHabitacion(
 
         const validation = await guardarMenuCategoriaApi(payload)
         if (isMountedRef.current) {
-          setFeedback(validation)
+          if (validation.isValid && imageUploadFailed) {
+            setFeedback({
+              ...validation,
+              variant: 'warning',
+              planet: 'jupiter',
+              title: 'Categoría guardada con imagen predeterminada',
+              message:
+                'La categoría se registró correctamente, pero no se pudo subir la fotografía seleccionada y se asignó una imagen predeterminada.',
+            })
+          } else {
+            setFeedback(validation)
+          }
+
           if (validation.isValid) {
             try {
               onCategoriaGuardada?.()
@@ -264,6 +278,7 @@ export function useFormularioServicioHabitacion(
             }
           }
         }
+        return { isValid: validation.isValid, firstInvalidKey: null }
       } catch (error) {
         console.error('Error inesperado al guardar categoría de servicio:', error)
         if (isMountedRef.current) {
@@ -271,9 +286,10 @@ export function useFormularioServicioHabitacion(
             ...validateStatusCode(500),
             title: 'No pudimos registrar la categoría',
             message:
-              'Ocurrió un inconveniente inesperado al enviar el servicio. Intenta nuevamente.',
+              'Ocurrió un inconveniente inesperado al enviar la categoría. Intenta nuevamente.',
           })
         }
+        return { isValid: false, firstInvalidKey: null }
       } finally {
         if (isMountedRef.current) {
           setSaving(false)
@@ -297,7 +313,7 @@ export function useFormularioServicioHabitacion(
 
   return {
     order,
-    setOrder,
+    setOrder: handleOrderChange,
     generarOrderAleatorio,
     sedeId,
     handleSedeChange,
@@ -311,8 +327,10 @@ export function useFormularioServicioHabitacion(
     handleEdificioChange,
     edificioOptions,
     loadingEdificios,
+    locationFieldsDisabled,
+    handleToggleManualLocation,
     nombreServicio,
-    setNombreServicio,
+    setNombreServicio: handleNombreServicioChange,
     descripcion,
     setDescripcion,
     imagenArchivo,
@@ -321,6 +339,7 @@ export function useFormularioServicioHabitacion(
     saving,
     feedback,
     setFeedback,
+    fieldErrors,
     handleSubmit,
     limpiarFormulario,
     resetKey,
