@@ -58,3 +58,65 @@ export function resolverNombreEntidad(id: string, prefijoPorDefecto: string = 'U
   }
   return `${prefijoPorDefecto} #${id}`
 }
+
+export type FormularioServicioFieldKey =
+  | 'order'
+  | 'sedeId'
+  | 'subSedeId'
+  | 'edificioId'
+  | 'nombreServicio'
+
+export type FormularioServicioErrors = Partial<
+  Record<FormularioServicioFieldKey, string>
+>
+
+export const FORMULARIO_FIELD_IDS: Record<FormularioServicioFieldKey, string> = {
+  order: 'servicio-campo-order',
+  sedeId: 'servicio-campo-sede',
+  subSedeId: 'servicio-campo-subsede',
+  edificioId: 'servicio-campo-edificio',
+  nombreServicio: 'servicio-campo-nombre',
+}
+
+export function validateFormularioServicioFields(values: {
+  order: string
+  sedeId: string
+  subSedeId: string
+  edificioId: string
+  nombreServicio: string
+}): {
+  errors: FormularioServicioErrors
+  firstInvalidKey: FormularioServicioFieldKey | null
+} {
+  try {
+    const errors: FormularioServicioErrors = {}
+    if (!values.order.trim() || !/^\d{1,2}$/.test(values.order.trim())) {
+      errors.order = 'Ingresa un código numérico de hasta 2 dígitos.'
+    }
+    if (!values.sedeId) {
+      errors.sedeId = 'Selecciona una sede.'
+    }
+    if (!values.subSedeId) {
+      errors.subSedeId = 'Selecciona una sub sede.'
+    }
+    if (!values.edificioId) {
+      errors.edificioId = 'Selecciona un edificio.'
+    }
+    if (!values.nombreServicio.trim()) {
+      errors.nombreServicio = 'Ingresa el nombre de la categoría.'
+    }
+
+    const orderedKeys: FormularioServicioFieldKey[] = [
+      'order',
+      'sedeId',
+      'subSedeId',
+      'edificioId',
+      'nombreServicio',
+    ]
+    const firstInvalidKey = orderedKeys.find((key) => Boolean(errors[key])) ?? null
+    return { errors, firstInvalidKey }
+  } catch (error) {
+    console.error('Error al validar campos de categoría:', error)
+    return { errors: {}, firstInvalidKey: null }
+  }
+}

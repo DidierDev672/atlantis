@@ -1,6 +1,12 @@
-import { memo } from 'react'
+import { Suspense, memo } from 'react'
 import { motion } from 'motion/react'
-import { Rocket } from '../../../../shared/rocket/organisms/Rocket'
+import type { RocketProps } from '../../../../shared/rocket/types'
+import { lazyWithFallback } from '../../application/lazy-with-fallback'
+
+const LazyRocket = lazyWithFallback<RocketProps>(
+  () => import('../../../../shared/rocket/organisms/Rocket').then((m) => m.Rocket),
+  'Rocket en ServicioHabitacionGuardadoOverlay',
+)
 
 export interface ServicioHabitacionGuardadoOverlayProps {
   visible: boolean
@@ -24,7 +30,7 @@ export const ServicioHabitacionGuardadoOverlay = memo(
         transition={{ duration: 0.2 }}
         role="status"
         aria-live="polite"
-        className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 p-4 text-center select-none"
+        className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 p-4 text-center font-sans select-none"
       >
         <motion.div
           initial={{ scale: 0.94, y: 12 }}
@@ -33,22 +39,24 @@ export const ServicioHabitacionGuardadoOverlay = memo(
           className="flex flex-col items-center"
         >
           <div className="border-line/60 bg-panel relative rounded-3xl border p-3 shadow-2xl">
-            <Rocket
-              launch={true}
-              autoLaunch={true}
-              interactive={false}
-              size="md"
-              showStars={false}
-              showPad={true}
-            />
+            <Suspense fallback={<div className="size-32" aria-hidden="true" />}>
+              <LazyRocket
+                launch={true}
+                autoLaunch={true}
+                interactive={false}
+                size="md"
+                showStars={false}
+                showPad={true}
+              />
+            </Suspense>
           </div>
 
           <div className="mt-5 max-w-sm space-y-1.5">
-            <h3 className="font-serif text-lg font-bold tracking-wide text-white">
-              Despachando Orden de Servicio
+            <h3 className="font-sans text-lg font-bold tracking-wide text-white">
+              Registrando Categoría
             </h3>
             <p className="text-xs leading-relaxed text-white/80">
-              Registrando la categoría de servicio, por favor espera un momento…
+              Guardando la categoría del menú, por favor espera un momento…
             </p>
           </div>
         </motion.div>

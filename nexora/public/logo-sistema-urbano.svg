@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-labelledby="t d">
+  <title id="t">Sistema urbano</title>
+  <desc id="d">Tres edificios en el centro de un sistema solar, con planetas orbitando a su alrededor.</desc>
+  <style>
+    /* Modo claro (por defecto) */
+    .building { fill: #1E293B; }
+    .orbit    { fill: none; stroke: #94A3B8; stroke-width: 1.4; }
+    .p1 { fill: #F59E0B; }
+    .p2 { fill: #14B8A6; }
+    .p3 { fill: #8B5CF6; }
+    .p4 { fill: #F43F5E; }
+    /* Modo oscuro */
+    @media (prefers-color-scheme: dark) {
+      .building { fill: #F1F5F9; }
+      .orbit    { stroke: #64748B; }
+    }
+  </style>
+
+  <!-- Órbitas -->
+  <circle class="orbit" cx="32" cy="32" r="17"/>
+  <circle class="orbit" cx="32" cy="32" r="23"/>
+  <circle class="orbit" cx="32" cy="32" r="29"/>
+
+  <!-- Tres edificios (reemplazan al sol) -->
+  <g class="building">
+    <rect x="23" y="29" width="5" height="12" rx="0.8"/>
+    <rect x="29.5" y="23" width="5" height="18" rx="0.8"/>
+    <rect x="36" y="32" width="5" height="9" rx="0.8"/>
+  </g>
+
+  <!-- Planetas -->
+  <circle class="p1" cx="45" cy="21.1" r="3"/>
+  <circle class="p2" cx="12.1" cy="43.5" r="3.5"/>
+  <circle class="p3" cx="57.1" cy="46.5" r="4"/>
+  <circle class="p4" cx="22.1" cy="4.7" r="2.6"/>
+</svg>
