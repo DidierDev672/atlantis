@@ -35,15 +35,10 @@ export interface ServiceRequestOrder {
 }
 
 export interface UpdateServiceRequestPayload {
-  id: string
   status: string
   actor_type: string
   actor_id: string
   status_comment: string
-  grade: number
-  guest_comment: string
-  general_notes: string | null
-  delivery_instructions: string | null
 }
 
 export interface CreateServiceAssignmentPayload {
@@ -117,6 +112,98 @@ export const ESTADOS_PEDIDO_CONFIG: Record<EstadoPedido, EstadoPedidoConfig> = {
     dotColor: 'bg-rose-400',
     icon: faCircleExclamation,
   },
+}
+
+const BACKEND_STATUS_MAP: Record<string, EstadoPedido> = {
+  en_cola: 'en_cola',
+  pending: 'en_cola',
+  queued: 'en_cola',
+  in_queue: 'en_cola',
+  en_preparacion: 'en_preparacion',
+  confirmed: 'en_preparacion',
+  preparing: 'en_preparacion',
+  in_preparation: 'en_preparacion',
+  en_camino: 'en_camino',
+  in_transit: 'en_camino',
+  delivering: 'en_camino',
+  on_the_way: 'en_camino',
+  entregado: 'entregado',
+  delivered: 'entregado',
+  cancelado: 'cancelado',
+  canceled: 'cancelado',
+  cancelled: 'cancelado',
+  rejected: 'cancelado',
+}
+
+export function resolverEstadoPedidoNormalizado(
+  status?: string | null,
+): EstadoPedido | null {
+  try {
+    const normalized = String(status ?? '').trim().toLowerCase()
+    if (!normalized) return null
+    return BACKEND_STATUS_MAP[normalized] ?? null
+  } catch (error) {
+    console.error('Error al normalizar el estado del pedido:', error)
+    return null
+  }
+}
+
+export function esPedidoEntregado(status?: string | null): boolean {
+  return resolverEstadoPedidoNormalizado(status) === 'entregado'
+}
+
+/**
+ * Convierte una instancia `Date` válida a clave local `YYYY-MM-DD` sin desfases por zona horaria UTC.
+ */
+export function dateToLocalIsoKey(date: Date | null | undefined): string {
+  try {
+    if (!date || !(date instanceof Date) || Number.isNaN(date.getTime())) {
+      return ''
+    }
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  } catch (error) {
+    console.error('Error al convertir fecha a clave local:', error)
+    return ''
+  }
+}
+
+function parseOrderSaleDate(orden: ServiceRequestOrder): Date | null {
+  try {
+    const rawDate = orden.created_at || orden.scheduled_for
+    if (!rawDate) return null
+    const parsed = new Date(rawDate)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  } catch {
+    return null
+  }
+}
+
+export function resolverFechaVentaClave(orden: ServiceRequestOrder): string | null {
+  const parsed = parseOrderSaleDate(orden)
+  if (!parsed) return null
+  const key = dateToLocalIsoKey(parsed)
+  return key || null
+}
+
+export function formatearFechaVenta(orden: ServiceRequestOrder): string {
+  try {
+    const parsed = parseOrderSaleDate(orden)
+    if (!parsed) return 'Sin fecha'
+
+    return new Intl.DateTimeFormat('es-CO', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(parsed)
+  } catch (error) {
+    console.error('Error al formatear fecha de venta:', error)
+    return 'Sin fecha'
+  }
 }
 
 /**
