@@ -34,18 +34,26 @@ const (
 	StatusPending       Status = "pending"
 	StatusConfirmed     Status = "confirmed"
 	StatusInPreparation Status = "in_preparation"
+	StatusInTransit     Status = "in_transit"
 	StatusDelivering    Status = "delivering"
+	StatusOnTheWay      Status = "on_the_way"
 	StatusDelivered     Status = "delivered"
 	StatusCanceled      Status = "canceled"
+	StatusCancelled     Status = "cancelled"
+	StatusRejected      Status = "rejected"
 )
 
 var validStatusSet = map[Status]struct{}{
 	StatusPending:       {},
 	StatusConfirmed:     {},
 	StatusInPreparation: {},
+	StatusInTransit:     {},
 	StatusDelivering:    {},
+	StatusOnTheWay:      {},
 	StatusDelivered:     {},
 	StatusCanceled:      {},
+	StatusCancelled:     {},
+	StatusRejected:      {},
 }
 
 // Channel representa el canal por el cual se originó el pedido.
@@ -269,7 +277,7 @@ func (s *ServiceRequest) TransitionStatus(
 		return ErrInvalidStatus
 	}
 
-	if s.Status == StatusCanceled {
+	if s.Status == StatusCanceled || s.Status == StatusCancelled || s.Status == StatusRejected {
 		return ErrAlreadyCanceled
 	}
 
@@ -290,7 +298,7 @@ func (s *ServiceRequest) TransitionStatus(
 		s.ConfirmedAt = &now
 	case StatusDelivered:
 		s.DeliveredAt = &now
-	case StatusCanceled:
+	case StatusCanceled, StatusCancelled, StatusRejected:
 		s.CanceledAt = &now
 		if comment != "" {
 			s.ReasonForCancellation = comment

@@ -18,7 +18,27 @@ export function getImageCacheEntry(
   maxDimension: number = 640
 ): ImageCacheEntry | undefined {
   if (!url) return undefined
-  return loadedUrlCache.get(buildImageCacheKey(url, maxDimension))
+  const key = buildImageCacheKey(url, maxDimension)
+  try {
+    const entry = loadedUrlCache.get(key)
+    if (!entry) return undefined
+
+    // Promueve la entrada consultada al final del Map (LRU real) para evitar evicción prematura
+    loadedUrlCache.delete(key)
+    loadedUrlCache.set(key, entry)
+    return entry
+  } catch {
+    return undefined
+  }
+}
+
+function isResolvedUrlStillReferenced(resolvedUrl: string): boolean {
+  for (const existing of loadedUrlCache.values()) {
+    if (existing.resolvedUrl === resolvedUrl) {
+      return true
+    }
+  }
+  return false
 }
 
 export function setImageCacheEntry(
@@ -35,7 +55,7 @@ export function setImageCacheEntry(
       if (oldestKey !== undefined) {
         const oldest = loadedUrlCache.get(oldestKey)
         loadedUrlCache.delete(oldestKey)
-        if (oldest?.isBlob) {
+        if (oldest?.isBlob && !isResolvedUrlStillReferenced(oldest.resolvedUrl)) {
           revocarBlobUrlSegura(oldest.resolvedUrl)
         }
       }

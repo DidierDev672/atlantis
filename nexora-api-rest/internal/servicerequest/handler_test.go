@@ -126,6 +126,28 @@ func TestHandler_HTTPFlow(t *testing.T) {
 		t.Errorf("expected Status 'confirmed', got %s", updated.Status)
 	}
 
+	// 4b. Test PUT /service-requests/{id} with status "in_transit"
+	inTransitBody := []byte(`{
+		"status": "in_transit",
+		"actor_type": "staff",
+		"actor_id": "d38c31b82365d04e",
+		"status_comment": "Pedido en camino a la habitación"
+	}`)
+	reqInTransit := httptest.NewRequest(http.MethodPut, "/service-requests/sr-id-1", bytes.NewReader(inTransitBody))
+	reqInTransit.Header.Set("Content-Type", "application/json")
+	wInTransit := httptest.NewRecorder()
+	mux.ServeHTTP(wInTransit, reqInTransit)
+
+	if wInTransit.Code != http.StatusOK {
+		t.Fatalf("expected status 200 OK for in_transit, got %d. Body: %s", wInTransit.Code, wInTransit.Body.String())
+	}
+	if err := json.Unmarshal(wInTransit.Body.Bytes(), &updated); err != nil {
+		t.Fatalf("failed to decode in_transit response: %v", err)
+	}
+	if updated.Status != "in_transit" {
+		t.Errorf("expected Status 'in_transit', got %s", updated.Status)
+	}
+
 	// 5. Test DELETE /service-request/{id}
 	reqDel := httptest.NewRequest(http.MethodDelete, "/service-request/sr-id-1", nil)
 	wDel := httptest.NewRecorder()

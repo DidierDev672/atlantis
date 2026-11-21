@@ -3,6 +3,7 @@ import { revocarBlobUrlSegura } from '../domain/item-menu'
 const DEFAULT_MAX_CARD_DIMENSION = 640
 const DEFAULT_WEBP_QUALITY = 0.82
 const SMALL_RASTER_THRESHOLD_BYTES = 35 * 1024
+const PASSTHROUGH_RASTER_MAX_BYTES = 100 * 1024
 
 export interface DownscaleImageOptions {
   /** Dimensión máxima en píxeles (ancho o alto) para la textura en tarjeta. Por defecto 640px. */
@@ -34,32 +35,48 @@ function calcularTamanoProporcional(
   }
 }
 
-function canvasToBlobAsync(
-  canvas: HTMLCanvasElement,
+async function encodeSurfaceToBlob(
+  surface: OffscreenCanvas | HTMLCanvasElement,
   mimeType: string,
   quality: number
 ): Promise<Blob | null> {
-  return new Promise((resolve) => {
-    try {
-      canvas.toBlob(
-        (blob) => {
-          if (blob) {
-            resolve(blob)
-            return
-          }
-          if (mimeType !== 'image/jpeg') {
-            canvas.toBlob((jpegBlob) => resolve(jpegBlob), 'image/jpeg', quality)
-            return
-          }
-          resolve(null)
-        },
-        mimeType,
-        quality
-      )
-    } catch {
-      resolve(null)
+  try {
+    if (typeof OffscreenCanvas !== 'undefined' && surface instanceof OffscreenCanvas) {
+      try {
+        return await surface.convertToBlob({ type: mimeType, quality })
+      } catch {
+        if (mimeType !== 'image/jpeg') {
+          return await surface.convertToBlob({ type: 'image/jpeg', quality })
+        }
+        return null
+      }
     }
-  })
+
+    const htmlCanvas = surface as HTMLCanvasElement
+    return await new Promise((resolve) => {
+      try {
+        htmlCanvas.toBlob(
+          (blob) => {
+            if (blob) {
+              resolve(blob)
+              return
+            }
+            if (mimeType !== 'image/jpeg') {
+              htmlCanvas.toBlob((jpegBlob) => resolve(jpegBlob), 'image/jpeg', quality)
+              return
+            }
+            resolve(null)
+          },
+          mimeType,
+          quality
+        )
+      } catch {
+        resolve(null)
+      }
+    })
+  } catch {
+    return null
+  }
 }
 
 async function decodificarViaImage(blob: Blob): Promise<{
@@ -102,7 +119,7 @@ export async function downscaleImageToBlobUrl(
 
   let bitmap: ImageBitmap | null = null
   let tempImgUrl: string | null = null
-  let canvas: HTMLCanvasElement | null = null
+  let surface: OffscreenCanvas | HTMLCanvasElement | null = null
 
   try {
     const isDataUrl = url.startsWith('data:')
@@ -126,14 +143,9 @@ export async function downscaleImageToBlobUrl(
       return URL.createObjectURL(sourceBlob)
     }
 
-    // Si es un data:image muy pequeño y ya liviano, convertir igual a blob: para sacar Base64 del DOM
     if (!isDataUrl && sourceBlob.size <= SMALL_RASTER_THRESHOLD_BYTES) {
       return URL.createObjectURL(sourceBlob)
     }
-
-    canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d', { alpha: true })
-    if (!ctx) return null
 
     let source: CanvasImageSource
     let srcWidth = 0
@@ -141,14 +153,7 @@ export async function downscaleImageToBlobUrl(
 
     if (typeof createImageBitmap === 'function') {
       try {
-        try {
-          bitmap = await createImageBitmap(sourceBlob, {
-            resizeWidth: maxDimension,
-            resizeQuality: 'medium',
-          })
-        } catch {
-          bitmap = await createImageBitmap(sourceBlob)
-        }
+        bitmap = await createImageBitmap(sourceBlob)
         source = bitmap
         srcWidth = bitmap.width
         srcHeight = bitmap.height
@@ -169,16 +174,40 @@ export async function downscaleImageToBlobUrl(
       srcHeight = loaded.image.naturalHeight || loaded.image.height
     }
 
+    // Si la imagen ya cabe dentro de maxDimension y tiene peso acotado, evita crear canvas y llamar ctx.drawImage
+    if (
+      !isDataUrl &&
+      Math.max(srcWidth, srcHeight) <= maxDimension &&
+      sourceBlob.size <= PASSTHROUGH_RASTER_MAX_BYTES
+    ) {
+      return URL.createObjectURL(sourceBlob)
+    }
+
     const { targetWidth, targetHeight } = calcularTamanoProporcional(
       srcWidth,
       srcHeight,
       maxDimension
     )
 
-    canvas.width = targetWidth
-    canvas.height = targetHeight
+    surface =
+      typeof OffscreenCanvas !== 'undefined'
+        ? new OffscreenCanvas(targetWidth, targetHeight)
+        : document.createElement('canvas')
+
+    if (!(typeof OffscreenCanvas !== 'undefined' && surface instanceof OffscreenCanvas)) {
+      surface.width = targetWidth
+      surface.height = targetHeight
+    }
+
+    const requiresAlpha = sourceBlob.type !== 'image/jpeg'
+    const ctx = surface.getContext('2d', { alpha: requiresAlpha }) as
+      | OffscreenCanvasRenderingContext2D
+      | CanvasRenderingContext2D
+      | null
+    if (!ctx) return null
+
     ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = 'medium'
+    ctx.imageSmoothingQuality = maxDimension <= 200 ? 'low' : 'medium'
     ctx.drawImage(source, 0, 0, targetWidth, targetHeight)
 
     const outputMime =
@@ -188,7 +217,7 @@ export async function downscaleImageToBlobUrl(
         ? 'image/webp'
         : 'image/jpeg'
 
-    const optimizedBlob = await canvasToBlobAsync(canvas, outputMime, quality)
+    const optimizedBlob = await encodeSurfaceToBlob(surface, outputMime, quality)
     if (!optimizedBlob) return null
 
     return URL.createObjectURL(optimizedBlob)
@@ -202,9 +231,9 @@ export async function downscaleImageToBlobUrl(
       // Ignora si el bitmap ya fue liberado
     }
     revocarBlobUrlSegura(tempImgUrl)
-    if (canvas) {
-      canvas.width = 0
-      canvas.height = 0
+    if (surface) {
+      surface.width = 0
+      surface.height = 0
     }
   }
 }
