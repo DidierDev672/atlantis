@@ -1,6 +1,6 @@
 import { Suspense, lazy, memo, useCallback, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { type RoomRow, puedeAsignarHuesped } from '../domain/habitacion-lista';
+import { AnimatePresence, MotionConfig, motion } from 'motion/react';
+import { useDeviceResourceProfile } from '../application/use-device-resource-profile';
 import { FloorAccordionSkeleton } from './atoms/floor-accordion-skeleton';
 import { Loader } from './atoms/loader';
 import { HabitacionesErrorBoundary } from './molecules/habitaciones-error-boundary';
@@ -21,13 +21,16 @@ const LazyHabitacionDetallePanel = lazy(() =>
   }))
 );
 
-const LazyAsignarHuespedPage = lazy(() => import('./asignar-huesped-page'));
+const LazyDeviceResourceBadge = lazy(
+  () => import('./atoms/device-resource-badge')
+);
 
 export const HabitacionesPage = memo(function HabitacionesPage() {
+  const resourceProfile = useDeviceResourceProfile();
   const [activeTab, setActiveTab] = useState<HabitacionesTabKey>('lista');
-  const [viewMode, setViewMode] = useState<HabitacionesViewMode>('cards');
-  const [selectedRoomForHuesped, setSelectedRoomForHuesped] =
-    useState<RoomRow | null>(null);
+  const [viewMode, setViewMode] = useState<HabitacionesViewMode>(
+    () => resourceProfile.policy.defaultViewMode
+  );
 
   const handleTabChange = useCallback((tab: HabitacionesTabKey) => {
     try {
@@ -41,120 +44,78 @@ export const HabitacionesPage = memo(function HabitacionesPage() {
     handleTabChange('registro');
   }, [handleTabChange]);
 
-  const handleSelectHabitacion = useCallback((room: RoomRow) => {
-    try {
-      if (!puedeAsignarHuesped(room.status)) {
-        return;
-      }
-      setSelectedRoomForHuesped(room);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } catch (err) {
-      console.error('Error al seleccionar habitación:', err);
-    }
-  }, []);
-
-  const handleBackFromHuesped = useCallback(() => {
-    setSelectedRoomForHuesped(null);
-  }, []);
-
   return (
-    <div className="bg-canvas min-h-screen w-full px-3 py-5 pb-20 sm:px-5 lg:px-6">
-      <div className="w-full space-y-6">
-        <HabitacionesErrorBoundary
-          onReset={() => {
-            setSelectedRoomForHuesped(null);
-            setActiveTab('lista');
-          }}
-        >
-          <AnimatePresence mode="wait">
-            {selectedRoomForHuesped ? (
-              <motion.div
-                key={`asignar-huesped-${selectedRoomForHuesped.id}`}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -12 }}
-                transition={{ duration: 0.2 }}
-              >
+    <MotionConfig
+      reducedMotion={resourceProfile.policy.enableAnimations ? 'user' : 'always'}
+    >
+      <div className="bg-canvas min-h-screen w-full px-3 py-5 pb-20 sm:px-5 lg:px-6">
+        <div className="w-full space-y-6">
+          <HabitacionesErrorBoundary
+            onReset={() => {
+              setActiveTab('lista');
+            }}
+          >
+            <div className="space-y-3.5">
+              <div className="fixed right-5 bottom-5 z-30">
                 <Suspense
                   fallback={
-                    <div className="border-line bg-panel flex min-h-64 items-center justify-center rounded-2xl border p-8">
-                      <Loader label="Cargando vista de habitación…" />
-                    </div>
+                    <div className="bg-line/40 h-10 w-20 animate-pulse rounded-full shadow-md" />
                   }
                 >
-                  <LazyAsignarHuespedPage
-                    room={selectedRoomForHuesped}
-                    onBack={handleBackFromHuesped}
+                  <LazyHabitacionesModeSwitch
+                    activeTab={activeTab}
+                    onChange={handleTabChange}
                   />
                 </Suspense>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="habitaciones-main-view"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -8 }}
-                transition={{ duration: 0.2 }}
-                className="space-y-3.5"
-              >
-                <div className="fixed right-5 bottom-5 z-30">
-                  <Suspense
-                    fallback={
-                      <div className="bg-line/40 h-10 w-20 animate-pulse rounded-full shadow-md" />
-                    }
-                  >
-                    <LazyHabitacionesModeSwitch
-                      activeTab={activeTab}
-                      onChange={handleTabChange}
-                    />
-                  </Suspense>
-                </div>
+              </div>
 
-                <AnimatePresence mode="wait">
-                  {activeTab === 'lista' ? (
-                    <motion.div
-                      key="tab-habitaciones-lista"
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -8 }}
-                      transition={{ duration: 0.2 }}
+              <Suspense fallback={null}>
+                <LazyDeviceResourceBadge profile={resourceProfile} />
+              </Suspense>
+
+              <AnimatePresence mode="wait">
+                {activeTab === 'lista' ? (
+                  <motion.div
+                    key="tab-habitaciones-lista"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Suspense fallback={<FloorAccordionSkeleton count={3} />}>
+                      <LazyHabitacionesPisosList
+                        onNewHabitacion={handleNewHabitacion}
+                        viewMode={viewMode}
+                        onViewModeChange={setViewMode}
+                      />
+                    </Suspense>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="tab-habitaciones-registro"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.2 }}
+                    className="mx-auto max-w-3xl"
+                  >
+                    <Suspense
+                      fallback={
+                        <div className="border-line bg-panel flex min-h-64 items-center justify-center rounded-2xl border p-8">
+                          <Loader label="Cargando formulario de registro…" />
+                        </div>
+                      }
                     >
-                      <Suspense fallback={<FloorAccordionSkeleton count={3} />}>
-                        <LazyHabitacionesPisosList
-                          onNewHabitacion={handleNewHabitacion}
-                          viewMode={viewMode}
-                          onViewModeChange={setViewMode}
-                          onSelectHabitacion={handleSelectHabitacion}
-                        />
-                      </Suspense>
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="tab-habitaciones-registro"
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -8 }}
-                      transition={{ duration: 0.2 }}
-                      className="mx-auto max-w-3xl"
-                    >
-                      <Suspense
-                        fallback={
-                          <div className="border-line bg-panel flex min-h-64 items-center justify-center rounded-2xl border p-8">
-                            <Loader label="Cargando formulario de registro…" />
-                          </div>
-                        }
-                      >
-                        <LazyHabitacionDetallePanel />
-                      </Suspense>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </HabitacionesErrorBoundary>
+                      <LazyHabitacionDetallePanel />
+                    </Suspense>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          </HabitacionesErrorBoundary>
+        </div>
       </div>
-    </div>
+    </MotionConfig>
   );
 });
 

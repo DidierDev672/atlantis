@@ -23,6 +23,7 @@ import {
 } from '../../../recursos/ui/molecules/recursos-dropdown';
 import { cn } from '../lib/cn';
 import { api } from '../../../../lib/api';
+import { fetchRolesCatalogCached } from '../../infrastructure/habitaciones-catalogs-cache';
 
 export interface DatosBasicosHuesped {
   id?: string;
@@ -543,104 +544,9 @@ function DatosBasicosDialogContent({
     setCurrentGuestIndex((curr) => Math.min(curr, newCount));
   }, [numeroHuespedes]);
 
-  // Estado para las opciones y carga balanceada del campo "Rol del huésped"
+  // Estado para las opciones y carga desde caché compartida del campo "Rol del huésped"
   const [roleOptions, setRoleOptions] = useState<DropdownOption[]>([]);
   const [isLoadingRoles, setIsLoadingRoles] = useState(false);
-
-  // Consultar /roles con balanceo preventivo mediante api-load-balancer para el campo "Rol del huésped"
-  useEffect(() => {
-    let isMounted = true;
-    setIsLoadingRoles(true);
-
-    executeBalancedRequest(
-      () =>
-        api.get<{ id: string; name: string }[]>('/roles', {
-          validateStatus: () => true,
-        }),
-      { maxRetries: 2 }
-    )
-      .then((res) => {
-        if (!isMounted) return;
-        const validation = validateStatusCode(res.status);
-        if (validation.isValid && Array.isArray(res.data)) {
-          const rawRoles = res.data;
-          const mappedOptions: DropdownOption[] = rawRoles.map((r) => {
-            const isHuesped =
-              r.name.trim().toLowerCase() === 'guest' ||
-              r.name.trim().toLowerCase() === 'huesped' ||
-              r.name.trim().toLowerCase() === 'huésped';
-            return {
-              value: r.id,
-              label: isHuesped ? 'Huésped' : r.name,
-              id: r.id,
-              rawName: r.name,
-            };
-          });
-          setRoleOptions(mappedOptions);
-
-          const huespedRole =
-            rawRoles.find(
-              (r) =>
-                r.name
-                  .trim()
-                  .toLowerCase()
-                  .normalize('NFD')
-                  .replace(/[\u0300-\u036f]/g, '') === 'huesped' ||
-                r.name.trim().toLowerCase() === 'guest'
-            ) ||
-            rawRoles.find((r) =>
-              r.name.trim().toLowerCase().includes('huesped')
-            ) ||
-            rawRoles[0];
-
-          if (huespedRole) {
-            const realRoleId = huespedRole.id;
-            setFormData((prev) => {
-              if (
-                !prev.roleId ||
-                prev.roleId === 'huesped' ||
-                prev.roleId === 'role-1'
-              ) {
-                return {
-                  ...prev,
-                  roleId: realRoleId,
-                  roles: [realRoleId],
-                };
-              }
-              return prev;
-            });
-            setGuestsData((prev) =>
-              prev.map((g) => {
-                if (
-                  !g.roleId ||
-                  g.roleId === 'huesped' ||
-                  g.roleId === 'role-1'
-                ) {
-                  return {
-                    ...g,
-                    roleId: realRoleId,
-                    roles: [realRoleId],
-                  };
-                }
-                return g;
-              })
-            );
-          }
-        }
-      })
-      .catch((err) => {
-        console.error('Error al balancear la consulta de roles:', err);
-      })
-      .finally(() => {
-        if (isMounted) {
-          setIsLoadingRoles(false);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   // Datos actuales del formulario
   const [formData, setFormData] = useState<DatosBasicosHuesped>(() => {
@@ -654,6 +560,92 @@ function DatosBasicosDialogContent({
     }
     return { ...INITIAL_STATE };
   });
+
+  // Consultar /roles desde caché global compartida (TTL + deduplicación) para evitar múltiples llamadas
+  useEffect(() => {
+    let isMounted = true;
+    void (async () => {
+      await Promise.resolve();
+      if (!isMounted) return;
+      setIsLoadingRoles(true);
+      try {
+        const rawRoles = await fetchRolesCatalogCached();
+        if (!isMounted) return;
+        const mappedOptions: DropdownOption[] = rawRoles.map((r) => {
+          const isHuesped =
+            r.name.trim().toLowerCase() === 'guest' ||
+            r.name.trim().toLowerCase() === 'huesped' ||
+            r.name.trim().toLowerCase() === 'huésped';
+          return {
+            value: r.id,
+            label: isHuesped ? 'Huésped' : r.name,
+            id: r.id,
+            rawName: r.name,
+          };
+        });
+        setRoleOptions(mappedOptions);
+
+        const huespedRole =
+          rawRoles.find(
+            (r) =>
+              r.name
+                .trim()
+                .toLowerCase()
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '') === 'huesped' ||
+              r.name.trim().toLowerCase() === 'guest'
+          ) ||
+          rawRoles.find((r) =>
+            r.name.trim().toLowerCase().includes('huesped')
+          ) ||
+          rawRoles[0];
+
+        if (huespedRole) {
+          const realRoleId = huespedRole.id;
+          setFormData((prev) => {
+            if (
+              !prev.roleId ||
+              prev.roleId === 'huesped' ||
+              prev.roleId === 'role-1'
+            ) {
+              return {
+                ...prev,
+                roleId: realRoleId,
+                roles: [realRoleId],
+              };
+            }
+            return prev;
+          });
+          setGuestsData((prev) =>
+            prev.map((g) => {
+              if (
+                !g.roleId ||
+                g.roleId === 'huesped' ||
+                g.roleId === 'role-1'
+              ) {
+                return {
+                  ...g,
+                  roleId: realRoleId,
+                  roles: [realRoleId],
+                };
+              }
+              return g;
+            })
+          );
+        }
+      } catch (err) {
+        console.error('Error al consultar catálogo de roles:', err);
+      } finally {
+        if (isMounted) {
+          setIsLoadingRoles(false);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   // Estado para la búsqueda por documento con balanceo preventivo de carga
@@ -1359,8 +1351,7 @@ function DatosBasicosDialogContent({
                   <div className="sm:col-span-1">
                     <RecursosDropdown
                       label="Rol del huésped"
-                      endpoint="/roles"
-                      options={roleOptions.length > 0 ? roleOptions : undefined}
+                      options={roleOptions}
                       isLoading={isLoadingRoles}
                       value={formData.roleId || formData.roles?.[0] || ''}
                       onChange={(val) => handleDropdownChange('roleId', val)}

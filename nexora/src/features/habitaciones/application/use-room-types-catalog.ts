@@ -1,44 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../../../lib/api';
+import { isAxiosError } from 'axios';
 import { validateStatusCode } from '../../../shared/lib/status-code-validator';
-import { executeBalancedRequest } from '../../reservas/infrastructure/api-load-balancer';
 import type { DropdownOption } from '../../recursos/ui/molecules/recursos-dropdown';
-import type { RawRoomTypeCatalogItem } from '../domain/habitacion-lista';
+import {
+  fetchRoomTypesCatalogCached,
+  type CachedRoomTypeItem,
+} from '../infrastructure/habitaciones-catalogs-cache';
 
-function parseRoomTypesPayload(data: unknown): DropdownOption[] {
-  const list: RawRoomTypeCatalogItem[] = Array.isArray(data)
-    ? (data as RawRoomTypeCatalogItem[])
-    : data &&
-        typeof data === 'object' &&
-        Array.isArray((data as { data?: unknown[] }).data)
-      ? (data as { data: RawRoomTypeCatalogItem[] }).data
-      : [];
+function mapCatalogToDropdownOptions(
+  items: CachedRoomTypeItem[]
+): DropdownOption[] {
+  return items.map((item) => {
+    const hasCapacity = item.capacityPeople != null && item.capacityPeople > 0;
+    const label = hasCapacity
+      ? `${item.name} · ${item.capacityPeople} ${
+          item.capacityPeople === 1 ? 'persona' : 'personas'
+        }`
+      : item.name;
 
-  return list
-    .filter((item) => item && item.id != null)
-    .map((item) => {
-      const id = String(item.id).trim();
-      const name =
-        typeof item.name === 'string' && item.name.trim()
-          ? item.name.trim()
-          : 'Tipo de habitación';
-      const capacityNum = Number(item.capacity);
-      const hasCapacity = !Number.isNaN(capacityNum) && capacityNum > 0;
-      const label = hasCapacity
-        ? `${name} · ${capacityNum} ${capacityNum === 1 ? 'persona' : 'personas'}`
-        : name;
-
-      return {
-        id,
-        value: id,
-        label,
-        rawName: name,
-      };
-    });
+    return {
+      id: item.id,
+      value: item.id,
+      label,
+      rawName: item.name,
+    };
+  });
 }
 
 /**
- * Hook para consultar `/room-types` usando load balancer y validador de status code.
+ * Hook que reutiliza la caché compartida de `/room-types` (TTL 5 min + deduplicación)
+ * evitando descargas duplicadas al alternar entre Lista y Crear habitación.
  */
 export function useRoomTypesCatalog() {
   const [options, setOptions] = useState<DropdownOption[]>([]);
@@ -53,34 +44,20 @@ export function useRoomTypesCatalog() {
     };
   }, []);
 
-  const fetchRoomTypes = useCallback(async () => {
+  const loadRoomTypes = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
     try {
-      const response = await executeBalancedRequest(
-        () =>
-          api.get<unknown>('/room-types', {
-            validateStatus: () => true,
-          }),
-        { maxRetries: 2 }
-      );
-
+      const catalog = await fetchRoomTypesCatalogCached(forceRefresh);
       if (!isMountedRef.current) return;
-
-      const validation = validateStatusCode(response.status);
-      if (!validation.isValid) {
-        setError(
-          validation.message ??
-            'No pudimos obtener los tipos de habitación en este momento.'
-        );
-        return;
-      }
-
-      setOptions(parseRoomTypesPayload(response.data));
-    } catch {
+      setOptions(mapCatalogToDropdownOptions(catalog));
+    } catch (err) {
       if (!isMountedRef.current) return;
+      const status = isAxiosError(err) ? (err.response?.status ?? 0) : 0;
+      const validation = validateStatusCode(status);
       setError(
-        'No pudimos conectar para cargar los tipos de habitación. Inténtalo de nuevo.'
+        validation.message ??
+          'No pudimos obtener los tipos de habitación en este momento.'
       );
     } finally {
       if (isMountedRef.current) {
@@ -89,53 +66,26 @@ export function useRoomTypesCatalog() {
     }
   }, []);
 
+  const reload = useCallback(async () => {
+    await loadRoomTypes(true);
+  }, [loadRoomTypes]);
+
   useEffect(() => {
     let active = true;
-
-    async function loadOnMount() {
-      try {
-        const response = await executeBalancedRequest(
-          () =>
-            api.get<unknown>('/room-types', {
-              validateStatus: () => true,
-            }),
-          { maxRetries: 2 }
-        );
-
-        if (!active || !isMountedRef.current) return;
-
-        const validation = validateStatusCode(response.status);
-        if (!validation.isValid) {
-          setError(
-            validation.message ??
-              'No pudimos obtener los tipos de habitación en este momento.'
-          );
-          return;
-        }
-
-        setOptions(parseRoomTypesPayload(response.data));
-      } catch {
-        if (!active || !isMountedRef.current) return;
-        setError(
-          'No pudimos conectar para cargar los tipos de habitación. Inténtalo de nuevo.'
-        );
-      } finally {
-        if (active && isMountedRef.current) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void loadOnMount();
+    void (async () => {
+      await Promise.resolve();
+      if (!active || !isMountedRef.current) return;
+      await loadRoomTypes(false);
+    })();
     return () => {
       active = false;
     };
-  }, []);
+  }, [loadRoomTypes]);
 
   return {
     options,
     loading,
     error,
-    reload: fetchRoomTypes,
+    reload,
   };
 }

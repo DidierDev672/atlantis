@@ -2,6 +2,7 @@ import { Suspense, lazy, memo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faXmark } from '@fortawesome/free-solid-svg-icons';
+import { useDeviceResourceProfile } from '../../application/use-device-resource-profile';
 import { useOperativaDrawer } from '../../application/use-operativa-drawer';
 import type { RoomRow } from '../../domain/habitacion-lista';
 import { Loader } from '../atoms/loader';
@@ -54,12 +55,16 @@ export const HabitacionOperativaDrawer = memo(
     onOpenFullDetail,
   }: HabitacionOperativaDrawerProps) {
     const {
+      policy: { enableBackdropBlur },
+    } = useDeviceResourceProfile();
+    const {
       activeTab,
       setActiveTab,
       staySummary,
       loadingStay,
       menuItems,
       consumptions,
+      pendingConsumptions,
       loadingMenu,
       addingItemId,
       updatingConsumptionId,
@@ -70,6 +75,7 @@ export const HabitacionOperativaDrawer = memo(
       handleAddConsumption,
       handleUpdateConsumptionQty,
       handleClearConsumptions,
+      handleConfirmPendingConsumptions,
     } = useOperativaDrawer(room, nightlyRate, onChangeStatus, onClose);
 
     return (
@@ -82,7 +88,7 @@ export const HabitacionOperativaDrawer = memo(
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={onClose}
-              className="fixed inset-0 z-40 bg-slate-900/35 backdrop-blur-[1px]"
+              className={`fixed inset-0 z-40 bg-slate-900/35 ${enableBackdropBlur ? 'backdrop-blur-[1px]' : ''}`}
             />
 
             <motion.aside
@@ -129,10 +135,10 @@ export const HabitacionOperativaDrawer = memo(
               >
                 <LazyDrawerOperativaTabs
                   activeTab={activeTab}
-                  consumptionsCount={consumptions.reduce(
-                    (acc, c) => acc + c.amount,
-                    0
-                  )}
+                  consumptionsCount={
+                    consumptions.reduce((acc, c) => acc + c.amount, 0) +
+                    pendingConsumptions.reduce((acc, c) => acc + c.amount, 0)
+                  }
                   onChangeTab={setActiveTab}
                 />
               </Suspense>
@@ -167,6 +173,7 @@ export const HabitacionOperativaDrawer = memo(
                       room={room}
                       menuItems={menuItems}
                       consumptions={consumptions}
+                      pendingConsumptions={pendingConsumptions}
                       loadingMenu={loadingMenu}
                       addingItemId={addingItemId}
                       updatingConsumptionId={updatingConsumptionId}
@@ -174,6 +181,9 @@ export const HabitacionOperativaDrawer = memo(
                       onAddConsumption={handleAddConsumption}
                       onUpdateConsumptionQty={handleUpdateConsumptionQty}
                       onClearConsumptions={handleClearConsumptions}
+                      onConfirmPendingConsumptions={
+                        handleConfirmPendingConsumptions
+                      }
                     />
                   ) : (
                     <LazyDrawerTabHousekeeping

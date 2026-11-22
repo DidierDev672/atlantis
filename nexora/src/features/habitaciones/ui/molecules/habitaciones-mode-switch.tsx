@@ -1,5 +1,5 @@
 import { memo, useCallback } from 'react';
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { faList, faPlus } from '@fortawesome/free-solid-svg-icons';
@@ -21,12 +21,15 @@ const TABS: ReadonlyArray<{
 ];
 
 /**
- * Molécula: Switch minimalista icon-only (FontAwesome) para alternar entre Lista y Crear habitación.
+ * Molécula: Switch flotante minimalista icon-only (FontAwesome) sin backdrop-blur
+ * para evitar consumo continuo de GPU/VRAM durante el scroll.
  */
 export const HabitacionesModeSwitch = memo(function HabitacionesModeSwitch({
   activeTab,
   onChange,
 }: HabitacionesModeSwitchProps) {
+  const reducedMotion = useReducedMotion();
+
   const handleSelect = useCallback(
     async (tab: HabitacionesTabKey) => {
       try {
@@ -42,7 +45,7 @@ export const HabitacionesModeSwitch = memo(function HabitacionesModeSwitch({
     <div
       role="tablist"
       aria-label="Cambiar entre lista y registro de habitaciones"
-      className="border-line bg-panel/95 inline-flex items-center gap-1 rounded-full border p-1 shadow-lg ring-1 ring-black/5 backdrop-blur-md dark:ring-white/10"
+      className="border-line bg-panel inline-flex items-center gap-1 rounded-full border p-1 shadow-lg ring-1 ring-black/5 dark:ring-white/10"
     >
       {TABS.map(({ key, label, icon }) => {
         const isActive = activeTab === key;
@@ -61,13 +64,16 @@ export const HabitacionesModeSwitch = memo(function HabitacionesModeSwitch({
                 : 'text-ink-muted hover:text-ink'
             }`}
           >
-            {isActive && (
-              <motion.span
-                layoutId="habitacionesPageModeSwitchIndicator"
-                transition={{ type: 'spring', stiffness: 480, damping: 32 }}
-                className="bg-primary absolute inset-0 rounded-full shadow-xs"
-              />
-            )}
+            {isActive &&
+              (reducedMotion ? (
+                <span className="bg-primary absolute inset-0 rounded-full shadow-xs" />
+              ) : (
+                <motion.span
+                  layoutId="habitacionesPageModeSwitchIndicator"
+                  transition={{ type: 'spring', stiffness: 480, damping: 32 }}
+                  className="bg-primary absolute inset-0 rounded-full shadow-xs"
+                />
+              ))}
             <FontAwesomeIcon
               icon={icon}
               className="relative z-10 size-3.5"

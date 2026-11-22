@@ -3,22 +3,23 @@ import { motion } from 'motion/react';
 import { fadeIn } from '../../../../design-tokens/motion';
 import { useHabitacionesPisos } from '../../application/use-habitaciones-pisos';
 import { useVerificarHabitacionesTarifas } from '../../application/use-verificar-habitaciones-tarifas';
-import { matchesHabitacionStatus, type RoomRow } from '../../domain/habitacion-lista';
+import {
+  matchesHabitacionStatus,
+  type RoomRow,
+} from '../../domain/habitacion-lista';
 import { FloorAccordionSkeleton } from '../atoms/floor-accordion-skeleton';
-import { FloorNavigationPills } from '../molecules/floor-navigation-pills';
-import { HabitacionesEmptyState } from '../molecules/habitaciones-empty-state';
-import { HabitacionesErrorState } from '../molecules/habitaciones-error-state';
-import { HabitacionesFiltrosBar } from '../molecules/habitaciones-filtros-bar';
 import type { HabitacionesViewMode } from '../molecules/habitaciones-view-mode-toggle';
 import {
   HabitacionesPisosModals,
   type SelectedBuildingState,
   type SelectedTarifasState,
 } from './habitaciones-pisos-modals';
-import { PisoAccordionItem } from './piso-accordion-item';
 
-const LazyHabitacionesKpiFilterBar = lazy(
-  () => import('../molecules/habitaciones-kpi-filter-bar')
+const LazyHabitacionesPisosHeader = lazy(
+  () => import('../molecules/habitaciones-pisos-header')
+);
+const LazyHabitacionesPisosFeed = lazy(
+  () => import('./habitaciones-pisos-feed')
 );
 
 export interface HabitacionesPisosListProps {
@@ -54,7 +55,7 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
     allRooms,
     floorGroups,
     expandedFloors,
-    expandedRooms,
+    expandedRoomRefs,
     enrichingFloors,
     floorErrors,
     floorBadgeFilters,
@@ -74,6 +75,7 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
     retryBuilding,
     retryBed,
     updateRoomStatus,
+    markRoomOccupiedLocal,
   } = useHabitacionesPisos();
 
   const {
@@ -84,7 +86,7 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
     markRoomWithTariff,
     recheckAll,
     isVerifying,
-  } = useVerificarHabitacionesTarifas({ rooms: expandedRooms });
+  } = useVerificarHabitacionesTarifas({ rooms: expandedRoomRefs });
 
   const handleReloadAll = useCallback(async () => {
     try {
@@ -97,9 +99,13 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
 
   const handleSelectFloorKey = useCallback(
     (key: string) => {
-      setSelectedFloorKey(key);
-      if (key !== 'all' && !expandedFloors.has(key)) {
-        toggleFloor(key);
+      try {
+        setSelectedFloorKey(key);
+        if (key !== 'all' && !expandedFloors.has(key)) {
+          toggleFloor(key);
+        }
+      } catch (err) {
+        console.error('Error al seleccionar piso:', err);
       }
     },
     [expandedFloors, toggleFloor]
@@ -115,7 +121,11 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
 
   const handleQuickMarkAvailable = useCallback(
     async (room: RoomRow) => {
-      await updateRoomStatus(room, 'available');
+      try {
+        await updateRoomStatus(room, 'available');
+      } catch (err) {
+        console.error('Error al marcar habitación disponible:', err);
+      }
     },
     [updateRoomStatus]
   );
@@ -131,18 +141,28 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
 
   const handleAssignGuestSuccess = useCallback(async () => {
     try {
-      await reload();
+      if (assignGuestDrawerRoom?.id) {
+        markRoomOccupiedLocal(assignGuestDrawerRoom.id);
+      }
     } catch (err) {
-      console.error('Error al recargar habitaciones tras asignar huésped:', err);
+      console.error(
+        'Error al actualizar estado local tras asignar huésped:',
+        err
+      );
     }
-  }, [reload]);
+  }, [assignGuestDrawerRoom, markRoomOccupiedLocal]);
 
   const handleDrawerStatusChange = useCallback(
     async (room: RoomRow, newStatus: string) => {
-      await updateRoomStatus(room, newStatus);
-      setDrawerRoom((prev) =>
-        prev && prev.id === room.id ? { ...prev, status: newStatus } : prev
-      );
+      try {
+        await updateRoomStatus(room, newStatus);
+        setDrawerRoom((prev) =>
+          prev && prev.id === room.id ? { ...prev, status: newStatus } : prev
+        );
+      } catch (err) {
+        console.error('Error al cambiar estado desde el drawer:', err);
+        throw err;
+      }
     },
     [updateRoomStatus]
   );
@@ -194,6 +214,14 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
     [activeStatuses, filters, setFilters]
   );
 
+  const hasActiveFilters =
+    Boolean(filters.search.trim()) ||
+    filters.status !== 'all' ||
+    (filters.statuses?.length ?? 0) > 0 ||
+    filters.buildingId !== 'all' ||
+    (filters.roomTypeIds?.length ?? 0) > 0 ||
+    selectedFloorKey !== 'all';
+
   return (
     <motion.section
       aria-label="Mapa operativo de habitaciones por piso"
@@ -202,114 +230,82 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
       animate="visible"
       className="space-y-5"
     >
-      {/* Cabecera Operativa: KPIs Minimalistas + Filtros + Píldoras de Piso */}
-      <div className="border-line bg-panel space-y-3 rounded-2xl border p-4 shadow-sm sm:p-5">
-        <Suspense
-          fallback={
-            <div className="bg-line/35 h-8 w-full max-w-xl animate-pulse rounded-full" />
-          }
-        >
-          <LazyHabitacionesKpiFilterBar
-            rooms={allRooms}
-            activeStatuses={activeStatuses}
-            onSelectStatus={handleToggleKpiStatus}
-          />
-        </Suspense>
-
-        <HabitacionesFiltrosBar
+      <Suspense
+        fallback={
+          <div className="border-line bg-panel h-32 animate-pulse rounded-2xl border p-4" />
+        }
+      >
+        <LazyHabitacionesPisosHeader
+          allRooms={allRooms}
+          activeStatuses={activeStatuses}
           filters={filters}
           knownBuildings={knownBuildings}
-          loadedCount={filteredCount}
-          totalCount={totalCount}
           filteredCount={filteredCount}
-          onFilterChange={setFilters}
-          onReload={handleReloadAll}
-          isReloading={initialLoading}
+          totalCount={totalCount}
+          initialLoading={initialLoading}
           viewMode={activeViewMode}
-          onViewModeChange={handleViewModeChange}
-          onRecheckTarifas={recheckAll}
-          isVerifyingTarifas={isVerifying}
-        />
-
-        <FloorNavigationPills
+          isVerifying={isVerifying}
           floorGroups={floorGroups}
           selectedFloorKey={selectedFloorKey}
+          onToggleKpiStatus={handleToggleKpiStatus}
+          onFilterChange={setFilters}
+          onReload={() => void handleReloadAll()}
+          onViewModeChange={handleViewModeChange}
+          onRecheckTarifas={() => void recheckAll()}
           onSelectFloorKey={handleSelectFloorKey}
           onExpandAll={expandAllFloors}
           onCollapseAll={collapseAllFloors}
         />
-      </div>
+      </Suspense>
 
-      {error ? (
-        <div className="border-line bg-panel rounded-2xl border p-4 shadow-sm sm:p-6">
-          <HabitacionesErrorState
-            message={error}
-            actionLabel="Reintentar carga de habitaciones"
-            onRetry={reload}
-          />
-        </div>
-      ) : initialLoading ? (
-        <FloorAccordionSkeleton count={3} />
-      ) : visibleFloorGroups.length === 0 ? (
-        <div className="border-line bg-panel rounded-2xl border p-4 shadow-sm sm:p-6">
-          <HabitacionesEmptyState
-            hasActiveFilters={
-              Boolean(filters.search.trim()) ||
-              filters.status !== 'all' ||
-              (filters.statuses?.length ?? 0) > 0 ||
-              filters.buildingId !== 'all' ||
-              (filters.roomTypeIds?.length ?? 0) > 0 ||
-              selectedFloorKey !== 'all'
-            }
-            onNewHabitacion={onNewHabitacion}
-          />
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {visibleFloorGroups.map((group) => (
-            <PisoAccordionItem
-              key={group.floorKey}
-              group={group}
-              isOpen={expandedFloors.has(group.floorKey)}
-              isEnriching={Boolean(enrichingFloors[group.floorKey])}
-              floorError={floorErrors[group.floorKey] ?? null}
-              activeBadgeFilter={floorBadgeFilters[group.floorKey] ?? 'all'}
-              viewMode={activeViewMode}
-              hasTariff={hasTariff}
-              getRateId={getRateId}
-              getTariffPrice={getTariffPrice}
-              getTariffName={getTariffName}
-              isVerifying={isVerifying}
-              onToggle={toggleFloor}
-              onSelectBadge={selectFloorBadge}
-              onRetryFloor={retryFloor}
-              onRetryBuilding={retryBuilding}
-              onRetryBed={retryBed}
-              onOpenBuilding={(id, summary, room) =>
-                setSelectedBuilding({
-                  id,
-                  summary,
-                  room: { number: room.number, floor: room.floor },
-                })
-              }
-              onOpenTarifas={(row, roomHasTariff, rateId) =>
-                setSelectedRoomForTarifas({
-                  id: row.id,
-                  number: row.number,
-                  floor: row.floor,
-                  hasTariff: roomHasTariff,
-                  rateId,
-                })
-              }
-              onOpenRoomDetail={setSelectedRoomForDetail}
-              onSelectHabitacion={onSelectHabitacion}
-              onOpenOperativaDrawer={setDrawerRoom}
-              onOpenAssignGuestDrawer={handleOpenAssignGuestDrawer}
-              onQuickMarkAvailable={handleQuickMarkAvailable}
-            />
-          ))}
-        </div>
-      )}
+      <Suspense fallback={<FloorAccordionSkeleton count={3} />}>
+        <LazyHabitacionesPisosFeed
+          error={error}
+          initialLoading={initialLoading}
+          visibleFloorGroups={visibleFloorGroups}
+          hasActiveFilters={hasActiveFilters}
+          expandedFloors={expandedFloors}
+          enrichingFloors={enrichingFloors}
+          floorErrors={floorErrors}
+          floorBadgeFilters={floorBadgeFilters}
+          viewMode={activeViewMode}
+          hasTariff={hasTariff}
+          getRateId={getRateId}
+          getTariffPrice={getTariffPrice}
+          getTariffName={getTariffName}
+          isVerifying={isVerifying}
+          onReload={reload}
+          onNewHabitacion={onNewHabitacion}
+          onToggleFloor={toggleFloor}
+          onSelectBadge={selectFloorBadge}
+          onRetryFloor={retryFloor}
+          onRetryBuilding={retryBuilding}
+          onRetryBed={retryBed}
+          onOpenBuilding={(id, summary, room) =>
+            setSelectedBuilding({
+              id,
+              summary,
+              room: { number: room.number, floor: room.floor },
+            })
+          }
+          onOpenTarifas={(row, roomHasTariff, rateId) =>
+            setSelectedRoomForTarifas({
+              id: row.id,
+              number: row.number,
+              floor: row.floor,
+              hasTariff: roomHasTariff,
+              rateId,
+            })
+          }
+          onOpenRoomDetail={setSelectedRoomForDetail}
+          onSelectHabitacion={
+            onSelectHabitacion ?? handleOpenAssignGuestDrawer
+          }
+          onOpenOperativaDrawer={setDrawerRoom}
+          onOpenAssignGuestDrawer={handleOpenAssignGuestDrawer}
+          onQuickMarkAvailable={handleQuickMarkAvailable}
+        />
+      </Suspense>
 
       <HabitacionesPisosModals
         selectedBuilding={selectedBuilding}
@@ -330,7 +326,11 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
         onAssignGuestSuccess={handleAssignGuestSuccess}
         onAssignGuestFromOperativa={(room) => {
           setDrawerRoom(null);
-          onSelectHabitacion?.(room);
+          if (onSelectHabitacion) {
+            onSelectHabitacion(room);
+          } else {
+            handleOpenAssignGuestDrawer(room);
+          }
         }}
         onChangeDrawerStatus={handleDrawerStatusChange}
         onTariffApplied={markRoomWithTariff}

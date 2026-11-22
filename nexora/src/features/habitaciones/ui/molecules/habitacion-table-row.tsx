@@ -1,5 +1,4 @@
 import { memo } from 'react';
-import { motion } from 'motion/react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faBuilding,
@@ -9,7 +8,6 @@ import {
 } from '@fortawesome/free-solid-svg-icons';
 import { type RoomRow, puedeAsignarHuesped } from '../../domain/habitacion-lista';
 import { formatCurrencyCOP, formatRelativeTimeEs } from '../lib/formatters';
-import { FLOOR_STAGGER_ROW_VARIANTS } from '../lib/motion-variants';
 import { HabitacionStatusBadge } from './habitacion-status-badge';
 import { HabitacionTariffCell } from './habitacion-tariff-cell';
 
@@ -53,8 +51,7 @@ export const HabitacionTableRow = memo(function HabitacionTableRow({
   };
 
   return (
-    <motion.tr
-      variants={FLOOR_STAGGER_ROW_VARIANTS}
+    <tr
       onClick={(e) => {
         const target = e.target as HTMLElement;
         if (target.closest('button') || target.closest('a')) return;
@@ -199,6 +196,6 @@ export const HabitacionTableRow = memo(function HabitacionTableRow({
           {formatRelativeTimeEs(row.updatedAt)}
         </span>
       </td>
-    </motion.tr>
+    </tr>
   );
 });

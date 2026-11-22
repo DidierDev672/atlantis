@@ -1,5 +1,6 @@
 import { api } from '../../../lib/api';
 import { translateDocumentTypeToSpanish } from '../domain/habitacion-stay';
+import { BoundedTtlCache } from '../infrastructure/bounded-ttl-cache';
 
 export interface DrawerGuestItem {
   id: string;
@@ -8,6 +9,14 @@ export interface DrawerGuestItem {
   phoneNumber?: string;
   isPrimary: boolean;
 }
+
+const PERSON_CACHE_TTL_MS = 2 * 60 * 1000;
+const PERSON_FETCH_BATCH = 6;
+const personCache = new BoundedTtlCache<string, Record<string, unknown>>(
+  120,
+  PERSON_CACHE_TTL_MS
+);
+const personInFlight = new Map<string, Promise<Record<string, unknown> | null>>();
 
 function extractPersonArray(payload: unknown): Record<string, unknown>[] {
   if (Array.isArray(payload)) {
@@ -64,9 +73,37 @@ function mapRecordToGuest(
   };
 }
 
+async function fetchPersonCached(
+  personId: string
+): Promise<Record<string, unknown> | null> {
+  const cached = personCache.get(personId);
+  if (cached) return cached;
+
+  const inflight = personInFlight.get(personId);
+  if (inflight) return inflight;
+
+  const promise = (async () => {
+    try {
+      const res = await api.get<unknown>(
+        `/person/${encodeURIComponent(personId)}`,
+        { validateStatus: (s) => s >= 200 && s < 300 }
+      );
+      const list = extractPersonArray(res.data);
+      const record = list[0] ?? null;
+      if (record) personCache.set(personId, record);
+      return record;
+    } finally {
+      personInFlight.delete(personId);
+    }
+  })();
+
+  personInFlight.set(personId, promise);
+  return promise;
+}
+
 /**
- * Obtiene todos los huéspedes vinculados a una estancia (`/stays_person/{stayId}`
- * y respaldo con `/person/{id}` para cualquier `person_ids` faltante).
+ * Obtiene huéspedes de la estancia (`/stays_person/{stayId}` y `/person/{id}`
+ * en lotes acotados con caché TTL de 2 min y deduplicación).
  */
 export async function fetchDrawerStayGuests(
   stayId: string,
@@ -85,6 +122,9 @@ export async function fetchDrawerStayGuests(
       if (!guestsById.has(mapped.id)) {
         guestsById.set(mapped.id, mapped);
       }
+      if (mapped.id) {
+        personCache.set(mapped.id, rec);
+      }
     });
   } catch {
     // Continuar con respaldo por person_ids si /stays_person falla
@@ -98,19 +138,12 @@ export async function fetchDrawerStayGuests(
       .map((id) => String(id ?? '').trim())
       .filter((id) => id.length > 0 && !guestsById.has(id));
 
-    if (missingIds.length > 0) {
+    for (let i = 0; i < missingIds.length; i += PERSON_FETCH_BATCH) {
+      const chunk = missingIds.slice(i, i + PERSON_FETCH_BATCH);
       const settled = await Promise.allSettled(
-        missingIds.map(async (pid) => {
-          const res = await api.get<unknown>(
-            `/person/${encodeURIComponent(pid)}`,
-            { validateStatus: (s) => s >= 200 && s < 300 }
-          );
-          const list = extractPersonArray(res.data);
-          return list[0] ?? null;
-        })
+        chunk.map((pid) => fetchPersonCached(pid))
       );
-
-      settled.forEach((entry) => {
+      for (const entry of settled) {
         if (entry.status === 'fulfilled' && entry.value) {
           const idx = guestsById.size;
           const mapped = mapRecordToGuest(entry.value, idx);
@@ -118,7 +151,7 @@ export async function fetchDrawerStayGuests(
             guestsById.set(mapped.id, mapped);
           }
         }
-      });
+      }
     }
   } catch {
     // Fallback silencioso

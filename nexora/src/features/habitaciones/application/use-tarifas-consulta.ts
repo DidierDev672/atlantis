@@ -1,95 +1,107 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { isAxiosError } from 'axios'
-import { api } from '../../../lib/api'
-import type { RawTarifaBackend, TarifasErrorState } from '../domain/habitacion-tarifa'
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { isAxiosError } from 'axios';
+import type {
+  RawTarifaBackend,
+  TarifasErrorState,
+} from '../domain/habitacion-tarifa';
+import { fetchRatesCatalogCached } from '../infrastructure/habitaciones-catalogs-cache';
 
 export interface UseTarifasConsultaOptions {
-  isOpen: boolean
-  initialRateId?: string | null
+  isOpen: boolean;
+  initialRateId?: string | null;
 }
 
-export function useTarifasConsulta({ isOpen, initialRateId }: UseTarifasConsultaOptions) {
-  const [loading, setLoading] = useState(false)
-  const [rates, setRates] = useState<RawTarifaBackend[]>([])
-  const [selectedRateId, setSelectedRateId] = useState<string>('')
-  const [errorType, setErrorType] = useState<TarifasErrorState | null>(null)
-  const [statusCode, setStatusCode] = useState<number | null>(null)
+/**
+ * Hook de consulta de tarifas para `TarifasModal` conectado a la caché global de `/rates`
+ * para no repetir la descarga completa cada vez que se abre el modal.
+ */
+export function useTarifasConsulta({
+  isOpen,
+  initialRateId,
+}: UseTarifasConsultaOptions) {
+  const [loading, setLoading] = useState(false);
+  const [rates, setRates] = useState<RawTarifaBackend[]>([]);
+  const [selectedRateId, setSelectedRateId] = useState<string>('');
+  const [errorType, setErrorType] = useState<TarifasErrorState | null>(null);
+  const [statusCode, setStatusCode] = useState<number | null>(null);
 
-  const fetchRates = useCallback(async () => {
-    setLoading(true)
-    setErrorType(null)
-    setStatusCode(null)
+  const fetchRates = useCallback(
+    async (forceRefresh = false) => {
+      setLoading(true);
+      setErrorType(null);
+      setStatusCode(null);
 
-    try {
-      const response = await api.get<unknown>('/rates', {
-        validateStatus: (status) => status >= 200 && status < 300,
-      })
+      try {
+        const cachedItems = await fetchRatesCatalogCached(forceRefresh);
+        const list = cachedItems.map(
+          (item) => item.raw as unknown as RawTarifaBackend
+        );
+        setStatusCode(200);
 
-      const status = response.status
-      setStatusCode(status)
-
-      const raw = response.data
-      const list: RawTarifaBackend[] = Array.isArray(raw)
-        ? (raw as RawTarifaBackend[])
-        : raw && typeof raw === 'object' && 'data' in raw && Array.isArray((raw as { data: unknown }).data)
-          ? ((raw as { data: RawTarifaBackend[] }).data)
-          : []
-
-      if (list.length > 0) {
-        setRates(list)
-        // Seleccionamos la tarifa inicial solicitada o la primera por defecto
-        const match = initialRateId ? list.find((r) => r.id === initialRateId) : null
-        setSelectedRateId(match ? match.id : list[0].id)
-        setErrorType(null)
-      } else {
-        // Status 200 pero sin tarifas registradas en el sistema
-        setRates([])
-        setSelectedRateId('')
-        setErrorType('empty')
-      }
-    } catch (err: unknown) {
-      setRates([])
-      setSelectedRateId('')
-
-      if (isAxiosError(err)) {
-        const status = err.response?.status ?? 0
-        setStatusCode(status)
-
-        if (status === 500) {
-          setErrorType('server_error')
-        } else if (status === 404 || status === 204) {
-          setErrorType('empty')
+        if (list.length > 0) {
+          setRates(list);
+          const match = initialRateId
+            ? list.find((r) => r.id === initialRateId)
+            : null;
+          setSelectedRateId(match ? match.id : list[0].id);
+          setErrorType(null);
         } else {
-          setErrorType('server_error')
+          setRates([]);
+          setSelectedRateId('');
+          setErrorType('empty');
         }
-      } else {
-        setErrorType('network_error')
+      } catch (err: unknown) {
+        setRates([]);
+        setSelectedRateId('');
+
+        if (isAxiosError(err)) {
+          const status = err.response?.status ?? 0;
+          setStatusCode(status);
+
+          if (status === 404 || status === 204) {
+            setErrorType('empty');
+          } else {
+            setErrorType('server_error');
+          }
+        } else {
+          setErrorType('network_error');
+        }
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+    },
+    [initialRateId]
+  );
 
   useEffect(() => {
-    if (isOpen) {
-      void fetchRates()
-    } else {
-      setRates([])
-      setSelectedRateId('')
-      setErrorType(null)
-      setStatusCode(null)
-      setLoading(false)
-    }
-  }, [isOpen, fetchRates])
+    let cancelled = false;
+    void (async () => {
+      await Promise.resolve();
+      if (cancelled) return;
+      if (!isOpen) {
+        setRates([]);
+        setSelectedRateId('');
+        setErrorType(null);
+        setStatusCode(null);
+        setLoading(false);
+        return;
+      }
+      await fetchRates(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, fetchRates]);
 
   const selectedRate = useMemo(() => {
-    if (!selectedRateId) return null
-    return rates.find((r) => r.id === selectedRateId) ?? null
-  }, [rates, selectedRateId])
+    if (!selectedRateId) return null;
+    return rates.find((r) => r.id === selectedRateId) ?? null;
+  }, [rates, selectedRateId]);
 
   const retry = useCallback(() => {
-    void fetchRates()
-  }, [fetchRates])
+    void fetchRates(true);
+  }, [fetchRates]);
 
   return {
     loading,
@@ -100,5 +112,5 @@ export function useTarifasConsulta({ isOpen, initialRateId }: UseTarifasConsulta
     errorType,
     statusCode,
     retry,
-  }
+  };
 }
