@@ -40,7 +40,7 @@ export function ClientSessionCard({
               </span>
             </div>
             <p className="text-xs text-ink-muted mt-0.5">
-              {session.email || 'Cuenta autenticada en Nexora'}
+              {session.email || 'Cuenta autenticada en Aloja'}
             </p>
           </div>
         </div>

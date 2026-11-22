@@ -108,7 +108,7 @@ export const PAGE_META: Record<NavId, PageMeta> = {
     soonMessage: '',
   },
   paletas: {
-    title: 'Personalizar tu Nexora',
+    title: 'Personalizar tu Aloja',
     subtitle:
       'Elegí la paleta de colores que mejor te represente y dejá que todo tu panel hable en tu tono.',
     soonMessage: '',

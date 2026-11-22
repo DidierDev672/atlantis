@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import type { ReactNode } from 'react';
 import { fadeUp } from '../../../../design-tokens/motion';
 import { cn } from '../lib/cn';
-import { useTemaStore } from '../../application/tema-store';
+import { DEFAULT_HOTEL_LOGO, useTemaStore } from '../../application/tema-store';
 
 export interface LoaderProps {
   label?: string;
@@ -28,17 +28,17 @@ export function Loader({
 
   const spinner = (
     <>
-      {hotelLogo && (fullScreen || overlay) && (
+      {(fullScreen || overlay) && (
         <div className="flex items-center gap-2 rounded-2xl border border-line/60 bg-panel/95 px-3.5 py-1.5 shadow-sm mb-1 backdrop-blur-xs">
           <span className="grid size-7 place-items-center rounded-lg bg-cream text-primary overflow-hidden shadow-xs shrink-0">
             <img
-              src={hotelLogo}
-              alt={hotelName || 'Logo del hotel'}
-              className="size-full object-cover"
+              src={hotelLogo || DEFAULT_HOTEL_LOGO}
+              alt={hotelName || 'Logo del proyecto'}
+              className={hotelLogo ? 'size-full object-cover' : 'size-full object-contain p-0.5'}
             />
           </span>
           <div className="text-left">
-            <p className="text-[11px] font-bold text-ink leading-tight">Nexora</p>
+            <p className="text-[11px] font-bold text-ink leading-tight">Aloja</p>
             <p className="text-[10px] text-ink-muted leading-tight truncate max-w-[150px]">
               {hotelName}
             </p>

@@ -1,4 +1,4 @@
-import { useState, useEffect, type ChangeEvent, type FormEvent } from 'react';
+import { Suspense, lazy, useState, useEffect, type ChangeEvent, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import type { RoomRow } from '../../domain/habitacion-lista';
@@ -12,6 +12,10 @@ import {
   type DatosBasicosHuesped,
 } from './asignar-huesped-datos-basicos-modal';
 import { Loading } from '../../../../shared/loading';
+
+const LazyAsignarHuespedRocketOverlay = lazy(
+  () => import('../organisms/asignar-huesped-rocket-overlay')
+);
 import { validateStatusCode } from '../../../../shared/lib/status-code-validator';
 import { executeBalancedRequest } from '../../../reservas/infrastructure/api-load-balancer';
 import { api } from '../../../../lib/api';
@@ -120,7 +124,7 @@ function getPsychologicalErrorMessage(
     case 409:
       return {
         title: 'Registro previo detectado en el sistema',
-        message: `Tranquilo(a), tu información está completamente a salvo. El documento ${docNumber ? `"${docNumber}"` : ''} ya figura registrado en la base de datos de Nexora.`,
+        message: `Tranquilo(a), tu información está completamente a salvo. El documento ${docNumber ? `"${docNumber}"` : ''} ya figura registrado en la base de datos de Aloja.`,
         solution:
           'Verifica si el número de documento fue digitado correctamente o si este huésped ya se hospedó previamente.',
       };
@@ -230,6 +234,7 @@ export interface AsignarHuespedModalFormularioProps {
   onClose: () => void;
   room: RoomRow;
   onSuccess?: (data: FormularioAsignarHuesped) => void;
+  presentation?: 'modal' | 'drawer';
 }
 
 const OPCIONES_METODO_PAGO = [
@@ -308,6 +313,7 @@ export function AsignarHuespedModalFormulario({
   onClose,
   room,
   onSuccess,
+  presentation = 'modal',
 }: AsignarHuespedModalFormularioProps) {
   if (typeof document === 'undefined') return null;
 
@@ -318,6 +324,7 @@ export function AsignarHuespedModalFormulario({
           room={room}
           onClose={onClose}
           onSuccess={onSuccess}
+          presentation={presentation}
         />
       )}
     </AnimatePresence>,
@@ -329,10 +336,12 @@ function AsignarHuespedDialogContent({
   room,
   onClose,
   onSuccess,
+  presentation = 'modal',
 }: {
   room: RoomRow;
   onClose: () => void;
   onSuccess?: (data: FormularioAsignarHuesped) => void;
+  presentation?: 'modal' | 'drawer';
 }) {
   const [formData, setFormData] = useState<FormularioAsignarHuesped>(() => ({
     ...INITIAL_FORM,
@@ -834,9 +843,17 @@ function AsignarHuespedDialogContent({
     }
   };
 
+  const isDrawer = presentation === 'drawer';
+
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-3 sm:p-6">
+      <div
+        className={
+          isDrawer
+            ? 'fixed inset-0 z-50 flex justify-end'
+            : 'fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-3 sm:p-6'
+        }
+      >
         {/* Backdrop con desenfoque de cristal oscuro */}
         <motion.div
           initial={{ opacity: 0 }}
@@ -844,21 +861,39 @@ function AsignarHuespedDialogContent({
           exit={{ opacity: 0 }}
           transition={{ duration: 0.25 }}
           onClick={onClose}
-          className="fixed inset-0 cursor-pointer bg-stone-950/75 backdrop-blur-md"
+          className={
+            isDrawer
+              ? 'fixed inset-0 cursor-pointer bg-slate-900/45 backdrop-blur-xs'
+              : 'fixed inset-0 cursor-pointer bg-stone-950/75 backdrop-blur-md'
+          }
           aria-hidden="true"
         />
 
-        {/* Modal Container */}
+        {/* Modal o Drawer Container */}
         <motion.div
           role="dialog"
           aria-modal="true"
           aria-labelledby="modal-asignar-title"
-          initial={{ opacity: 0, scale: 0.94, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.95, y: 15 }}
-          transition={{ type: 'spring', damping: 25, stiffness: 290 }}
+          initial={
+            isDrawer
+              ? { x: '100%', opacity: 0.8 }
+              : { opacity: 0, scale: 0.94, y: 20 }
+          }
+          animate={
+            isDrawer ? { x: 0, opacity: 1 } : { opacity: 1, scale: 1, y: 0 }
+          }
+          exit={
+            isDrawer
+              ? { x: '100%', opacity: 0.8 }
+              : { opacity: 0, scale: 0.95, y: 15 }
+          }
+          transition={{ type: 'spring', damping: 28, stiffness: 280 }}
           onClick={(e) => e.stopPropagation()}
-          className="border-line/70 bg-panel/95 relative z-10 my-auto max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border p-5 shadow-2xl ring-1 ring-white/10 backdrop-blur-2xl sm:p-8"
+          className={
+            isDrawer
+              ? 'border-line bg-panel relative z-10 h-full w-full max-w-2xl overflow-y-auto border-l p-5 shadow-2xl sm:p-8'
+              : 'border-line/70 bg-panel/95 relative z-10 my-auto max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border p-5 shadow-2xl ring-1 ring-white/10 backdrop-blur-2xl sm:p-8'
+          }
         >
           {/* Resplandor decorativo de cabecera */}
           <div
@@ -1320,16 +1355,13 @@ function AsignarHuespedDialogContent({
         className="z-70"
       />
 
-      {/* Componente Loading durante el registro de la estancia (POST /stays) y actualización de habitación (PUT /room/{id}) */}
-      <Loading
-        visible={isSubmittingStay}
-        variant="fullscreen"
-        size="lg"
-        label="Guardando asignación y actualizando habitación…"
-        description="Registrando estancia en /stays y actualizando estado en /room/{id} con balanceo preventivo…"
-        delay={0}
-        className="z-70"
-      />
+      {/* Componente Rocket durante el registro de la estancia (POST /stays) y actualización de habitación (PUT /room/{id}) */}
+      <Suspense fallback={null}>
+        <LazyAsignarHuespedRocketOverlay
+          visible={isSubmittingStay}
+          roomNumber={room.number}
+        />
+      </Suspense>
     </>
   );
 }

@@ -5,6 +5,7 @@ import {
   type RawBedTypeData,
   type RawBuildingData,
   type RawRoomData,
+  type RoomRow,
 } from '../domain/habitacion-lista'
 
 // Cache persistente fuera del ciclo de vida de componentes para evitar peticiones duplicadas (N+1)
@@ -216,5 +217,28 @@ export class ApiHabitacionListaRepository {
   invalidateBed(id: string) {
     bedCache.delete(id)
     bedPromises.delete(id)
+  }
+
+  /**
+   * Actualiza el estado operativo de una habitación (PUT /room/{id}) con try/catch.
+   */
+  async updateRoomStatus(room: RoomRow, newStatus: string): Promise<void> {
+    const cleanId = String(room.id).trim()
+    if (!cleanId) return
+
+    const floorNum = Number(room.floor)
+    const payload = {
+      number: String(room.number).trim(),
+      floor: Number.isNaN(floorNum) ? 1 : floorNum,
+      room_types_id: room.roomTypesId ?? '',
+      building_id: room.buildingId ?? '',
+      price_override: room.priceOverride ?? null,
+      status: newStatus,
+      has_reception: false,
+    }
+
+    await api.put(`/room/${cleanId}`, payload, {
+      validateStatus: (s) => s >= 200 && s < 300,
+    })
   }
 }

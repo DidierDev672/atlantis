@@ -1,108 +1,88 @@
-import { motion } from 'motion/react'
+import { memo, useCallback } from 'react';
+import { motion } from 'motion/react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
+import {
+  faGrip,
+  faTableCellsLarge,
+  faTableList,
+} from '@fortawesome/free-solid-svg-icons';
 
-export type HabitacionesViewMode = 'cards' | 'table'
+export type HabitacionesViewMode = 'cards' | 'compact' | 'table';
 
 export interface HabitacionesViewModeToggleProps {
-  viewMode: HabitacionesViewMode
-  onChange: (mode: HabitacionesViewMode) => void
-  className?: string
+  viewMode: HabitacionesViewMode;
+  onChange: (mode: HabitacionesViewMode) => void;
+  className?: string;
 }
 
+const VIEW_MODES: ReadonlyArray<{
+  mode: HabitacionesViewMode;
+  label: string;
+  icon: IconDefinition;
+}> = [
+  { mode: 'cards', label: 'Tarjetas', icon: faTableCellsLarge },
+  { mode: 'compact', label: 'Compacta', icon: faGrip },
+  { mode: 'table', label: 'Tabla', icon: faTableList },
+];
+
 /**
- * Selector de modo de visualización (Tarjetas / Tabla) para el catálogo de habitaciones.
+ * Selector icon-only de modo de visualización (Tarjetas / Compacta / Tabla) con FontAwesome.
  */
-export function HabitacionesViewModeToggle({
+export const HabitacionesViewModeToggle = memo(function HabitacionesViewModeToggle({
   viewMode,
   onChange,
   className = '',
 }: HabitacionesViewModeToggleProps) {
+  const handleSelectMode = useCallback(
+    (mode: HabitacionesViewMode) => {
+      try {
+        onChange(mode);
+      } catch (err) {
+        console.error('Error al cambiar el modo de visualización:', err);
+      }
+    },
+    [onChange]
+  );
+
   return (
     <div
       role="radiogroup"
       aria-label="Modo de visualización de habitaciones"
-      className={`inline-flex items-center rounded-xl border border-line bg-canvas/80 p-1 shadow-2xs backdrop-blur-xs ${className}`}
+      className={`border-line bg-canvas/80 inline-flex items-center gap-1 rounded-xl border p-1 shadow-2xs backdrop-blur-xs ${className}`}
     >
-      {/* Botón Modo Tarjetas / Cards (Opción por defecto) */}
-      <button
-        type="button"
-        role="radio"
-        aria-checked={viewMode === 'cards'}
-        aria-label="Visualizar en tarjetas"
-        title="Visualizar en tarjetas (cards)"
-        onClick={() => onChange('cards')}
-        className={`relative flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-          viewMode === 'cards'
-            ? 'text-primary'
-            : 'text-ink-muted hover:text-ink'
-        }`}
-      >
-        {viewMode === 'cards' && (
-          <motion.div
-            layoutId="activeHabitacionesViewModeIndicator"
-            transition={{ type: 'spring', stiffness: 500, damping: 32 }}
-            className="absolute inset-0 rounded-lg bg-panel shadow-xs"
-          />
-        )}
-        <span className="relative z-10 flex items-center gap-1.5">
-          <svg
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="size-4 shrink-0"
-            aria-hidden="true"
+      {VIEW_MODES.map(({ mode, label, icon }) => {
+        const isActive = viewMode === mode;
+        return (
+          <button
+            key={mode}
+            type="button"
+            role="radio"
+            aria-checked={isActive}
+            aria-label={`Visualizar en modo ${label}`}
+            title={label}
+            onClick={() => handleSelectMode(mode)}
+            className={`focus-visible:ring-primary/40 relative grid size-8 cursor-pointer place-items-center rounded-lg transition focus-visible:ring-2 focus-visible:outline-none ${
+              isActive ? 'text-primary' : 'text-ink-muted hover:text-ink'
+            }`}
           >
-            <rect x="3" y="3" width="5.8" height="5.8" rx="1.5" />
-            <rect x="11.2" y="3" width="5.8" height="5.8" rx="1.5" />
-            <rect x="3" y="11.2" width="5.8" height="5.8" rx="1.5" />
-            <rect x="11.2" y="11.2" width="5.8" height="5.8" rx="1.5" />
-          </svg>
-          <span className="text-xs font-medium">Tarjetas</span>
-        </span>
-      </button>
-
-      {/* Botón Modo Tabla / Table */}
-      <button
-        type="button"
-        role="radio"
-        aria-checked={viewMode === 'table'}
-        aria-label="Visualizar en tabla"
-        title="Visualizar en tabla"
-        onClick={() => onChange('table')}
-        className={`relative flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-          viewMode === 'table'
-            ? 'text-primary'
-            : 'text-ink-muted hover:text-ink'
-        }`}
-      >
-        {viewMode === 'table' && (
-          <motion.div
-            layoutId="activeHabitacionesViewModeIndicator"
-            transition={{ type: 'spring', stiffness: 500, damping: 32 }}
-            className="absolute inset-0 rounded-lg bg-panel shadow-xs"
-          />
-        )}
-        <span className="relative z-10 flex items-center gap-1.5">
-          <svg
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="size-4 shrink-0"
-            aria-hidden="true"
-          >
-            <rect x="2.5" y="3.5" width="15" height="13" rx="2" />
-            <line x1="2.5" y1="8" x2="17.5" y2="8" />
-            <line x1="2.5" y1="12.5" x2="17.5" y2="12.5" />
-            <line x1="7.5" y1="8" x2="7.5" y2="16.5" />
-          </svg>
-          <span className="text-xs font-medium">Tabla</span>
-        </span>
-      </button>
+            {isActive && (
+              <motion.div
+                layoutId="activeHabitacionesViewModeIndicator"
+                transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                className="bg-panel absolute inset-0 rounded-lg shadow-xs"
+              />
+            )}
+            <FontAwesomeIcon
+              icon={icon}
+              className="relative z-10 size-3.5"
+              aria-hidden="true"
+            />
+          </button>
+        );
+      })}
     </div>
-  )
-}
+  );
+});
+
+export default HabitacionesViewModeToggle;

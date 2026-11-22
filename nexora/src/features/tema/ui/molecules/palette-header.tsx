@@ -17,7 +17,7 @@ export function PaletteHeader() {
         <p className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-primary">
           Personalización · Colores
         </p>
-        <h1 className="mt-4 text-3xl font-bold text-ink sm:text-4xl">El estilo de tu Nexora</h1>
+        <h1 className="mt-4 text-3xl font-bold text-ink sm:text-4xl">El estilo de tu Aloja</h1>
         <p className="mt-2 text-sm leading-relaxed text-ink-muted">
           El color de tu panel dice cómo trabajás cada día. Elegí la paleta que mejor te
           represente: cada una le da un tono propio a toda tu red, sin que tengas que tocar

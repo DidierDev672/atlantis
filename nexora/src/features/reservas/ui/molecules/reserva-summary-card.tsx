@@ -183,7 +183,7 @@ export function ReservaSummaryCard({
 
       {/* Garantía Ética (Leyes de Asimov) */}
       <p className="text-[11px] leading-relaxed text-ink-muted text-center">
-        🔒 <strong>Garantía Nexora:</strong> Sin cargos sorpresa ni cobros indebidos. Tus fechas y aforo han sido verificados contra la integridad física de la habitación.
+        🔒 <strong>Garantía Aloja:</strong> Sin cargos sorpresa ni cobros indebidos. Tus fechas y aforo han sido verificados contra la integridad física de la habitación.
       </p>
     </div>
   )

@@ -434,7 +434,7 @@ export function SedesPanel({
             </span>{' '}
             La habilitación de nuevas sedes físicas adicionales se cotiza por
             separado y es activada exclusivamente por el equipo de soporte
-            técnico de Nexora (<code>super_admin</code>).
+            técnico de Aloja (<code>super_admin</code>).
           </div>
         </div>
       ) : null}

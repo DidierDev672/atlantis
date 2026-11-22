@@ -28,6 +28,7 @@ import {
   generarNumeroOrdenAleatorio,
 } from '../../domain/confirmar-pedido-cocina.constants'
 import { type RawStayApi } from './ModalSeleccionarRecepcion'
+import { obtenerPersonsCatalogoShared } from '../../infrastructure/api-estadias-recepcion-repository'
 import { MartilloJuezAnimado } from '../atoms/MartilloJuezAnimado'
 
 /**
@@ -238,59 +239,38 @@ export function ModalConfirmarPedidoCocina({
   const [notasGenerales, setNotasGenerales] = useState('')
 
   /**
-   * Carga la lista de huéspedes consumiendo GET /persons con balanceador de carga
-   * (executeBalancedRequest) y validación de status codes (validateStatusCode)
+   * Carga la lista de huéspedes reutilizando la caché compartida del catálogo /persons
+   * para evitar peticiones duplicadas cuando ya se consultó en otras vistas.
    */
   const cargarOpcionesHuespedes = useCallback(async () => {
     setLoadingHuespedes(true)
     setErrorHuespedes(null)
 
     try {
-      const personsRes = await executeBalancedRequest(() =>
-        api.get<PersonApi[] | { data?: PersonApi[] }>('/persons', {
-          validateStatus: () => true,
-        })
-      )
+      const dataArr = await obtenerPersonsCatalogoShared()
+      const opcionesMap = new Map<string, DropdownOption>()
+      const idMap = new Map<string, string>()
 
-      const validation = validateStatusCode(personsRes.status)
+      for (const person of dataArr) {
+        const nombre = person?.name?.trim()
+        if (!nombre) continue
+        const docNumero = person?.document_number?.trim() || ''
 
-      if (validation.isValid) {
-        const raw = personsRes.data
-        const dataArr = Array.isArray(raw)
-          ? raw
-          : raw && typeof raw === 'object' && 'data' in raw && Array.isArray(raw.data)
-            ? raw.data
-            : []
-
-        const opcionesMap = new Map<string, DropdownOption>()
-        const idMap = new Map<string, string>()
-
-        for (const person of dataArr) {
-          const nombre = person?.name?.trim()
-          if (!nombre) continue
-          const docNumero = person?.document_number?.trim() || ''
-
-          if (!opcionesMap.has(nombre)) {
-            opcionesMap.set(nombre, {
-              id: person.id,
-              value: nombre,
-              label: nombre,
-              rawName: docNumero ? `${nombre} ${docNumero}` : nombre,
-            })
-            if (person.id) {
-              idMap.set(nombre, person.id)
-            }
+        if (!opcionesMap.has(nombre)) {
+          opcionesMap.set(nombre, {
+            id: person.id,
+            value: nombre,
+            label: nombre,
+            rawName: docNumero ? `${nombre} ${docNumero}` : nombre,
+          })
+          if (person.id) {
+            idMap.set(nombre, person.id)
           }
         }
-
-        setHuespedIdMap(idMap)
-        setOpcionesHuespedes(Array.from(opcionesMap.values()))
-      } else {
-        setOpcionesHuespedes([])
-        setErrorHuespedes(
-          validation.message || 'No fue posible obtener la lista de huéspedes.'
-        )
       }
+
+      setHuespedIdMap(idMap)
+      setOpcionesHuespedes(Array.from(opcionesMap.values()))
     } catch {
       const errorValidation = validateStatusCode(500)
       setOpcionesHuespedes([])

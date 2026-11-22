@@ -47,7 +47,7 @@ export function RecepcionSuccess({ recepcion, onReset }: RecepcionSuccessProps) 
         <p className="text-sm leading-relaxed text-ink-muted">
           Todo ha quedado guardado y sincronizado a la perfección en el sistema. Puedes entregar las
           llaves con total tranquilidad; la estadía ha comenzado y el depósito de garantía quedó
-          debidamente respaldado en Nexora.
+          debidamente respaldado en Aloja.
         </p>
       </div>
 

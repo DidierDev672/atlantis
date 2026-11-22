@@ -6,6 +6,12 @@ import {
   type StatusCodeValidationResult,
 } from '../../../shared/lib/status-code-validator'
 import type { ItemMenuProducto } from '../domain/item-menu'
+import {
+  getCatalogoProductosCache,
+  getMenuCategoriasCache,
+  setCatalogoProductosCache,
+} from './catalogo-productos-cache'
+import { detectarPerfilRedDisponible } from './network-quality'
 
 export interface ProductosMenuResponse {
   productos: ItemMenuProducto[]
@@ -63,35 +69,74 @@ function extractItemMenuList(rawData: unknown): ItemMenuProducto[] {
   return []
 }
 
+let inFlightProductosRequest: Promise<ProductosMenuResponse> | null = null
+
 /**
- * Consulta balanceada del endpoint GET /item-menu con validación de status code.
+ * Consulta balanceada y deduplicada del endpoint GET /item-menu con validación de status code
+ * y caché compartida en memoria.
  */
-export async function requestProductosMenu(): Promise<ProductosMenuResponse> {
-  try {
-    const response = await executeBalancedRequest(() =>
-      api.get('/item-menu', {
-        skipAuth: true,
-        validateStatus: () => true,
-      })
-    )
-
-    const validation = validateStatusCode(response.status)
-    if (!validation.isValid) {
-      return { productos: [], feedback: validation }
+export async function requestProductosMenu(
+  options?: { forceRefresh?: boolean }
+): Promise<ProductosMenuResponse> {
+  if (!options?.forceRefresh) {
+    const cached = getCatalogoProductosCache()
+    if (cached && cached.productos.length > 0) {
+      return {
+        productos: cached.productos,
+        feedback: cached.feedback ?? validateStatusCode(200),
+      }
     }
-
-    const lista = extractItemMenuList(response.data)
-
-    return { productos: lista, feedback: validation }
-  } catch (err: unknown) {
-    let status = 500
-    if (axios.isAxiosError(err) && err.response?.status) {
-      status = err.response.status
-    } else if (axios.isAxiosError(err) && err.code === 'ECONNABORTED') {
-      status = 408
+    if (!detectarPerfilRedDisponible().online) {
+      return {
+        productos: cached?.productos ?? [],
+        feedback: validateStatusCode(503),
+      }
     }
-    return { productos: [], feedback: validateStatusCode(status) }
+    if (inFlightProductosRequest) {
+      return inFlightProductosRequest
+    }
   }
+
+  const req = (async (): Promise<ProductosMenuResponse> => {
+    try {
+      const response = await executeBalancedRequest(() =>
+        api.get('/item-menu', {
+          skipAuth: true,
+          validateStatus: () => true,
+        })
+      )
+
+      const validation = validateStatusCode(response.status)
+      if (!validation.isValid) {
+        return { productos: [], feedback: validation }
+      }
+
+      const lista = extractItemMenuList(response.data)
+      if (lista.length > 0) {
+        const catsCached = getMenuCategoriasCache()
+        setCatalogoProductosCache({
+          productos: lista,
+          categorias: catsCached?.categorias ?? [],
+          feedback: validation,
+        })
+      }
+
+      return { productos: lista, feedback: validation }
+    } catch (err: unknown) {
+      let status = 500
+      if (axios.isAxiosError(err) && err.response?.status) {
+        status = err.response.status
+      } else if (axios.isAxiosError(err) && err.code === 'ECONNABORTED') {
+        status = 408
+      }
+      return { productos: [], feedback: validateStatusCode(status) }
+    } finally {
+      inFlightProductosRequest = null
+    }
+  })()
+
+  inFlightProductosRequest = req
+  return req
 }
 
 /**

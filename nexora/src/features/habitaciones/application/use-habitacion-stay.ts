@@ -39,7 +39,7 @@ function getStayPsychologicalNotice(
         type: 'occupied',
         statusCode: 200,
         title: `${roomLabel} actualmente ocupada`,
-        message: `Esta habitación cuenta con una estancia activa registrada en Nexora. Puedes consultar la ficha detallada de los huéspedes en el cuadro decorativo de la pared derecha.`,
+        message: `Esta habitación cuenta con una estancia activa registrada en Aloja. Puedes consultar la ficha detallada de los huéspedes en el cuadro decorativo de la pared derecha.`,
         solution: `Si necesitas asignar nuevos huéspedes, finaliza la estancia actual o selecciona otra habitación disponible en el catálogo.`,
       }
 

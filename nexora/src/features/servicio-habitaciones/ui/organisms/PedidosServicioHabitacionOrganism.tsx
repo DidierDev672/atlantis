@@ -61,6 +61,7 @@ const LazyPedidoDetalleModal = lazyWithFallback<PedidoDetalleModalProps>(
 )
 
 export interface PedidosServicioHabitacionOrganismProps {
+  refreshTrigger?: number
   onIrAProductos?: () => void
   onIrACarrito?: () => void
 }
@@ -72,6 +73,7 @@ export interface PedidosServicioHabitacionOrganismProps {
  */
 export const PedidosServicioHabitacionOrganism = memo(
   function PedidosServicioHabitacionOrganism({
+    refreshTrigger = 0,
     onIrAProductos,
     onIrACarrito,
   }: PedidosServicioHabitacionOrganismProps) {
@@ -102,7 +104,7 @@ export const PedidosServicioHabitacionOrganism = memo(
       handleCerrarDetalle,
       handleChangeEstadoById,
       handleActualizarOrden,
-    } = usePedidosServicioHabitacion()
+    } = usePedidosServicioHabitacion(refreshTrigger)
 
     const handleRefrescarClick = useCallback(() => {
       void cargarPedidos().catch((error) => {

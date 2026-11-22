@@ -293,7 +293,7 @@ export function updateAuthUserFromLoginResponse(
     deriveNameFromEmail(resolvedEmail) ||
     (typeof existingUser.name_full === 'string' && existingUser.name_full.trim().length > 0
       ? existingUser.name_full.trim()
-      : 'Usuario Nexora')
+      : 'Usuario Aloja')
 
   const resolvedRole =
     extractStringProp(extracted, [

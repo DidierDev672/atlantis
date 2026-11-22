@@ -32,7 +32,7 @@ export class RecepcionConflictError extends RecepcionApiError {
 /** Error 0 o Network: Falla de conexión, DNS o timeout */
 export class RecepcionNetworkError extends RecepcionApiError {
   constructor(mensaje?: string) {
-    super(0, mensaje || 'No pudimos conectar con los servidores de Nexora. Por favor verifica tu conexión a internet.')
+    super(0, mensaje || 'No pudimos conectar con los servidores de Aloja. Por favor verifica tu conexión a internet.')
     this.name = 'RecepcionNetworkError'
   }
 }

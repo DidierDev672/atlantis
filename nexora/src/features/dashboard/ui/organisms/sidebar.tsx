@@ -17,14 +17,13 @@ import {
   PaletteIcon,
   SettingsIcon,
   ShieldIcon,
-  SparklesIcon,
   TagIcon,
   UserIcon,
   UsersIcon,
   UtensilsIcon,
 } from '../icons'
 import { SidebarNavItem } from '../molecules/sidebar-nav-item'
-import { useTemaStore } from '../../../tema/application/tema-store'
+import { DEFAULT_HOTEL_LOGO, useTemaStore } from '../../../tema/application/tema-store'
 import { cn } from '../lib/cn'
 
 const NAV_ICONS: Record<NavId, ReactNode> = {
@@ -95,18 +94,14 @@ function SidebarBody({
       <div className="flex items-center justify-between gap-3 px-5 pt-6 pb-5">
         <div className="flex items-center gap-3 min-w-0">
           <span className="grid size-10 place-items-center rounded-xl bg-cream text-primary shadow-sm overflow-hidden shrink-0">
-            {hotelLogo ? (
-              <img
-                src={hotelLogo}
-                alt={hotelName || 'Logo del hotel'}
-                className="size-full object-cover"
-              />
-            ) : (
-              <SparklesIcon className="size-5" />
-            )}
+            <img
+              src={hotelLogo || DEFAULT_HOTEL_LOGO}
+              alt={hotelName || 'Logo del proyecto'}
+              className={hotelLogo ? 'size-full object-cover' : 'size-full object-contain p-0.5'}
+            />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-base font-bold text-cream truncate">Nexora</p>
+            <p className="text-base font-bold text-cream truncate">Aloja</p>
             <p className="text-[11px] text-cream/70 truncate" title={hotelName}>
               {hotelName}
             </p>
@@ -246,7 +241,7 @@ function SidebarBody({
 
       {/* Pie de versión */}
       <div className="border-t border-white/10 px-5 py-4">
-        <p className="text-[11px] text-cream/40">Nexora v1.0 · Panel de operaciones</p>
+        <p className="text-[11px] text-cream/40">Aloja v1.0 · Panel de operaciones</p>
       </div>
     </div>
   )

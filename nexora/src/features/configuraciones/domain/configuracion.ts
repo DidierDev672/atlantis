@@ -15,7 +15,7 @@ export interface CategoriaFiltro {
 }
 
 export const CATEGORIAS_CONFIGURACION: readonly CategoriaFiltro[] = [
-  { id: 'todas', label: 'Todos', description: 'Todos los módulos del ecosistema Nexora' },
+  { id: 'todas', label: 'Todos', description: 'Todos los módulos del ecosistema Aloja' },
   { id: 'operacion', label: 'Operación', description: 'Recepción, reservas, habitaciones y servicios de habitaciones' },
   { id: 'configuracion_hotelera', label: 'Configuración hotelera', description: 'Sedes, tipos de camas y tarifas comerciales' },
   { id: 'accesos', label: 'Accesos', description: 'Personas, usuarios y asignación de permisos' },

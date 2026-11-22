@@ -45,7 +45,9 @@ export function useProductosPorCategoria(categoria: MenuCategoria | null) {
     setReloading(true)
 
     try {
-      const { productos: lista, feedback: validacion } = await requestProductosMenu()
+      const { productos: lista, feedback: validacion } = await requestProductosMenu({
+        forceRefresh: true,
+      })
       if (!isMountedRef.current) return
       setEstado({
         resolvedKey: categoriaKey,

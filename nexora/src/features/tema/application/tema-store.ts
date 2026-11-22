@@ -5,6 +5,7 @@ const STORAGE_KEY = 'nexora.tema.palette'
 const HOTEL_LOGO_STORAGE_KEY = 'nexora.tema.hotel_logo'
 const HOTEL_NAME_STORAGE_KEY = 'nexora.tema.hotel_name'
 const DEFAULT_HOTEL_NAME = 'Hoteles · Operaciones'
+export const DEFAULT_HOTEL_LOGO = '/logo-sistema-urbano.svg'
 
 function readPersistedPalette(): Palette | null {
   try {
