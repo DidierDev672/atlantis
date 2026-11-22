@@ -4,16 +4,17 @@ import {
   isHabitacionOcupada,
   type RoomRow,
 } from '../domain/habitacion-lista';
-import {
-  fetchDrawerStayGuests,
-  type DrawerGuestItem,
-} from './fetch-drawer-stay-guests';
+import { fetchAvailableItemMenuCached } from '../infrastructure/sedes-and-menu-cache';
 import type {
   MenuCatalogItem,
   RegisteredConsumptionItem,
 } from '../ui/molecules/drawer-tab-consumptions';
 import type { ActiveStaySummary } from '../ui/molecules/drawer-tab-summary';
 import type { DrawerTabKey } from '../ui/organisms/habitacion-operativa-drawer';
+import {
+  fetchOperativaStaySnapshotCached,
+  invalidateOperativaStayCache,
+} from './operativa-stay-cache';
 
 export function useOperativaDrawer(
   room: RoomRow | null,
@@ -30,12 +31,14 @@ export function useOperativaDrawer(
     roomId: string;
     summary: ActiveStaySummary | null;
     consumptions: RegisteredConsumptionItem[];
+    pendingConsumptions: RegisteredConsumptionItem[];
     personId: string;
     loading: boolean;
   }>({
     roomId: '',
     summary: null,
     consumptions: [],
+    pendingConsumptions: [],
     personId: '',
     loading: false,
   });
@@ -67,11 +70,15 @@ export function useOperativaDrawer(
     () => (stayState.roomId === roomId ? stayState.consumptions : []),
     [roomId, stayState.consumptions, stayState.roomId]
   );
+  const pendingConsumptions = useMemo(
+    () => (stayState.roomId === roomId ? stayState.pendingConsumptions : []),
+    [roomId, stayState.pendingConsumptions, stayState.roomId]
+  );
   const personId = stayState.roomId === roomId ? stayState.personId : '';
   const isOccupied = Boolean(room && isHabitacionOcupada(room.status));
-  const loadingStay = Boolean(
-    room && isOccupied && stayState.roomId !== room.id
-  ) || (stayState.roomId === roomId && stayState.loading);
+  const loadingStay =
+    Boolean(room && isOccupied && stayState.roomId !== room.id) ||
+    (stayState.roomId === roomId && stayState.loading);
 
   useEffect(() => {
     if (!room || !isHabitacionOcupada(room.status)) return;
@@ -79,122 +86,36 @@ export function useOperativaDrawer(
     let active = true;
     const targetRoomId = room.id;
 
-    const loadStayAndConsumptions = async () => {
+    void (async () => {
       try {
-        const stayRes = await api.get<Record<string, unknown>>(
-          `/stay/reception/${encodeURIComponent(targetRoomId)}`,
-          { validateStatus: (s) => s >= 200 && s < 300 }
+        const snapshot = await fetchOperativaStaySnapshotCached(
+          targetRoomId,
+          nightlyRate,
+          false
         );
         if (!active) return;
-        const stayData = (stayRes.data?.data ?? stayRes.data) as Record<
-          string,
-          unknown
-        >;
-        const stayId = String(stayData?.id ?? '');
-        if (!stayId) {
-          setStayState({
-            roomId: targetRoomId,
-            summary: null,
-            consumptions: [],
-            personId: '',
-            loading: false,
-          });
-          return;
-        }
-
-        const checkIn = stayData?.check_in_date
-          ? new Date(String(stayData.check_in_date))
-          : new Date();
-        const checkOut = stayData?.check_out_date
-          ? new Date(String(stayData.check_out_date))
-          : new Date();
-        const diffDays = Math.max(
-          1,
-          Math.ceil((checkOut.getTime() - checkIn.getTime()) / 86400000)
-        );
-
-        let guestName = 'Huésped Titular';
-        let guests: DrawerGuestItem[] = [];
-        let guestsCount = Array.isArray(stayData?.person_ids)
-          ? Math.max(1, stayData.person_ids.length)
-          : 1;
-        let primaryPersonId = '';
-        try {
-          guests = await fetchDrawerStayGuests(stayId, stayData);
-          if (guests.length > 0) {
-            guestsCount = Math.max(guests.length, guestsCount);
-            guestName = guests[0].name || guestName;
-            primaryPersonId = guests[0].id;
-          }
-        } catch {
-          // Fallback silencioso
-        }
-
-        let consumptionsTotal = 0;
-        const loadedItems: RegisteredConsumptionItem[] = [];
-        try {
-          const srRes = await api.get<unknown>(
-            `/service-request?stay_id=${encodeURIComponent(stayId)}`,
-            { validateStatus: (s) => s >= 200 && s < 300 }
-          );
-          const orders = Array.isArray(srRes.data) ? srRes.data : [];
-          for (const ord of orders as Record<string, unknown>[]) {
-            consumptionsTotal += Number(ord?.total ?? 0);
-            const items = Array.isArray(ord?.items) ? ord.items : [];
-            for (const it of items as Record<string, unknown>[]) {
-              loadedItems.push({
-                id: String(it?.id ?? Math.random()),
-                menuItemId: it?.item_menu_id
-                  ? String(it.item_menu_id)
-                  : undefined,
-                name: String(it?.name_snapshot ?? 'Producto'),
-                amount: Number(it?.amount ?? 1),
-                priceUnit: Number(it?.price_unit ?? 0),
-              });
-            }
-          }
-        } catch {
-          // Fallback silencioso
-        }
-
-        if (!active) return;
-        setStayState({
+        setStayState((prev) => ({
           roomId: targetRoomId,
-          personId: primaryPersonId,
-          consumptions: loadedItems,
+          personId: snapshot.personId,
+          consumptions: snapshot.consumptions,
+          pendingConsumptions:
+            prev.roomId === targetRoomId ? prev.pendingConsumptions : [],
+          summary: snapshot.summary,
           loading: false,
-          summary: {
-            stayId,
-            guestName,
-            guests,
-            guestsCount,
-            checkInDate: stayData?.check_in_date
-              ? String(stayData.check_in_date)
-              : '',
-            checkOutDate: stayData?.check_out_date
-              ? String(stayData.check_out_date)
-              : '',
-            nights: diffDays,
-            lodgingTotal: nightlyRate * diffDays,
-            consumptionsTotal,
-            securityDeposit: Number(
-              stayData?.paid_amount ?? stayData?.security_deposit ?? 0
-            ),
-          },
-        });
+        }));
       } catch {
         if (!active) return;
         setStayState({
           roomId: targetRoomId,
           summary: null,
           consumptions: [],
+          pendingConsumptions: [],
           personId: '',
           loading: false,
         });
       }
-    };
+    })();
 
-    void loadStayAndConsumptions();
     return () => {
       active = false;
     };
@@ -204,30 +125,21 @@ export function useOperativaDrawer(
     if (activeTab !== 'consumptions' || menuItems.length > 0) return;
     let active = true;
 
-    const loadMenu = async () => {
+    void (async () => {
+      await Promise.resolve();
+      if (!active) return;
       try {
         setLoadingMenu(true);
-        const res = await api.get<unknown>('/item-menu?available=true', {
-          validateStatus: (s) => s >= 200 && s < 300,
-        });
+        const list = await fetchAvailableItemMenuCached(false);
         if (!active) return;
-        const list = Array.isArray(res.data) ? res.data : [];
-        setMenuItems(
-          (list as Record<string, unknown>[]).map((it) => ({
-            id: String(it.id ?? ''),
-            name: String(it.name ?? 'Producto'),
-            price: Number(it.price ?? 0),
-            taxPercentage: Number(it.tax_percentage ?? 0),
-          }))
-        );
+        setMenuItems(list);
       } catch {
         if (active) setMenuItems([]);
       } finally {
         if (active) setLoadingMenu(false);
       }
-    };
+    })();
 
-    void loadMenu();
     return () => {
       active = false;
     };
@@ -240,6 +152,7 @@ export function useOperativaDrawer(
       setFeedbackState({ roomId: room.id, msg: null });
       try {
         await onChangeStatus(room, newStatus);
+        invalidateOperativaStayCache(room.id);
         setFeedbackState({
           roomId: room.id,
           msg: 'Estado actualizado exitosamente',
@@ -262,6 +175,7 @@ export function useOperativaDrawer(
     setFeedbackState({ roomId: room.id, msg: null });
     try {
       await onChangeStatus(room, 'cleaning');
+      invalidateOperativaStayCache(room.id);
       onClose();
     } catch {
       setFeedbackState({
@@ -273,193 +187,199 @@ export function useOperativaDrawer(
     }
   }, [onChangeStatus, onClose, room]);
 
+  /**
+   * Agrupa localmente en bandeja por confirmar (0 llamadas HTTP por cada clic).
+   */
   const handleAddConsumption = useCallback(
     async (item: MenuCatalogItem) => {
       if (!room) return;
       setAddingItemId(item.id);
-      setFeedbackState({ roomId: room.id, msg: null });
       try {
-        if (staySummary?.stayId && personId) {
-          await api.post('/service-request', {
-            order_number: `ORD-${Date.now().toString().slice(-5)}`,
-            stay_id: staySummary.stayId,
-            person_id: personId,
-            channel: 'reception',
-            currency: 'COP',
-            items: [
-              {
-                item_menu_id: item.id,
-                name_snapshot: item.name,
-                price_unit: item.price,
-                tax_rate: item.taxPercentage,
-                amount: 1,
-                note: '',
-              },
-            ],
-          });
-        }
         setStayState((prev) => {
-          const existingIdx = prev.consumptions.findIndex(
-            (c) =>
-              c.menuItemId === item.id ||
-              (!c.menuItemId &&
-                c.name === item.name &&
-                c.priceUnit === item.price)
+          const base =
+            prev.roomId === room.id
+              ? prev
+              : {
+                  roomId: room.id,
+                  summary: staySummary,
+                  consumptions,
+                  pendingConsumptions: [],
+                  personId,
+                  loading: false,
+                };
+          const existingIdx = base.pendingConsumptions.findIndex(
+            (c) => c.menuItemId === item.id
           );
-          const nextConsumptions =
+          const nextPending =
             existingIdx >= 0
-              ? prev.consumptions.map((c, idx) =>
-                  idx === existingIdx
-                    ? { ...c, menuItemId: item.id, amount: c.amount + 1 }
-                    : c
+              ? base.pendingConsumptions.map((c, idx) =>
+                  idx === existingIdx ? { ...c, amount: c.amount + 1 } : c
                 )
               : [
-                  ...prev.consumptions,
+                  ...base.pendingConsumptions,
                   {
-                    id: `${item.id}-${Date.now()}`,
+                    id: `pending-${item.id}`,
                     menuItemId: item.id,
                     name: item.name,
                     amount: 1,
                     priceUnit: item.price,
+                    taxPercentage: item.taxPercentage,
                   },
                 ];
-          const nextTotal = nextConsumptions.reduce(
-            (sum, c) => sum + c.priceUnit * c.amount,
-            0
-          );
-          return {
-            ...prev,
-            consumptions: nextConsumptions,
-            summary: prev.summary
-              ? {
-                  ...prev.summary,
-                  consumptionsTotal: nextTotal,
-                }
-              : prev.summary,
-          };
+          return { ...base, pendingConsumptions: nextPending };
         });
         setFeedbackState({
           roomId: room.id,
-          msg: `+1 ${item.name} cargado a Hab. ${room.number}`,
+          msg: `+1 ${item.name} agregado al pedido por confirmar`,
         });
       } catch {
         setFeedbackState({
           roomId: room.id,
-          msg: 'No se pudo registrar el consumo.',
+          msg: 'No se pudo añadir el producto al pedido.',
         });
       } finally {
         setAddingItemId(null);
       }
     },
-    [personId, room, staySummary]
+    [consumptions, personId, room, staySummary]
   );
 
   const handleUpdateConsumptionQty = useCallback(
     async (consumptionId: string, delta: 1 | -1) => {
       if (!room) return;
-      const target = consumptions.find((c) => c.id === consumptionId);
-      if (!target) return;
-
       setUpdatingConsumptionId(consumptionId);
-      setFeedbackState({ roomId: room.id, msg: null });
       try {
-        if (delta > 0 && staySummary?.stayId && personId) {
-          const matchedCatalog = menuItems.find(
-            (m) =>
-              m.id === target.menuItemId ||
-              (m.name === target.name && m.price === target.priceUnit)
-          );
-          if (matchedCatalog) {
-            await api.post('/service-request', {
-              order_number: `ORD-${Date.now().toString().slice(-5)}`,
-              stay_id: staySummary.stayId,
-              person_id: personId,
-              channel: 'reception',
-              currency: 'COP',
-              items: [
-                {
-                  item_menu_id: matchedCatalog.id,
-                  name_snapshot: matchedCatalog.name,
-                  price_unit: matchedCatalog.price,
-                  tax_rate: matchedCatalog.taxPercentage,
-                  amount: 1,
-                  note: '',
-                },
-              ],
-            });
-          }
-        }
-
-        const nextAmount = target.amount + delta;
         setStayState((prev) => {
-          const nextConsumptions = prev.consumptions
+          const target = prev.pendingConsumptions.find(
+            (c) => c.id === consumptionId
+          );
+          if (!target) return prev;
+          const nextPending = prev.pendingConsumptions
             .map((c) =>
               c.id === consumptionId ? { ...c, amount: c.amount + delta } : c
             )
             .filter((c) => c.amount > 0);
-          const nextTotal = nextConsumptions.reduce(
-            (sum, c) => sum + c.priceUnit * c.amount,
-            0
-          );
-          return {
-            ...prev,
-            consumptions: nextConsumptions,
-            summary: prev.summary
-              ? {
-                  ...prev.summary,
-                  consumptionsTotal: nextTotal,
-                }
-              : prev.summary,
-          };
-        });
-
-        setFeedbackState({
-          roomId: room.id,
-          msg:
-            nextAmount <= 0
-              ? `${target.name} quitado de consumos`
-              : `${delta > 0 ? '+1' : '-1'} ${target.name} actualizado`,
+          return { ...prev, pendingConsumptions: nextPending };
         });
       } catch {
         setFeedbackState({
           roomId: room.id,
-          msg: 'No se pudo actualizar la cantidad del consumo.',
+          msg: 'No se pudo ajustar la cantidad del producto.',
         });
       } finally {
         setUpdatingConsumptionId(null);
       }
     },
-    [consumptions, menuItems, personId, room, staySummary]
+    [room]
   );
 
   const handleClearConsumptions = useCallback(async () => {
     if (!room) return;
-    setActionLoading(true);
-    setFeedbackState({ roomId: room.id, msg: null });
     try {
       setStayState((prev) => ({
         ...prev,
-        consumptions: [],
-        summary: prev.summary
-          ? {
-              ...prev.summary,
-              consumptionsTotal: 0,
-            }
-          : prev.summary,
+        pendingConsumptions: [],
       }));
       setFeedbackState({
         roomId: room.id,
-        msg: `Consumos vaciados en Hab. ${room.number}`,
+        msg: `Pedido pendiente vaciado en Hab. ${room.number}`,
       });
     } catch {
       setFeedbackState({
         roomId: room.id,
-        msg: 'No se pudo vaciar la lista de consumos.',
+        msg: 'No se pudo vaciar el pedido pendiente.',
+      });
+    }
+  }, [room]);
+
+  /**
+   * Envía todo el pedido agrupado en un único POST /service-request.
+   */
+  const handleConfirmPendingConsumptions = useCallback(async () => {
+    if (!room || pendingConsumptions.length === 0) return;
+    setActionLoading(true);
+    setFeedbackState({ roomId: room.id, msg: null });
+    try {
+      if (staySummary?.stayId && personId) {
+        await api.post('/service-request', {
+          order_number: `ORD-${Date.now().toString().slice(-5)}`,
+          stay_id: staySummary.stayId,
+          person_id: personId,
+          channel: 'reception',
+          currency: 'COP',
+          items: pendingConsumptions.map((p) => {
+            const catalogHit = menuItems.find((m) => m.id === p.menuItemId);
+            return {
+              item_menu_id: p.menuItemId ?? p.id,
+              name_snapshot: p.name,
+              price_unit: p.priceUnit,
+              tax_rate: p.taxPercentage ?? catalogHit?.taxPercentage ?? 0,
+              amount: p.amount,
+              note: '',
+            };
+          }),
+        });
+      }
+
+      const addedTotal = pendingConsumptions.reduce(
+        (acc, p) => acc + p.priceUnit * p.amount,
+        0
+      );
+      const totalUnits = pendingConsumptions.reduce(
+        (acc, p) => acc + p.amount,
+        0
+      );
+
+      setStayState((prev) => {
+        const merged = [...prev.consumptions];
+        for (const p of prev.pendingConsumptions) {
+          const idx = merged.findIndex(
+            (c) =>
+              (p.menuItemId && c.menuItemId === p.menuItemId) ||
+              (c.name === p.name && c.priceUnit === p.priceUnit)
+          );
+          if (idx >= 0) {
+            merged[idx] = {
+              ...merged[idx],
+              amount: merged[idx].amount + p.amount,
+            };
+          } else {
+            merged.push({
+              id: `${p.menuItemId ?? p.id}-${Date.now()}`,
+              menuItemId: p.menuItemId,
+              name: p.name,
+              amount: p.amount,
+              priceUnit: p.priceUnit,
+            });
+          }
+        }
+        return {
+          ...prev,
+          consumptions: merged,
+          pendingConsumptions: [],
+          summary: prev.summary
+            ? {
+                ...prev.summary,
+                consumptionsTotal: prev.summary.consumptionsTotal + addedTotal,
+              }
+            : prev.summary,
+        };
+      });
+
+      invalidateOperativaStayCache(room.id);
+      setFeedbackState({
+        roomId: room.id,
+        msg: `Pedido agrupado (${totalUnits} prod.) cargado a Hab. ${room.number}`,
+      });
+    } catch {
+      setFeedbackState({
+        roomId: room.id,
+        msg: 'No se pudo cargar el pedido a la habitación.',
       });
     } finally {
       setActionLoading(false);
     }
-  }, [room]);
+  }, [menuItems, pendingConsumptions, personId, room, staySummary]);
 
   return {
     activeTab,
@@ -468,6 +388,7 @@ export function useOperativaDrawer(
     loadingStay,
     menuItems,
     consumptions,
+    pendingConsumptions,
     loadingMenu,
     addingItemId,
     updatingConsumptionId,
@@ -478,5 +399,6 @@ export function useOperativaDrawer(
     handleAddConsumption,
     handleUpdateConsumptionQty,
     handleClearConsumptions,
+    handleConfirmPendingConsumptions,
   };
 }

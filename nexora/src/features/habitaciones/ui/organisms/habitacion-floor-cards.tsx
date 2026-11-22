@@ -1,7 +1,7 @@
 import { memo } from 'react';
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import type { RoomRow } from '../../domain/habitacion-lista';
-import { FLOOR_STAGGER_CONTAINER_VARIANTS } from '../lib/motion-variants';
+import { FLOOR_CONTENT_FADE_VARIANTS } from '../lib/motion-variants';
 import { HabitacionCardItem } from '../molecules/habitacion-card-item';
 
 export interface HabitacionFloorCardsProps {
@@ -32,10 +32,12 @@ export const HabitacionFloorCards = memo(function HabitacionFloorCards({
   onOpenAssignGuestDrawer,
   onQuickMarkAvailable,
 }: HabitacionFloorCardsProps) {
+  const reducedMotion = useReducedMotion();
+
   return (
     <motion.div
-      variants={FLOOR_STAGGER_CONTAINER_VARIANTS}
-      initial="hidden"
+      variants={reducedMotion ? undefined : FLOOR_CONTENT_FADE_VARIANTS}
+      initial={reducedMotion ? false : 'hidden'}
       animate="visible"
       className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3.5"
     >

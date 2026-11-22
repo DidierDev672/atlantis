@@ -21,6 +21,7 @@ import { executeBalancedRequest } from '../../../reservas/infrastructure/api-loa
 import { api } from '../../../../lib/api';
 import { readTokenEmail } from '../../../../shared/auth-storage';
 import { useGuestStayStore } from '../../application/use-guest-stay-store';
+import { fetchRolesCatalogCached } from '../../infrastructure/habitaciones-catalogs-cache';
 
 export interface FormularioAsignarHuesped {
   numeroHuesped: string;
@@ -519,23 +520,17 @@ function AsignarHuespedDialogContent({
       guest.roleId ||
       (guest.roles && guest.roles.length > 0 ? guest.roles[0] : '');
 
-    // Si el rol aún no tiene el ID real o tiene un identificador temporal, resolver el ID real desde /roles
+    // Si el rol aún no tiene el ID real o tiene un identificador temporal, resolver el ID real desde caché compartida de /roles
     if (
       !selectedRoleId ||
       selectedRoleId === 'huesped' ||
       selectedRoleId === 'role-1'
     ) {
       try {
-        const rolesRes = await executeBalancedRequest(
-          () =>
-            api.get<{ id: string; name: string }[]>('/roles', {
-              validateStatus: () => true,
-            }),
-          { maxRetries: 1 }
-        );
-        if (rolesRes.status === 200 && Array.isArray(rolesRes.data)) {
+        const cachedRoles = await fetchRolesCatalogCached();
+        if (cachedRoles.length > 0) {
           const found =
-            rolesRes.data.find(
+            cachedRoles.find(
               (r) =>
                 r.name
                   .trim()
@@ -543,7 +538,7 @@ function AsignarHuespedDialogContent({
                   .normalize('NFD')
                   .replace(/[\u0300-\u036f]/g, '') === 'huesped'
             ) ||
-            rolesRes.data.find((r) =>
+            cachedRoles.find((r) =>
               r.name.trim().toLowerCase().includes('huesped')
             );
           if (found) {
@@ -756,8 +751,8 @@ function AsignarHuespedDialogContent({
         let priceOverride =
           room.priceOverride != null ? Number(room.priceOverride) : null;
 
-        // Si faltan datos estructurales de la habitación, consultarlos balanceadamente
-        if (!roomTypeId || !buildingId) {
+        // Solo consultar GET /room/{id} si la prop `room` llegó sin `roomTypesId`
+        if (!roomTypeId) {
           try {
             const currentRoomRes = await executeBalancedRequest(
               () =>
@@ -772,14 +767,16 @@ function AsignarHuespedDialogContent({
               roomTypeId = String(
                 d.room_types_id || d.roomTypesId || d.room_type_id || roomTypeId
               );
-              buildingId = String(d.building_id || d.buildingId || buildingId);
+              buildingId = String(
+                d.building_id || d.buildingId || buildingId
+              );
               if (d.floor != null) floor = Number(d.floor);
               if (d.price_override !== undefined && d.price_override !== null) {
                 priceOverride = Number(d.price_override);
               }
             }
           } catch {
-            // Continuar con los datos disponibles
+            // Continuar con los datos disponibles en la prop `room`
           }
         }
 

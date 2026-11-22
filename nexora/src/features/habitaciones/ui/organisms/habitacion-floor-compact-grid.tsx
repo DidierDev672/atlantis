@@ -1,7 +1,7 @@
 import { memo } from 'react';
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import type { RoomRow } from '../../domain/habitacion-lista';
-import { FLOOR_STAGGER_CONTAINER_VARIANTS } from '../lib/motion-variants';
+import { FLOOR_CONTENT_FADE_VARIANTS } from '../lib/motion-variants';
 import { HabitacionCompactTile } from '../molecules/habitacion-compact-tile';
 
 export interface HabitacionFloorCompactGridProps {
@@ -11,7 +11,8 @@ export interface HabitacionFloorCompactGridProps {
 }
 
 /**
- * Organismo: Grilla matricial compacta (12 columnas) para visualización densa de habitaciones por piso.
+ * Organismo: Grilla matricial compacta para visualización densa de habitaciones por piso
+ * con una única transición ligera de contenedor (bajo consumo GPU).
  */
 export const HabitacionFloorCompactGrid = memo(
   function HabitacionFloorCompactGrid({
@@ -19,10 +20,12 @@ export const HabitacionFloorCompactGrid = memo(
     hasTariff,
     onSelectRoom,
   }: HabitacionFloorCompactGridProps) {
+    const reducedMotion = useReducedMotion();
+
     return (
       <motion.div
-        variants={FLOOR_STAGGER_CONTAINER_VARIANTS}
-        initial="hidden"
+        variants={reducedMotion ? undefined : FLOOR_CONTENT_FADE_VARIANTS}
+        initial={reducedMotion ? false : 'hidden'}
         animate="visible"
         className="grid grid-cols-[repeat(auto-fill,minmax(108px,1fr))] gap-2"
       >

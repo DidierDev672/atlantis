@@ -1,5 +1,4 @@
 import { Suspense, lazy, memo, useCallback } from 'react';
-import { motion, type Variants } from 'motion/react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faTriangleExclamation,
@@ -18,20 +17,9 @@ const LazyHabitacionCardFooterActions = lazy(
   () => import('./habitacion-card-footer-actions')
 );
 
-const CARD_ITEM_VARIANTS: Variants = {
-  hidden: { opacity: 0, y: 14, scale: 0.98 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: { type: 'spring', damping: 26, stiffness: 300, mass: 0.8 },
-  },
-};
-
 export interface HabitacionCardItemProps {
   room: RoomRow;
   tariffPrice?: number | null;
-  variants?: Variants;
   onRetryBed: (id: string) => void | Promise<void>;
   onOpenRoomDetail?: (room: RoomRow) => void;
   onSelectHabitacion?: (room: RoomRow) => void;
@@ -41,12 +29,11 @@ export interface HabitacionCardItemProps {
 }
 
 /**
- * Molécula: Tarjeta limpia de habitación para recepción.
+ * Molécula: Tarjeta limpia de habitación para recepción (sin capas GPU por ítem).
  */
 export const HabitacionCardItem = memo(function HabitacionCardItem({
   room,
   tariffPrice = null,
-  variants,
   onRetryBed,
   onOpenRoomDetail,
   onSelectHabitacion,
@@ -100,14 +87,13 @@ export const HabitacionCardItem = memo(function HabitacionCardItem({
   }, [onRetryBed, room.roomTypesId]);
 
   return (
-    <motion.div
-      variants={variants ?? CARD_ITEM_VARIANTS}
+    <div
       onClick={(e) => {
         const target = e.target as HTMLElement;
         if (target.closest('button') || target.closest('a')) return;
         handleRoomClick();
       }}
-      className="group border-line bg-panel hover:border-primary/35 relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border p-4 shadow-2xs transition-all hover:shadow-md"
+      className="group border-line bg-panel hover:border-primary/35 relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border p-4 shadow-2xs transition-colors hover:shadow-md"
     >
       <HabitacionStatusTopBorder status={room.status} />
       <div>
@@ -175,7 +161,7 @@ export const HabitacionCardItem = memo(function HabitacionCardItem({
           onQuickMarkAvailable={onQuickMarkAvailable}
         />
       </Suspense>
-    </motion.div>
+    </div>
   );
 });
 

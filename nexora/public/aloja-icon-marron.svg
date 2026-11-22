@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1600" width="1600" height="1600" role="img" aria-labelledby="t">
+  <title id="t">Aloja</title>
+  <defs>
+    <linearGradient id="fade" gradientUnits="userSpaceOnUse" x1="0" y1="263" x2="0" y2="1005">
+      <stop offset="0" stop-color="#F1E0BE"/>
+      <stop offset="0.25" stop-color="#EDDCBA"/>
+      <stop offset="0.5" stop-color="#B79C7E"/>
+      <stop offset="0.75" stop-color="#8F6F52"/>
+      <stop offset="1" stop-color="#664830"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Fondo -->
+  <rect width="1600" height="1600" rx="62" fill="#542E1B"/>
+
+  <!-- A: parte superior con degradado (el hueco rodea la campana) -->
+  <path fill="url(#fade)" d="M700 263 H900 L1197 925 C1150 960 1100 985 1045 1005 C1025 940 1010 860 930 790 L800 480 L670 790 C590 870 570 950 555 1003 C500 985 450 960 405 925 Z"/>
+
+  <!-- A: patas inferiores -->
+  <path fill="#F1E0BE" d="M335 1082 L500 1187 L418 1380 H200 Z"/>
+  <path fill="#F1E0BE" d="M1268 1082 L1100 1187 L1185 1380 H1400 Z"/>
+
+  <!-- Arco -->
+  <path fill="#F1E0BE" d="M290 897 C450 1050 620 1103 800 1103 C980 1103 1150 1050 1312 897 L1305 962 C1150 1130 980 1195 800 1195 C620 1195 450 1130 298 965 Z"/>
+
+  <!-- Campana -->
+  <g fill="#FA6A1E">
+    <rect x="760" y="740" width="80" height="22" rx="11"/>
+    <rect x="790" y="755" width="20" height="50"/>
+    <path d="M633 962 C633 870 700 800 800 800 C900 800 968 870 968 962 Z"/>
+    <path d="M600 1027 C600 1000 612 983 640 983 H960 C988 983 1000 1000 1000 1027 Z"/>
+  </g>
+  <path d="M672 930 C672 870 715 835 778 832" fill="none" stroke="#7A3A1E" stroke-width="8" stroke-linecap="round"/>
+</svg>

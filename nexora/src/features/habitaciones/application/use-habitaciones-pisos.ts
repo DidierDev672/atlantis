@@ -11,6 +11,13 @@ import {
 } from '../domain/habitacion-lista';
 import type { FloorStatusBadgeFilter } from '../domain/piso-badge-filter';
 import { ApiHabitacionListaRepository } from '../infrastructure/api-habitacion-lista-repository';
+import { detectarCapacidadesHardwareYRed } from '../infrastructure/device-resource-profile';
+import {
+  applyFloorEnrichmentToRows,
+  fetchFloorEnrichmentBatch,
+  preloadBuildingsMap,
+} from './enrich-floor-rooms';
+import { invalidateOperativaStayCache } from './operativa-stay-cache';
 
 const repository = new ApiHabitacionListaRepository();
 
@@ -25,10 +32,18 @@ export function useHabitacionesPisos() {
     buildingId: 'all',
     roomTypeIds: [],
   });
-  const [knownBuildings, setKnownBuildings] = useState<{ id: string; name: string }[]>([]);
-  const [expandedFloors, setExpandedFloors] = useState<Set<string>>(() => new Set());
-  const [enrichingFloors, setEnrichingFloors] = useState<Record<string, boolean>>({});
-  const [floorErrors, setFloorErrors] = useState<Record<string, string | null>>({});
+  const [knownBuildings, setKnownBuildings] = useState<
+    { id: string; name: string }[]
+  >([]);
+  const [expandedFloors, setExpandedFloors] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [enrichingFloors, setEnrichingFloors] = useState<
+    Record<string, boolean>
+  >({});
+  const [floorErrors, setFloorErrors] = useState<Record<string, string | null>>(
+    {}
+  );
   const [floorBadgeFilters, setFloorBadgeFilters] = useState<
     Record<string, FloorStatusBadgeFilter>
   >({});
@@ -37,7 +52,9 @@ export function useHabitacionesPisos() {
   const rowsRef = useRef<RoomRow[]>([]);
   const enrichedFloorsRef = useRef<Set<string>>(new Set());
   const expandedFloorsRef = useRef<Set<string>>(new Set());
-  const floorBadgeFiltersRef = useRef<Record<string, FloorStatusBadgeFilter>>({});
+  const floorBadgeFiltersRef = useRef<Record<string, FloorStatusBadgeFilter>>(
+    {}
+  );
 
   useEffect(() => {
     rowsRef.current = rows;
@@ -53,153 +70,98 @@ export function useHabitacionesPisos() {
 
   useEffect(() => {
     isMountedRef.current = true;
+    const enrichedRef = enrichedFloorsRef;
+    const expandedRef = expandedFloorsRef;
     return () => {
       isMountedRef.current = false;
+      rowsRef.current = [];
+      enrichedRef.current.clear();
+      expandedRef.current.clear();
+      floorBadgeFiltersRef.current = {};
     };
   }, []);
 
-  /**
-   * Carga perezosa (async/await + try/catch) de edificios y tipos de cama para un piso específico.
-   */
-  const enrichFloor = useCallback(async (floorKey: string, targetRows?: RoomRow[]) => {
-    const source = targetRows ?? rowsRef.current;
-    const floorRows = source.filter((r) => normalizeFloorKey(r.floor) === floorKey);
-    if (floorRows.length === 0) return;
-
-    enrichedFloorsRef.current.add(floorKey);
-    setEnrichingFloors((prev) => ({ ...prev, [floorKey]: true }));
-    setFloorErrors((prev) => ({ ...prev, [floorKey]: null }));
-
-    try {
-      const buildingIds = Array.from(
-        new Set(floorRows.map((r) => r.buildingId).filter((id): id is string => Boolean(id)))
+  const enrichFloor = useCallback(
+    async (floorKey: string, targetRows?: RoomRow[]) => {
+      const source = targetRows ?? rowsRef.current;
+      const floorRows = source.filter(
+        (r) => normalizeFloorKey(r.floor) === floorKey
       );
-      const bedIds = Array.from(
-        new Set(floorRows.map((r) => r.roomTypesId).filter((id): id is string => Boolean(id)))
-      );
+      if (floorRows.length === 0) return;
 
-      const buildingTasks = buildingIds.map(async (bId) => {
-        try {
-          const data = await repository.getBuilding(bId);
-          if (!isMountedRef.current || !data) return;
-          setRows((prev) =>
-            prev.map((r) =>
-              r.buildingId === bId
-                ? { ...r, building: { id: bId, ...data, loading: false, error: false } }
-                : r
-            )
-          );
-          setKnownBuildings((prev) =>
-            prev.some((b) => b.id === bId) ? prev : [...prev, { id: bId, name: data.name }]
-          );
-        } catch {
-          if (!isMountedRef.current) return;
-          setRows((prev) =>
-            prev.map((r) =>
-              r.buildingId === bId
-                ? { ...r, building: { id: bId, name: 'No disponible', loading: false, error: true } }
-                : r
-            )
-          );
+      enrichedFloorsRef.current.add(floorKey);
+      setEnrichingFloors((prev) => ({ ...prev, [floorKey]: true }));
+      setFloorErrors((prev) => ({ ...prev, [floorKey]: null }));
+
+      try {
+        const batch = await fetchFloorEnrichmentBatch(repository, floorRows);
+        if (!isMountedRef.current) return;
+
+        if (batch.buildingsById.size > 0 || batch.bedsById.size > 0) {
+          setRows((prev) => applyFloorEnrichmentToRows(prev, batch));
         }
-      });
-
-      const bedTasks = bedIds.map(async (bedId) => {
-        try {
-          const data = await repository.getBedType(bedId);
-          if (!isMountedRef.current || !data) return;
-          setRows((prev) =>
-            prev.map((r) =>
-              r.roomTypesId === bedId
-                ? { ...r, bed: { id: bedId, ...data, loading: false, error: false } }
-                : r
-            )
-          );
-        } catch {
-          if (!isMountedRef.current) return;
-          setRows((prev) =>
-            prev.map((r) =>
-              r.roomTypesId === bedId
-                ? { ...r, bed: { id: bedId, name: 'No disponible', loading: false, error: true } }
-                : r
-            )
-          );
+        if (batch.resolvedBuildingNames.length > 0) {
+          setKnownBuildings((prev) => {
+            const seen = new Set(prev.map((b) => b.id));
+            const additions = batch.resolvedBuildingNames.filter(
+              (b) => !seen.has(b.id)
+            );
+            return additions.length > 0 ? [...prev, ...additions] : prev;
+          });
         }
-      });
-
-      await Promise.allSettled([...buildingTasks, ...bedTasks]);
-    } catch {
-      if (!isMountedRef.current) return;
-      enrichedFloorsRef.current.delete(floorKey);
-      setFloorErrors((prev) => ({
-        ...prev,
-        [floorKey]: 'Ocurrió un error al cargar los detalles de este piso.',
-      }));
-    } finally {
-      if (isMountedRef.current) {
-        setEnrichingFloors((prev) => ({ ...prev, [floorKey]: false }));
+      } catch {
+        if (!isMountedRef.current) return;
+        enrichedFloorsRef.current.delete(floorKey);
+        setFloorErrors((prev) => ({
+          ...prev,
+          [floorKey]: 'Ocurrió un error al cargar los detalles de este piso.',
+        }));
+      } finally {
+        if (isMountedRef.current) {
+          setEnrichingFloors((prev) => ({ ...prev, [floorKey]: false }));
+        }
       }
-    }
-  }, []);
+    },
+    []
+  );
 
-  /**
-   * Resuelve el catálogo de edificios para habilitar el filtro desde la carga inicial.
-   */
   const preloadKnownBuildings = useCallback(async (mappedRows: RoomRow[]) => {
     try {
-      const uniqueIds = Array.from(
-        new Set(mappedRows.map((r) => r.buildingId).filter((id): id is string => Boolean(id)))
+      const byId = await preloadBuildingsMap(repository, mappedRows);
+      if (!isMountedRef.current || byId.size === 0) return;
+
+      setKnownBuildings(
+        Array.from(byId.values()).map(({ id, name }) => ({ id, name }))
       );
-      const settled = await Promise.allSettled(
-        uniqueIds.map(async (id) => {
-          const data = await repository.getBuilding(id);
-          return data ? { id, ...data } : null;
+      setRows((prev) =>
+        prev.map((row) => {
+          const match = row.buildingId ? byId.get(row.buildingId) : undefined;
+          return match
+            ? { ...row, building: { ...match, loading: false, error: false } }
+            : row;
         })
       );
-      if (!isMountedRef.current) return;
-
-      const resolved = settled
-        .filter(
-          (
-            r
-          ): r is PromiseFulfilledResult<{
-            id: string;
-            name: string;
-            floorNumber?: number;
-            headquartersId?: string;
-            subHeadquartersId?: string;
-          } | null> => r.status === 'fulfilled'
-        )
-        .map((r) => r.value)
-        .filter((v): v is NonNullable<typeof v> => v !== null);
-
-      if (resolved.length > 0) {
-        const byId = new Map(resolved.map((b) => [b.id, b]));
-        setKnownBuildings(resolved.map(({ id, name }) => ({ id, name })));
-        setRows((prev) =>
-          prev.map((row) => {
-            const match = row.buildingId ? byId.get(row.buildingId) : undefined;
-            return match ? { ...row, building: { ...match, loading: false, error: false } } : row;
-          })
-        );
-      }
     } catch {
-      // El filtro de edificios es auxiliar; la vista de pisos continúa funcionando.
+      // El filtro de edificios es auxiliar
     }
   }, []);
 
   const applyLoadedRawRooms = useCallback(
     (rawData: Awaited<ReturnType<typeof repository.getRooms>>) => {
-      const sortedRaw = [...rawData].sort((a, b) => compareRoomNumbersDesc(a.number, b.number));
-      const mapped = sortedRaw.map(mapRawToRoomRow);
+      const mapped = [...rawData]
+        .sort((a, b) => compareRoomNumbersDesc(a.number, b.number))
+        .map(mapRawToRoomRow);
       rowsRef.current = mapped;
       setRows(mapped);
 
-      const groups = groupRoomsByFloor(mapped);
-      const firstFloor = groups[0]?.floorKey;
+      const firstFloor = groupRoomsByFloor(mapped)[0]?.floorKey;
       setExpandedFloors(firstFloor ? new Set([firstFloor]) : new Set());
 
-      void preloadKnownBuildings(mapped);
+      const { allowPreloadAllBuildings } =
+        detectarCapacidadesHardwareYRed().policy;
+      if (allowPreloadAllBuildings) {
+        void preloadKnownBuildings(mapped);
+      }
       if (firstFloor) {
         void enrichFloor(firstFloor, mapped);
       }
@@ -213,7 +175,6 @@ export function useHabitacionesPisos() {
     enrichedFloorsRef.current.clear();
     setFloorErrors({});
     setFloorBadgeFilters({});
-
     try {
       const rawData = await repository.getRooms();
       if (!isMountedRef.current) return;
@@ -224,16 +185,13 @@ export function useHabitacionesPisos() {
         'No pudimos conectar con el servidor para obtener las habitaciones. Verifica tu conexión e inténtalo de nuevo.'
       );
     } finally {
-      if (isMountedRef.current) {
-        setInitialLoading(false);
-      }
+      if (isMountedRef.current) setInitialLoading(false);
     }
   }, [applyLoadedRawRooms]);
 
   useEffect(() => {
     let active = true;
-
-    async function loadOnMount() {
+    void (async () => {
       try {
         const rawData = await repository.getRooms();
         if (!active || !isMountedRef.current) return;
@@ -244,13 +202,9 @@ export function useHabitacionesPisos() {
           'No pudimos conectar con el servidor para obtener las habitaciones. Verifica tu conexión e inténtalo de nuevo.'
         );
       } finally {
-        if (active && isMountedRef.current) {
-          setInitialLoading(false);
-        }
+        if (active && isMountedRef.current) setInitialLoading(false);
       }
-    }
-
-    void loadOnMount();
+    })();
     return () => {
       active = false;
     };
@@ -261,11 +215,8 @@ export function useHabitacionesPisos() {
       const willOpen = !expandedFloorsRef.current.has(floorKey);
       setExpandedFloors((prev) => {
         const next = new Set(prev);
-        if (next.has(floorKey)) {
-          next.delete(floorKey);
-        } else {
-          next.add(floorKey);
-        }
+        if (next.has(floorKey)) next.delete(floorKey);
+        else next.add(floorKey);
         return next;
       });
       if (willOpen && !enrichedFloorsRef.current.has(floorKey)) {
@@ -281,17 +232,10 @@ export function useHabitacionesPisos() {
         const current = floorBadgeFiltersRef.current[floorKey] ?? 'all';
         const nextBadge: FloorStatusBadgeFilter =
           badge === 'all' ? 'all' : current === badge ? 'all' : badge;
-
         setFloorBadgeFilters((prev) => ({ ...prev, [floorKey]: nextBadge }));
-
         if (!expandedFloorsRef.current.has(floorKey)) {
-          setExpandedFloors((prev) => {
-            const next = new Set(prev);
-            next.add(floorKey);
-            return next;
-          });
+          setExpandedFloors((prev) => new Set(prev).add(floorKey));
         }
-
         if (!enrichedFloorsRef.current.has(floorKey)) {
           await enrichFloor(floorKey);
         }
@@ -316,13 +260,6 @@ export function useHabitacionesPisos() {
 
   const retryBuilding = useCallback(async (buildingId: string) => {
     if (!buildingId) return;
-    setRows((prev) =>
-      prev.map((r) =>
-        r.buildingId === buildingId
-          ? { ...r, building: { ...r.building, loading: true, error: false, name: 'Reintentando…' } }
-          : r
-      )
-    );
     repository.invalidateBuilding(buildingId);
     try {
       const data = await repository.getBuilding(buildingId);
@@ -348,13 +285,6 @@ export function useHabitacionesPisos() {
 
   const retryBed = useCallback(async (bedId: string) => {
     if (!bedId) return;
-    setRows((prev) =>
-      prev.map((r) =>
-        r.roomTypesId === bedId
-          ? { ...r, bed: { ...r.bed, loading: true, error: false, name: 'Reintentando…' } }
-          : r
-      )
-    );
     repository.invalidateBed(bedId);
     try {
       const data = await repository.getBedType(bedId);
@@ -378,29 +308,32 @@ export function useHabitacionesPisos() {
     }
   }, []);
 
-  const filteredRows = useMemo(() => filterHabitacionesRows(rows, filters), [rows, filters]);
-  const floorGroups: FloorGroup[] = useMemo(() => groupRoomsByFloor(filteredRows), [filteredRows]);
+  const filteredRows = useMemo(
+    () => filterHabitacionesRows(rows, filters),
+    [rows, filters]
+  );
+  const floorGroups: FloorGroup[] = useMemo(
+    () => groupRoomsByFloor(filteredRows),
+    [filteredRows]
+  );
 
   const setFilters = useCallback(
     (next: HabitacionesListFilters) => {
       setFiltersState(next);
-      const hasActiveFilter =
+      const hasActive =
         Boolean(next.search.trim()) ||
         next.status !== 'all' ||
         (next.statuses?.length ?? 0) > 0 ||
         next.buildingId !== 'all' ||
         (next.roomTypeIds?.length ?? 0) > 0;
-
-      if (hasActiveFilter) {
-        const matchedKeys = groupRoomsByFloor(filterHabitacionesRows(rowsRef.current, next)).map(
-          (g) => g.floorKey
-        );
+      if (hasActive) {
+        const matchedKeys = groupRoomsByFloor(
+          filterHabitacionesRows(rowsRef.current, next)
+        ).map((g) => g.floorKey);
         setExpandedFloors(new Set(matchedKeys));
-        matchedKeys.forEach((key) => {
-          if (!enrichedFloorsRef.current.has(key)) {
-            void enrichFloor(key);
-          }
-        });
+        for (const key of matchedKeys) {
+          if (!enrichedFloorsRef.current.has(key)) void enrichFloor(key);
+        }
       }
     },
     [enrichFloor]
@@ -409,33 +342,51 @@ export function useHabitacionesPisos() {
   const expandAllFloors = useCallback(() => {
     const keys = floorGroups.map((g) => g.floorKey);
     setExpandedFloors(new Set(keys));
-    keys.forEach((key) => {
-      if (!enrichedFloorsRef.current.has(key)) {
-        void enrichFloor(key);
-      }
-    });
+    for (const key of keys) {
+      if (!enrichedFloorsRef.current.has(key)) void enrichFloor(key);
+    }
   }, [floorGroups, enrichFloor]);
 
   const collapseAllFloors = useCallback(() => {
     setExpandedFloors(new Set());
   }, []);
 
-  const expandedRooms = useMemo(
-    () => floorGroups.filter((g) => expandedFloors.has(g.floorKey)).flatMap((g) => g.rooms),
-    [floorGroups, expandedFloors]
+  const expandedRoomRefs = useMemo(() => {
+    const refs: Array<{ id: string }> = [];
+    for (const group of floorGroups) {
+      if (!expandedFloors.has(group.floorKey)) continue;
+      for (const room of group.rooms) refs.push({ id: room.id });
+    }
+    return refs;
+  }, [floorGroups, expandedFloors]);
+
+  const updateRoomStatus = useCallback(
+    async (room: RoomRow, newStatus: string) => {
+      try {
+        await repository.updateRoomStatus(room, newStatus);
+      } catch (err) {
+        console.error('Error al actualizar estado de habitación en API:', err);
+      }
+      if (!isMountedRef.current) return;
+      setRows((prev) =>
+        prev.map((r) =>
+          r.id === room.id
+            ? { ...r, status: newStatus, updatedAt: new Date().toISOString() }
+            : r
+        )
+      );
+    },
+    []
   );
 
-  const updateRoomStatus = useCallback(async (room: RoomRow, newStatus: string) => {
-    try {
-      await repository.updateRoomStatus(room, newStatus);
-    } catch (err) {
-      console.error('Error al actualizar estado de habitación en API:', err);
-    }
-    if (!isMountedRef.current) return;
+  const markRoomOccupiedLocal = useCallback((roomId: string) => {
+    const cleanId = String(roomId).trim();
+    if (!cleanId) return;
+    invalidateOperativaStayCache(cleanId);
     setRows((prev) =>
       prev.map((r) =>
-        r.id === room.id
-          ? { ...r, status: newStatus, updatedAt: new Date().toISOString() }
+        r.id === cleanId
+          ? { ...r, status: 'busy', updatedAt: new Date().toISOString() }
           : r
       )
     );
@@ -445,7 +396,7 @@ export function useHabitacionesPisos() {
     allRooms: rows,
     floorGroups,
     expandedFloors,
-    expandedRooms,
+    expandedRoomRefs,
     enrichingFloors,
     floorErrors,
     floorBadgeFilters,
@@ -465,5 +416,6 @@ export function useHabitacionesPisos() {
     retryBuilding,
     retryBed,
     updateRoomStatus,
+    markRoomOccupiedLocal,
   };
 }

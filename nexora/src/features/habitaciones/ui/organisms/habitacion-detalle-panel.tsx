@@ -7,9 +7,13 @@ import {
   fadeIn,
   fadeUp,
 } from '../../../../design-tokens/motion';
-import { api } from '../../../../lib/api';
 import { validateStatusCode } from '../../../../shared/lib/status-code-validator';
 import { readAuthTokenEmail } from '../../../../shared/auth-storage';
+import {
+  fetchBuildingsCatalogCached,
+  fetchRatesCatalogCached,
+  fetchRoomTypesCatalogCached,
+} from '../../infrastructure/habitaciones-catalogs-cache';
 import { AsignarTarifaHabitacion } from '../../application/asignar-tarifa-habitacion';
 import { RegistrarHabitacionDetalle } from '../../application/registrar-habitacion-detalle';
 import type { HabitacionDetalleInput } from '../../domain/habitacion-detalle';
@@ -37,87 +41,12 @@ import { RecursosDropdown, type DropdownOption } from '../../../recursos/ui/mole
 const habitacionDetalleRepository = new ApiHabitacionDetalleRepository();
 const roomTariffRepository = new ApiRoomTariffRepository();
 
-function mapIdNameOptions(items: unknown[]): Option[] {
-  return items
-    .map((raw) => raw as { id?: unknown; name?: unknown })
-    .filter((item) => item.id != null && typeof item.name === 'string')
-    .map((item) => ({ value: String(item.id), label: String(item.name) }));
-}
-
-function mapEdificioOptions(items: unknown[]): EdificioOption[] {
-  return items
-    .map((raw) => {
-      const item = raw as {
-        id?: unknown;
-        name?: unknown;
-        floor_number?: unknown;
-        floorNumber?: unknown;
-      };
-      const floorRaw = item.floor_number ?? item.floorNumber;
-      const parsedFloor =
-        typeof floorRaw === 'number'
-          ? floorRaw
-          : typeof floorRaw === 'string'
-            ? parseInt(floorRaw, 10)
-            : undefined;
-      return {
-        value: String(item.id ?? ''),
-        label: String(item.name ?? ''),
-        floorNumber:
-          parsedFloor && !isNaN(parsedFloor) && parsedFloor > 0
-            ? parsedFloor
-            : 5,
-      };
-    })
-    .filter((item) => item.value.length > 0 && item.label.length > 0);
-}
-
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('es-CO', {
     style: 'currency',
     currency: 'COP',
     maximumFractionDigits: 0,
   }).format(amount);
-}
-
-function parseRatesOptions(data: unknown): TarifaOption[] {
-  const items = Array.isArray(data)
-    ? data
-    : data &&
-        typeof data === 'object' &&
-        Array.isArray((data as { data?: unknown }).data)
-      ? (data as { data: unknown[] }).data
-      : [];
-
-  return items
-    .map(
-      (raw) =>
-        raw as {
-          id?: unknown;
-          name?: unknown;
-          price?: unknown;
-          modality?: unknown;
-        }
-    )
-    .filter(
-      (item) =>
-        item && typeof item.name === 'string' && item.name.trim().length > 0
-    )
-    .map((item) => {
-      let price = 0;
-      if (typeof item.price === 'number') {
-        price = item.price;
-      } else if (typeof item.price === 'string') {
-        const parsed = parseFloat(item.price.replace(',', '.'));
-        if (!isNaN(parsed)) price = parsed;
-      }
-      return {
-        value: item.id != null ? String(item.id) : String(item.name),
-        label: String(item.name),
-        price,
-        modality: typeof item.modality === 'string' ? item.modality : undefined,
-      };
-    });
 }
 
 export function HabitacionDetallePanel() {
@@ -144,16 +73,14 @@ export function HabitacionDetallePanel() {
   const [edificioModalOpen, setEdificioModalOpen] = useState(false);
   const submittingRef = useRef(false);
 
-  const fetchRoomTypes = useCallback(async () => {
+  const fetchRoomTypes = useCallback(async (forceRefresh = false) => {
     setRoomTypesLoading(true);
     setRoomTypesError(null);
     try {
-      const response = await api.get<unknown>('/room-types');
-      if (response.status === 200) {
-        setRoomTypes(
-          Array.isArray(response.data) ? mapIdNameOptions(response.data) : []
-        );
-      }
+      const catalog = await fetchRoomTypesCatalogCached(forceRefresh);
+      setRoomTypes(
+        catalog.map((item) => ({ value: item.id, label: item.name }))
+      );
     } catch (error) {
       const status = isAxiosError(error) ? error.response?.status : undefined;
       setRoomTypesError(
@@ -166,22 +93,18 @@ export function HabitacionDetallePanel() {
     }
   }, []);
 
-  const fetchEdificios = useCallback(async () => {
+  const fetchEdificios = useCallback(async (forceRefresh = false) => {
     setEdificiosLoading(true);
     setEdificiosError(null);
     try {
-      const response = await api.get<unknown>('/building');
-      if (response.status === 200) {
-        const rawData = Array.isArray(response.data)
-          ? response.data
-          : response.data &&
-              typeof response.data === 'object' &&
-              'data' in response.data &&
-              Array.isArray((response.data as { data: unknown[] }).data)
-            ? (response.data as { data: unknown[] }).data
-            : [];
-        setEdificios(mapEdificioOptions(rawData));
-      }
+      const catalog = await fetchBuildingsCatalogCached(forceRefresh);
+      setEdificios(
+        catalog.map((item) => ({
+          value: item.id,
+          label: item.name,
+          floorNumber: item.floorNumber ?? 5,
+        }))
+      );
     } catch (error) {
       const status = isAxiosError(error) ? error.response?.status : undefined;
       setEdificiosError(
@@ -194,20 +117,19 @@ export function HabitacionDetallePanel() {
     }
   }, []);
 
-  const fetchRates = useCallback(async () => {
+  const fetchRates = useCallback(async (forceRefresh = false) => {
     setRatesLoading(true);
     setRatesError(null);
     try {
-      const response = await api.get<unknown>('/rates', {
-        validateStatus: (status) => status === 200 || status === 400,
-      });
-      if (response.status === 200) {
-        setRates(parseRatesOptions(response.data));
-      } else if (response.status === 400) {
-        setRatesError(
-          '¡Ups! Parece que las tarifas se tomaron un respiro y tuvimos un pequeño tropiezo al obtenerlas. Tranquilo(a), todo lo que has escrito sigue intacto y seguro. Pulsa en «Reintentar» y las sincronizamos enseguida.'
-        );
-      }
+      const catalog = await fetchRatesCatalogCached(forceRefresh);
+      setRates(
+        catalog.map((item) => ({
+          value: item.id,
+          label: item.name,
+          price: item.price,
+          modality: item.modality,
+        }))
+      );
     } catch (error) {
       const status = isAxiosError(error) ? error.response?.status : undefined;
       setRatesError(
@@ -221,11 +143,19 @@ export function HabitacionDetallePanel() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     void (async () => {
-      await fetchRoomTypes();
-      await fetchEdificios();
-      await fetchRates();
+      await Promise.resolve();
+      if (cancelled) return;
+      await Promise.allSettled([
+        fetchRoomTypes(false),
+        fetchEdificios(false),
+        fetchRates(false),
+      ]);
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [fetchRoomTypes, fetchEdificios, fetchRates]);
 
   const handleSubmit = async (values: HabitacionDetalleInput) => {
@@ -541,17 +471,17 @@ export function HabitacionDetallePanel() {
                 roomTypes={{
                   error: roomTypesError,
                   loading: roomTypesLoading,
-                  retry: () => void fetchRoomTypes(),
+                  retry: () => void fetchRoomTypes(true),
                 }}
                 edificios={{
                   error: edificiosError,
                   loading: edificiosLoading,
-                  retry: () => void fetchEdificios(),
+                  retry: () => void fetchEdificios(true),
                 }}
                 rates={{
                   error: ratesError,
                   loading: ratesLoading,
-                  retry: () => void fetchRates(),
+                  retry: () => void fetchRates(true),
                 }}
               />
 
@@ -587,13 +517,13 @@ export function HabitacionDetallePanel() {
       <HabitacionTipoModal
         open={tipoModalOpen}
         onClose={() => setTipoModalOpen(false)}
-        onSuccess={() => void fetchRoomTypes()}
+        onSuccess={() => void fetchRoomTypes(true)}
       />
 
       <EdificioRegistroModal
         open={edificioModalOpen}
         onClose={() => setEdificioModalOpen(false)}
-        onSuccess={() => void fetchEdificios()}
+        onSuccess={() => void fetchEdificios(true)}
       />
     </>
   );

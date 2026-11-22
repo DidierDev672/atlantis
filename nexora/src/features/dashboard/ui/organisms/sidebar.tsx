@@ -93,11 +93,11 @@ function SidebarBody({
       {/* Branding / Encabezado del hotel */}
       <div className="flex items-center justify-between gap-3 px-5 pt-6 pb-5">
         <div className="flex items-center gap-3 min-w-0">
-          <span className="grid size-10 place-items-center rounded-xl bg-cream text-primary shadow-sm overflow-hidden shrink-0">
+          <span className="grid size-10 place-items-center rounded-xl text-primary shadow-sm overflow-hidden shrink-0">
             <img
               src={hotelLogo || DEFAULT_HOTEL_LOGO}
               alt={hotelName || 'Logo del proyecto'}
-              className={hotelLogo ? 'size-full object-cover' : 'size-full object-contain p-0.5'}
+              className={hotelLogo ? 'size-full object-cover' : 'size-full object-contain'}
             />
           </span>
           <div className="min-w-0 flex-1">

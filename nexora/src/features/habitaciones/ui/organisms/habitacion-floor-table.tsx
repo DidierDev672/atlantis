@@ -1,9 +1,9 @@
 import { memo } from 'react';
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faBed, faBuilding, faTags } from '@fortawesome/free-solid-svg-icons';
 import type { RoomRow } from '../../domain/habitacion-lista';
-import { FLOOR_STAGGER_CONTAINER_VARIANTS } from '../lib/motion-variants';
+import { FLOOR_CONTENT_FADE_VARIANTS } from '../lib/motion-variants';
 import { HabitacionTableRow } from '../molecules/habitacion-table-row';
 
 export interface HabitacionFloorTableProps {
@@ -35,8 +35,15 @@ export const HabitacionFloorTable = memo(function HabitacionFloorTable({
   onOpenRoomDetail,
   onSelectHabitacion,
 }: HabitacionFloorTableProps) {
+  const reducedMotion = useReducedMotion();
+
   return (
-    <div className="border-line overflow-x-auto rounded-xl border">
+    <motion.div
+      variants={reducedMotion ? undefined : FLOOR_CONTENT_FADE_VARIANTS}
+      initial={reducedMotion ? false : 'hidden'}
+      animate="visible"
+      className="border-line overflow-x-auto rounded-xl border"
+    >
       <table className="w-full text-left text-xs">
         <thead className="bg-canvas border-line text-ink-muted border-b text-[11px] font-semibold tracking-wider uppercase">
           <tr>
@@ -45,13 +52,19 @@ export const HabitacionFloorTable = memo(function HabitacionFloorTable({
             </th>
             <th scope="col" className="px-4 py-3">
               <span className="inline-flex items-center gap-1.5">
-                <FontAwesomeIcon icon={faBuilding} className="text-ink-muted/70 size-3" />
+                <FontAwesomeIcon
+                  icon={faBuilding}
+                  className="text-ink-muted/70 size-3"
+                />
                 <span>Edificio</span>
               </span>
             </th>
             <th scope="col" className="px-4 py-3">
               <span className="inline-flex items-center gap-1.5">
-                <FontAwesomeIcon icon={faBed} className="text-ink-muted/70 size-3" />
+                <FontAwesomeIcon
+                  icon={faBed}
+                  className="text-ink-muted/70 size-3"
+                />
                 <span>Tipo de habitación</span>
               </span>
             </th>
@@ -63,7 +76,10 @@ export const HabitacionFloorTable = memo(function HabitacionFloorTable({
             </th>
             <th scope="col" className="px-4 py-3">
               <span className="inline-flex items-center gap-1.5">
-                <FontAwesomeIcon icon={faTags} className="text-ink-muted/70 size-3" />
+                <FontAwesomeIcon
+                  icon={faTags}
+                  className="text-ink-muted/70 size-3"
+                />
                 <span>Tarifas</span>
               </span>
             </th>
@@ -73,12 +89,7 @@ export const HabitacionFloorTable = memo(function HabitacionFloorTable({
           </tr>
         </thead>
 
-        <motion.tbody
-          variants={FLOOR_STAGGER_CONTAINER_VARIANTS}
-          initial="hidden"
-          animate="visible"
-          className="divide-line divide-y"
-        >
+        <tbody className="divide-line divide-y">
           {rooms.map((row) => (
             <HabitacionTableRow
               key={row.id}
@@ -96,9 +107,9 @@ export const HabitacionFloorTable = memo(function HabitacionFloorTable({
               onSelectHabitacion={onSelectHabitacion}
             />
           ))}
-        </motion.tbody>
+        </tbody>
       </table>
-    </div>
+    </motion.div>
   );
 });
 

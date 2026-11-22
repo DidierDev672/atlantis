@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { AnimatePresence, motion } from 'motion/react'
-import { api } from '../../../../lib/api'
+import {
+  fetchBuildingDetailByIdCached,
+  fetchHeadquarterByIdCached,
+  fetchSubHeadquartersByHqCached,
+} from '../../../habitaciones/infrastructure/sedes-and-menu-cache'
 import { Button } from '../../../habitaciones/ui/atoms/button'
 
 export interface EdificioDetalleModalProps {
@@ -122,49 +126,26 @@ export function EdificioDetalleModal({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, onClose])
 
-  // Cargar datos exclusivamente del edificio específico
+  // Cargar datos del edificio desde caché compartida (TTL 5 min)
   const fetchFullBuilding = useCallback(async (id: string) => {
     setLoading(true)
     try {
-      const response = await api.get<unknown>(`/building/${id}`, {
-        validateStatus: (s) => s === 200,
-      })
-
-      const raw = response.data as RawBuildingFull | { data?: RawBuildingFull }
-      const item: RawBuildingFull =
-        raw && typeof raw === 'object' && 'data' in raw && raw.data
-          ? (raw.data as RawBuildingFull)
-          : (raw as RawBuildingFull)
-
-      if (item && item.id) {
-        setBuildingData(item)
-      }
+      const item = await fetchBuildingDetailByIdCached(id)
+      setBuildingData(item)
     } catch {
-      // Fallback a los datos recibidos por props
       setBuildingData(null)
     } finally {
       setLoading(false)
     }
   }, [])
 
-  // Cargar información de la sede principal
+  // Cargar información de la sede principal desde caché compartida
   const fetchSede = useCallback(async (hqId: string) => {
     setSedeLoading(true)
     setSedeError(null)
     try {
-      const response = await api.get<unknown>(`/headquarters/${hqId}`)
-      const raw = response.data
-      const item: RawHeadquarter | null = Array.isArray(raw)
-        ? ((raw[0] as RawHeadquarter) ?? null)
-        : raw && typeof raw === 'object' && 'data' in raw && raw.data
-        ? (raw.data as RawHeadquarter)
-        : (raw as RawHeadquarter)
-
-      if (item && (item.id || item.name)) {
-        setSede(item)
-      } else {
-        setSede(null)
-      }
+      const item = await fetchHeadquarterByIdCached(hqId)
+      setSede(item)
     } catch (err: unknown) {
       setSede(null)
       if (isAxiosError(err) && err.response?.status === 400) {
@@ -181,19 +162,12 @@ export function EdificioDetalleModal({
     }
   }, [])
 
-  // Cargar sub-sedes asociadas a la sede
+  // Cargar sub-sedes asociadas a la sede desde caché compartida
   const fetchSubSedes = useCallback(async (hqId: string) => {
     setSubSedesLoading(true)
     setSubSedesError(null)
     try {
-      const response = await api.get<unknown>(`/sub-headquarters/by-headquarter/${hqId}`)
-      const raw = response.data
-      const list: RawSubHeadquarter[] = Array.isArray(raw)
-        ? (raw as RawSubHeadquarter[])
-        : raw && typeof raw === 'object' && 'data' in raw && Array.isArray(raw.data)
-        ? (raw.data as RawSubHeadquarter[])
-        : []
-
+      const list = await fetchSubHeadquartersByHqCached(hqId)
       setSubSedes(list)
       if (list.length === 0) {
         setSubSedesError(
@@ -217,22 +191,40 @@ export function EdificioDetalleModal({
   }, [])
 
   useEffect(() => {
-    if (isOpen && buildingId) {
-      void fetchFullBuilding(buildingId)
-    } else {
-      setBuildingData(null)
+    let active = true
+    void (async () => {
+      await Promise.resolve()
+      if (!active) return
+      if (isOpen && buildingId) {
+        await fetchFullBuilding(buildingId)
+      } else {
+        setBuildingData(null)
+      }
+    })()
+    return () => {
+      active = false
     }
   }, [isOpen, buildingId, fetchFullBuilding])
 
   useEffect(() => {
-    if (isOpen && headquartersId) {
-      void fetchSede(headquartersId)
-      void fetchSubSedes(headquartersId)
-    } else if (!isOpen) {
-      setSede(null)
-      setSedeError(null)
-      setSubSedes([])
-      setSubSedesError(null)
+    let active = true
+    void (async () => {
+      await Promise.resolve()
+      if (!active) return
+      if (isOpen && headquartersId) {
+        await Promise.allSettled([
+          fetchSede(headquartersId),
+          fetchSubSedes(headquartersId),
+        ])
+      } else if (!isOpen) {
+        setSede(null)
+        setSedeError(null)
+        setSubSedes([])
+        setSubSedesError(null)
+      }
+    })()
+    return () => {
+      active = false
     }
   }, [isOpen, headquartersId, fetchSede, fetchSubSedes])
 
