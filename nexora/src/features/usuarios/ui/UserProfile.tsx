@@ -522,7 +522,7 @@ export function UserProfile() {
 
         {/* PIE DE PÁGINA INFORMATIVO */}
         <footer className="flex flex-col sm:flex-row items-center justify-between text-xs text-ink-muted px-4 gap-2 pt-2">
-          <span>Nexora Hotel Management System · Módulo de Perfil de Usuario</span>
+          <span>Aloja Hotel Management System · Módulo de Perfil de Usuario</span>
         </footer>
 
       </div>

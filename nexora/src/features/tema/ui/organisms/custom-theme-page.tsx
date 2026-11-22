@@ -356,7 +356,7 @@ export function CustomThemePage({ onBack }: CustomThemePageProps) {
                 <span className="font-bold text-primary">Logo representativo del hotel</span>
               </div>
               <p className="text-xs text-ink-muted">
-                {hotelLogo ? 'Logo personalizado cargado' : 'Logo predeterminado'} · Se ubica a la izquierda del nombre Nexora en el menú principal.
+                {hotelLogo ? 'Logo personalizado cargado' : 'Logo predeterminado'} · Se ubica a la izquierda del nombre Aloja en el menú principal.
               </p>
             </div>
           </div>
@@ -431,7 +431,7 @@ export function CustomThemePage({ onBack }: CustomThemePageProps) {
           >
             <div className="flex items-center gap-2">
               <span className="size-3.5 rounded-full bg-black/20" />
-              <span className="text-xs font-bold text-ink">Nexora App</span>
+              <span className="text-xs font-bold text-ink">Aloja App</span>
             </div>
             <div className="flex items-center gap-2">
               <span
@@ -470,7 +470,7 @@ export function CustomThemePage({ onBack }: CustomThemePageProps) {
                   />
                 </span>
                 <div className="min-w-0">
-                  <span className="text-xs font-bold text-white truncate block">Nexora</span>
+                  <span className="text-xs font-bold text-white truncate block">Aloja</span>
                   <span className="text-[10px] text-white/70 truncate block">{hotelName}</span>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import type { DropdownOption } from '../../../recursos/ui/molecules/recursos-dropdown'
+import type { DropdownOption } from '../../recursos/ui/molecules/recursos-dropdown'
 
 /**
  * Opciones por defecto para el selector de Recepción / Habitación en formato: name - floor - number

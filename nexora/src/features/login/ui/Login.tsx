@@ -149,7 +149,7 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
         const fallbackValidation = validateStatusCode(0);
         setServerError(
           fallbackValidation.message ||
-            'Nexora no pudo conectarse en este momento. Revisa tu conexión y vuelve a intentarlo en un momento.'
+            'Aloja no pudo conectarse en este momento. Revisa tu conexión y vuelve a intentarlo en un momento.'
         );
       }
     } finally {
@@ -240,7 +240,7 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
                 <h1 className="text-ink text-2xl font-bold">
                   {hotelName !== 'Hoteles · Operaciones'
                     ? hotelName
-                    : 'Tu hotel toma vida en Nexora'}
+                    : 'Tu hotel toma vida en Aloja'}
                 </h1>
                 <p className="text-ink-muted mt-1 text-sm">
                   {hotelName !== 'Hoteles · Operaciones'
@@ -494,7 +494,7 @@ function SuccessState({
           ¡Bienvenido a {displayName}!
         </h3>
         <p className="text-ink-muted text-sm leading-relaxed">
-          Nexora acaba de encender las luces de {displayName} solo para ti. Tus
+          Aloja acaba de encender las luces de {displayName} solo para ti. Tus
           huéspedes te esperan y hoy también va a ser un gran día para tu
           equipo.
         </p>

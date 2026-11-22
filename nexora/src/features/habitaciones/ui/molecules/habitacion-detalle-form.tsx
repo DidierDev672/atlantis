@@ -90,7 +90,7 @@ export function HabitacionDetalleForm({
   const [numero, setNumero] = useState('')
   const [autoNextNumber, setAutoNextNumber] = useState('')
   const [isManualNumber, setIsManualNumber] = useState(false)
-  const [loadingNextNumber, setLoadingNextNumber] = useState(false)
+  const [loadingNextNumber, setLoadingNextNumber] = useState(true)
   const [nextNumberError, setNextNumberError] = useState<string | null>(null)
   const [piso, setPiso] = useState('')
   const [tipoHabitacion, setTipoHabitacion] = useState('')
@@ -99,21 +99,14 @@ export function HabitacionDetalleForm({
   const [estado, setEstado] = useState<HabitacionEstado>('disponible')
   const [errors, setErrors] = useState<HabitacionDetalleValidationErrors>({})
   const [fetchedFloors, setFetchedFloors] = useState<Record<string, number>>({})
-  const [loadingFloors, setLoadingFloors] = useState(false)
 
   const effectiveRepository = useMemo(
     () => repository ?? defaultHabitacionDetalleRepository,
     [repository]
   )
 
-  const fetchNextNumber = useCallback(async () => {
-    setLoadingNextNumber(true)
-    setNextNumberError(null)
-
-    try {
-      const getNext = ObtenerSiguienteNumeroHabitacion(effectiveRepository)
-      const result = await getNext()
-
+  const applyNextNumberResult = useCallback(
+    (result: Awaited<ReturnType<ReturnType<typeof ObtenerSiguienteNumeroHabitacion>>>) => {
       if (!result.validation.isValid) {
         const errorMsg =
           result.validation.message ??
@@ -133,6 +126,18 @@ export function HabitacionDetalleForm({
           return next
         })
       }
+    },
+    []
+  )
+
+  const fetchNextNumber = useCallback(async () => {
+    setLoadingNextNumber(true)
+    setNextNumberError(null)
+
+    try {
+      const getNext = ObtenerSiguienteNumeroHabitacion(effectiveRepository)
+      const result = await getNext()
+      applyNextNumberResult(result)
     } catch {
       const validation = validateStatusCode(0)
       setNextNumberError(validation.message ?? 'No se pudo consultar el próximo número.')
@@ -140,11 +145,34 @@ export function HabitacionDetalleForm({
     } finally {
       setLoadingNextNumber(false)
     }
-  }, [effectiveRepository])
+  }, [applyNextNumberResult, effectiveRepository])
 
   useEffect(() => {
-    void fetchNextNumber()
-  }, [fetchNextNumber])
+    let active = true
+
+    async function loadNextNumberOnMount() {
+      try {
+        const getNext = ObtenerSiguienteNumeroHabitacion(effectiveRepository)
+        const result = await getNext()
+        if (!active) return
+        applyNextNumberResult(result)
+      } catch {
+        if (!active) return
+        const validation = validateStatusCode(0)
+        setNextNumberError(validation.message ?? 'No se pudo consultar el próximo número.')
+        setIsManualNumber(true)
+      } finally {
+        if (active) {
+          setLoadingNextNumber(false)
+        }
+      }
+    }
+
+    void loadNextNumberOnMount()
+    return () => {
+      active = false
+    }
+  }, [applyNextNumberResult, effectiveRepository])
 
   const handleToggleManualNumber = () => {
     setIsManualNumber((prev) => {
@@ -179,6 +207,12 @@ export function HabitacionDetalleForm({
     [edificios, edificioId]
   )
 
+  const loadingFloors = Boolean(
+    edificioId &&
+      !(selectedEdificio?.floorNumber != null && selectedEdificio.floorNumber > 0) &&
+      fetchedFloors[edificioId] == null
+  )
+
   // Consulta complementaria a /building/{id} si el listado general no aportó floorNumber
   useEffect(() => {
     if (!edificioId) return
@@ -186,7 +220,6 @@ export function HabitacionDetalleForm({
     if (fetchedFloors[edificioId] != null) return
 
     let isMounted = true
-    setLoadingFloors(true)
 
     api
       .get<unknown>(`/building/${encodeURIComponent(edificioId)}`)
@@ -224,9 +257,6 @@ export function HabitacionDetalleForm({
           setFetchedFloors((prev) => ({ ...prev, [edificioId]: 5 }))
         }
       })
-      .finally(() => {
-        if (isMounted) setLoadingFloors(false)
-      })
 
     return () => {
       isMounted = false
@@ -234,6 +264,17 @@ export function HabitacionDetalleForm({
   }, [edificioId, selectedEdificio, fetchedFloors])
 
   const totalPisos = selectedEdificio?.floorNumber ?? fetchedFloors[edificioId] ?? 0
+
+  const effectivePiso = useMemo(() => {
+    if (!edificioId || !piso) return ''
+    if (totalPisos > 0) {
+      const currentPiso = Number(piso)
+      if (isNaN(currentPiso) || currentPiso < 1 || currentPiso > totalPisos) {
+        return ''
+      }
+    }
+    return piso
+  }, [edificioId, piso, totalPisos])
 
   // Opciones de pisos derivadas del número de pisos registrado para el edificio
   const pisoOptions = useMemo<DropdownOption[]>(() => {
@@ -246,18 +287,6 @@ export function HabitacionDetalleForm({
       }
     })
   }, [edificioId, totalPisos])
-
-  // Limpia el piso seleccionado si ya no es válido para el edificio actual
-  useEffect(() => {
-    if (piso && totalPisos > 0) {
-      const currentPiso = Number(piso)
-      if (isNaN(currentPiso) || currentPiso < 1 || currentPiso > totalPisos) {
-        setPiso('')
-      }
-    } else if (!edificioId) {
-      setPiso('')
-    }
-  }, [edificioId, totalPisos, piso])
 
   const numericPrecio = precio.trim() ? Number(precio.trim().replace(',', '.')) : 0
   const hasValidNumericPrecio = !isNaN(numericPrecio) && numericPrecio > 0
@@ -309,20 +338,17 @@ export function HabitacionDetalleForm({
     }
   }
 
-  // Si la tarifa seleccionada cambia, revalida el precio actual
-  useEffect(() => {
+  const tariffOverPriceError = useMemo(() => {
     if (selectedTarifa && selectedTarifa.price > 0 && precio.trim()) {
       const num = Number(precio.trim().replace(',', '.'))
       if (!isNaN(num) && num > selectedTarifa.price) {
-        setErrors((prev) => ({
-          ...prev,
-          precio: `El precio a validar (${formatCurrency(num)}) no puede ser superior a la tarifa seleccionada (${formatCurrency(selectedTarifa.price)}).`,
-        }))
-      } else {
-        clearError('precio')
+        return `El precio a validar (${formatCurrency(num)}) no puede ser superior a la tarifa seleccionada (${formatCurrency(selectedTarifa.price)}).`
       }
     }
-  }, [selectedTarifa])
+    return undefined
+  }, [selectedTarifa, precio])
+
+  const displayedPrecioError = errors.precio ?? tariffOverPriceError
 
   const handleEstadoChange = (val: string) => {
     setEstado(val as HabitacionEstado)
@@ -333,7 +359,7 @@ export function HabitacionDetalleForm({
     event.preventDefault()
     const values: HabitacionDetalleInput = {
       numero,
-      piso,
+      piso: effectivePiso,
       tipoHabitacion,
       edificioId,
       precio,
@@ -431,7 +457,7 @@ export function HabitacionDetalleForm({
                     : 'Elige un piso…'
               }
               options={pisoOptions}
-              value={piso}
+              value={effectivePiso}
               onChange={(val) => handleInputChange('piso', setPiso, val)}
               error={errors.piso}
               disabled={!edificioId || loadingFloors}
@@ -502,7 +528,7 @@ export function HabitacionDetalleForm({
               }
               value={precio}
               onChange={(event) => handlePrecioChange(event.target.value)}
-              error={errors.precio}
+              error={displayedPrecioError}
               hint="Opcional: precio por noche que el sistema validará contra el tipo seleccionado."
               icon={<span className="text-sm font-semibold">$</span>}
             />

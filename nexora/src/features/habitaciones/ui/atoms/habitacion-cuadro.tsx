@@ -203,7 +203,7 @@ export function HabitacionCuadro({
                     {/* Footer de la tarjeta con acción rápida */}
                     <div className="border-t border-stone-300/80 pt-1 flex items-center justify-between text-[7px] text-stone-500">
                       <span className="font-mono uppercase tracking-widest text-[6px]">
-                        Nexora Folio
+                        Aloja Folio
                       </span>
                       <button
                         type="button"

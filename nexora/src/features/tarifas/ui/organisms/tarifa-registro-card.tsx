@@ -48,7 +48,7 @@ function parseApiSede(item: ApiSedeItem): Sede {
 const FALLBACK_SEDES: Sede[] = [
   {
     id: 'sede-central',
-    name: 'Hotel Nexora Central',
+    name: 'Hotel Aloja Central',
     address: 'Av. Las Palmas 450',
     city: 'Medellín',
     phone: '+57 4 444 0101',
@@ -56,7 +56,7 @@ const FALLBACK_SEDES: Sede[] = [
   },
   {
     id: 'sede-costa',
-    name: 'Nexora Resort & Beach',
+    name: 'Aloja Resort & Beach',
     address: 'Bulevar Marino 12',
     city: 'Cartagena',
     phone: '+57 5 666 0202',
@@ -64,7 +64,7 @@ const FALLBACK_SEDES: Sede[] = [
   },
   {
     id: 'sede-valle',
-    name: 'Nexora Boutique Valle',
+    name: 'Aloja Boutique Valle',
     address: 'Calle Real 88',
     city: 'Cali',
     phone: '+57 2 888 0303',

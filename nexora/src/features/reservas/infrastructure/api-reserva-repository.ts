@@ -182,7 +182,7 @@ export class ApiReservaRepository implements ReservaRepository {
             : undefined
         return {
           id: respId,
-          message: '¡Tu estadía ha sido asegurada exitosamente en Nexora!',
+          message: '¡Tu estadía ha sido asegurada exitosamente en Aloja!',
         }
       }
 

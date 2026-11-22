@@ -71,7 +71,7 @@ export function Loading({
                 />
               </span>
               <div className="text-left">
-                <p className="text-[11px] font-bold text-ink leading-tight">Nexora</p>
+                <p className="text-[11px] font-bold text-ink leading-tight">Aloja</p>
                 <p className="text-[10px] text-ink-muted leading-tight truncate max-w-[150px]">
                   {hotelName}
                 </p>

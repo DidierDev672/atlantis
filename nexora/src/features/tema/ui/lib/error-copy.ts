@@ -3,5 +3,5 @@ export function paletteListLoadError(): string {
 }
 
 export function paletteEmptyMessage(): string {
-  return 'Todavía no hay paletas definidas. Cuando el sistema tenga colores listos, aparecerán aquí para que elijas con calma el estilo de tu Nexora.'
+  return 'Todavía no hay paletas definidas. Cuando el sistema tenga colores listos, aparecerán aquí para que elijas con calma el estilo de tu Aloja.'
 }

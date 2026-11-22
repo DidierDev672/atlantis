@@ -101,7 +101,7 @@ function SidebarBody({
             />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-base font-bold text-cream truncate">Nexora</p>
+            <p className="text-base font-bold text-cream truncate">Aloja</p>
             <p className="text-[11px] text-cream/70 truncate" title={hotelName}>
               {hotelName}
             </p>
@@ -241,7 +241,7 @@ function SidebarBody({
 
       {/* Pie de versión */}
       <div className="border-t border-white/10 px-5 py-4">
-        <p className="text-[11px] text-cream/40">Nexora v1.0 · Panel de operaciones</p>
+        <p className="text-[11px] text-cream/40">Aloja v1.0 · Panel de operaciones</p>
       </div>
     </div>
   )

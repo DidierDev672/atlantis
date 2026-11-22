@@ -138,7 +138,7 @@ export function LogoutGoodbyeModal({
           {/* Mensaje con psicología de bienestar, reconocimiento y paz mental */}
           <p className="mt-2 text-sm leading-relaxed text-ink-muted sm:text-base">
             Detrás de cada huésped feliz y cada habitación impecable, está tu compromiso.
-            Hoy tu esfuerzo volvió a marcar la diferencia en Nexora.
+            Hoy tu esfuerzo volvió a marcar la diferencia en Aloja.
           </p>
 
           <p className="mt-2 text-xs leading-relaxed text-ink-soft sm:text-sm">

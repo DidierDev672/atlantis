@@ -186,6 +186,6 @@ export const DASHBOARD_CARDS: readonly DashboardCardDefinition[] = [
     badgeVariant: 'accent',
     iconName: 'PaletteIcon',
     accentColor: 'from-emerald-500/10 to-cyan-500/10 text-primary',
-    highlightMetric: 'Atmósfera Nexora',
+    highlightMetric: 'Atmósfera Aloja',
   },
 ] as const;

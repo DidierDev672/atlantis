@@ -198,7 +198,7 @@ export function resolveRoleRedirect(roleName: string): RoleRedirectDecision {
         roleName: normalizedName || 'desconocido',
         targetNavId: 'home',
         pageTitle: 'Inicio',
-        description: 'Acceso general al sistema Nexora',
+        description: 'Acceso general al sistema Aloja',
         isReception: false,
         status: isMissing ? 'missing_role' : 'unrecognized_role',
         hasRoleIssue: true,

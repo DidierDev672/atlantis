@@ -52,10 +52,10 @@ export function translateSedeStatus(status?: string | null): string {
  */
 export const KNOWN_SEDES_NAMES: Record<string, string> = {
   'sede-central-miraflores': 'Sede Principal Miraflores',
-  'sede-central': 'Hotel Nexora Central',
+  'sede-central': 'Hotel Aloja Central',
   'sede-san-isidro': 'Sede San Isidro Campestre',
-  'sede-costa': 'Nexora Resort & Beach',
-  'sede-valle': 'Nexora Boutique Valle',
+  'sede-costa': 'Aloja Resort & Beach',
+  'sede-valle': 'Aloja Boutique Valle',
   'sede-norte': 'Sede Norte Empresarial',
   'sede-sur': 'Sede Sur Campestre',
 }

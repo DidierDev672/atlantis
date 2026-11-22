@@ -161,7 +161,7 @@ export const THEME_BOTTOM_ITEMS: ThemeElementCardItem[] = [
   {
     id: 'logo',
     label: 'Logo Hotel',
-    description: 'Junto a Nexora en el menú',
+    description: 'Junto a Aloja en el menú',
     icon: ({ className }) => (
       <svg
         viewBox="0 0 24 24"

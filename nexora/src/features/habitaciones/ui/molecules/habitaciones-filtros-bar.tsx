@@ -1,8 +1,20 @@
-import type { HabitacionesListFilters } from '../../domain/habitacion-lista';
+import { Suspense, lazy, memo, useCallback } from 'react';
 import {
-  HabitacionesViewModeToggle,
-  type HabitacionesViewMode,
-} from './habitaciones-view-mode-toggle';
+  faArrowsRotate,
+  faFilterCircleXmark,
+} from '@fortawesome/free-solid-svg-icons';
+import { useRoomTypesCatalog } from '../../application/use-room-types-catalog';
+import type { HabitacionesListFilters } from '../../domain/habitacion-lista';
+import { IconActionButton } from '../atoms/icon-action-button';
+import type { HabitacionesViewMode } from './habitaciones-view-mode-toggle';
+
+const LazyFiltrosDropdowns = lazy(
+  () => import('./habitaciones-filtros-dropdowns')
+);
+
+const LazyViewModeToggle = lazy(
+  () => import('./habitaciones-view-mode-toggle')
+);
 
 interface HabitacionesFiltrosBarProps {
   filters: HabitacionesListFilters;
@@ -11,7 +23,7 @@ interface HabitacionesFiltrosBarProps {
   totalCount: number;
   filteredCount: number;
   onFilterChange: (next: HabitacionesListFilters) => void;
-  onReload: () => void;
+  onReload: () => void | Promise<void>;
   isReloading?: boolean;
   viewMode?: HabitacionesViewMode;
   onViewModeChange?: (mode: HabitacionesViewMode) => void;
@@ -19,7 +31,7 @@ interface HabitacionesFiltrosBarProps {
   isVerifyingTarifas?: boolean;
 }
 
-export function HabitacionesFiltrosBar({
+export const HabitacionesFiltrosBar = memo(function HabitacionesFiltrosBar({
   filters,
   knownBuildings,
   loadedCount,
@@ -31,38 +43,116 @@ export function HabitacionesFiltrosBar({
   viewMode,
   onViewModeChange,
 }: HabitacionesFiltrosBarProps) {
+  const {
+    options: roomTypeOptions,
+    loading: roomTypesLoading,
+    error: roomTypesError,
+    reload: reloadRoomTypes,
+  } = useRoomTypesCatalog();
+
   const isFiltering =
     Boolean(filters.search.trim()) ||
     filters.status !== 'all' ||
-    filters.buildingId !== 'all';
+    (filters.statuses?.length ?? 0) > 0 ||
+    filters.buildingId !== 'all' ||
+    (filters.roomTypeIds?.length ?? 0) > 0;
 
-  const handleSearchChange = (value: string) => {
-    onFilterChange({ ...filters, search: value });
-  };
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      try {
+        onFilterChange({ ...filters, search: value });
+      } catch (err) {
+        console.error('Error al actualizar búsqueda:', err);
+      }
+    },
+    [filters, onFilterChange]
+  );
 
-  const handleStatusChange = (value: string) => {
-    onFilterChange({ ...filters, status: value });
-  };
+  const handleResetFilters = useCallback(() => {
+    try {
+      onFilterChange({
+        search: '',
+        status: 'all',
+        statuses: [],
+        buildingId: 'all',
+        roomTypeIds: [],
+      });
+    } catch (err) {
+      console.error('Error al limpiar filtros:', err);
+    }
+  }, [onFilterChange]);
 
-  const handleBuildingChange = (value: string) => {
-    onFilterChange({ ...filters, buildingId: value });
-  };
-
-  const handleResetFilters = () => {
-    onFilterChange({ search: '', status: 'all', buildingId: 'all' });
-  };
+  const handleReloadClick = useCallback(async () => {
+    try {
+      await Promise.all([onReload(), reloadRoomTypes()]);
+    } catch (err) {
+      console.error('Error al refrescar catálogo de habitaciones:', err);
+    }
+  }, [onReload, reloadRoomTypes]);
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        {/* 1. Buscador */}
-        <div className="relative max-w-md flex-1">
+      <div className="flex flex-col gap-3">
+        {/* 1. Filtros (Estados, Edificios, Tipo de habitaciones) + Acciones arriba */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <Suspense
+            fallback={
+              <div className="bg-line/40 h-[42px] w-full animate-pulse rounded-xl sm:w-[460px]" />
+            }
+          >
+            <LazyFiltrosDropdowns
+              filters={filters}
+              knownBuildings={knownBuildings}
+              roomTypeOptions={roomTypeOptions}
+              roomTypesLoading={roomTypesLoading}
+              roomTypesError={roomTypesError}
+              onFilterChange={onFilterChange}
+            />
+          </Suspense>
+
+          <div className="ml-auto flex items-center gap-2">
+            {isFiltering && (
+              <IconActionButton
+                icon={faFilterCircleXmark}
+                tone="danger"
+                label="Limpiar filtros"
+                onClick={handleResetFilters}
+              />
+            )}
+
+            <IconActionButton
+              icon={faArrowsRotate}
+              label="Refrescar catálogo de habitaciones"
+              spin={Boolean(isReloading || roomTypesLoading)}
+              disabled={Boolean(isReloading)}
+              onClick={() => void handleReloadClick()}
+            />
+
+            {viewMode && onViewModeChange && (
+              <div className="border-line border-l pl-2">
+                <Suspense
+                  fallback={
+                    <div className="bg-line/40 h-[42px] w-[112px] animate-pulse rounded-xl" />
+                  }
+                >
+                  <LazyViewModeToggle
+                    viewMode={viewMode}
+                    onChange={onViewModeChange}
+                  />
+                </Suspense>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 2. Cuadro de búsqueda debajo de los filtros (ancho completo) */}
+        <div className="relative w-full">
           <input
             type="text"
             value={filters.search}
             onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="Buscar por número, piso o nombre…"
-            className="border-line bg-panel text-ink placeholder:text-ink-muted focus:border-primary focus:ring-primary/20 w-full rounded-xl border py-2.5 pr-4 pl-10 text-xs font-medium shadow-2xs transition outline-none focus:ring-2"
+            className="border-line bg-panel text-ink placeholder:text-ink-muted focus:border-primary focus:ring-primary/20 min-h-[42px] w-full rounded-xl border py-2.5 pr-9 pl-10 text-xs font-medium shadow-2xs transition outline-none focus:ring-2"
             aria-label="Buscar habitaciones"
           />
           <svg
@@ -82,7 +172,7 @@ export function HabitacionesFiltrosBar({
             <button
               type="button"
               onClick={() => handleSearchChange('')}
-              className="text-ink-muted hover:text-ink absolute top-1/2 right-3 -translate-y-1/2"
+              className="text-ink-muted hover:text-ink absolute top-1/2 right-3 -translate-y-1/2 cursor-pointer"
               aria-label="Limpiar búsqueda"
             >
               <svg
@@ -98,111 +188,9 @@ export function HabitacionesFiltrosBar({
             </button>
           )}
         </div>
-
-        {/* 2. Filtros de Estado y Edificio + Recargar */}
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Filtro Estado */}
-          <div className="relative">
-            <select
-              value={filters.status}
-              onChange={(e) => handleStatusChange(e.target.value)}
-              className="border-line bg-panel text-ink focus:border-primary focus:ring-primary/20 cursor-pointer appearance-none rounded-xl border py-2 pr-8 pl-3.5 text-xs font-medium shadow-2xs transition outline-none focus:ring-2"
-              aria-label="Filtrar por estado"
-            >
-              <option value="all">Todos los estados</option>
-              <option value="available">Disponible</option>
-              <option value="occupied">Ocupada</option>
-              <option value="maintenance">Mantenimiento</option>
-              <option value="cleaning">Limpieza</option>
-              <option value="inactive">Inactiva</option>
-            </select>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              className="text-ink-muted pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2"
-              aria-hidden="true"
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </div>
-
-          {/* Filtro Edificio */}
-          <div className="relative">
-            <select
-              value={filters.buildingId}
-              onChange={(e) => handleBuildingChange(e.target.value)}
-              className="border-line bg-panel text-ink focus:border-primary focus:ring-primary/20 cursor-pointer appearance-none rounded-xl border py-2 pr-8 pl-3.5 text-xs font-medium shadow-2xs transition outline-none focus:ring-2"
-              aria-label="Filtrar por edificio"
-            >
-              <option value="all">Todos los edificios</option>
-              {knownBuildings.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              className="text-ink-muted pointer-events-none absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2"
-              aria-hidden="true"
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </div>
-
-          {/* Botón reset filtros si está activo */}
-          {isFiltering && (
-            <button
-              type="button"
-              onClick={handleResetFilters}
-              className="border-danger/30 bg-danger/10 text-danger hover:bg-danger/15 cursor-pointer rounded-xl border px-3 py-2 text-xs font-medium transition"
-            >
-              Limpiar filtros
-            </button>
-          )}
-
-          {/* Botón sincronizar/refrescar */}
-          <button
-            type="button"
-            onClick={onReload}
-            disabled={isReloading}
-            title="Refrescar catálogo de habitaciones"
-            className="border-line bg-panel text-ink-muted hover:border-primary/40 hover:text-primary inline-flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold shadow-2xs transition disabled:opacity-50"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              className={`size-3.5 ${isReloading ? 'animate-spin' : ''}`}
-              aria-hidden="true"
-            >
-              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-              <path d="M3 3v5h5" />
-              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-              <path d="M16 21h5v-5" />
-            </svg>
-            <span className="hidden sm:inline">Refrescar</span>
-          </button>
-
-          {/* Selector de modo de visualización: Tarjetas / Tabla */}
-          {viewMode && onViewModeChange && (
-            <div className="border-line border-l pl-2.5">
-              <HabitacionesViewModeToggle
-                viewMode={viewMode}
-                onChange={onViewModeChange}
-              />
-            </div>
-          )}
-        </div>
       </div>
 
-      {/* Indicador de estado de filtrado y conteo incremental */}
+      {/* Indicador de estado de filtrado y conteo */}
       <div className="text-ink-muted flex flex-wrap items-center justify-between px-1 text-xs">
         <div>
           {isFiltering ? (
@@ -211,8 +199,9 @@ export function HabitacionesFiltrosBar({
               <strong className="text-ink font-semibold">
                 {filteredCount}
               </strong>{' '}
-              de {loadedCount} habitaciones cargadas ({totalCount} registradas
-              en total)
+              de{' '}
+              <strong className="text-ink font-semibold">{totalCount}</strong>{' '}
+              habitaciones registradas
             </span>
           ) : (
             <span>
@@ -224,12 +213,7 @@ export function HabitacionesFiltrosBar({
             </span>
           )}
         </div>
-        {isFiltering && (
-          <span className="text-[11px] text-amber-600 dark:text-amber-400">
-            * Los filtros aplican sobre las habitaciones cargadas en pantalla.
-          </span>
-        )}
       </div>
     </div>
   );
-}
+});

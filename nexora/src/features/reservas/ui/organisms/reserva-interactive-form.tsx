@@ -1048,7 +1048,7 @@ export function ReservaInteractiveForm() {
               </h2>
               <p className="text-ink-muted mx-auto max-w-md text-xs leading-relaxed">
                 {submitFeedback?.message ||
-                  '¡Excelente trabajo! La reserva ha quedado vinculada y registrada de forma segura en el sistema de Nexora.'}
+                  '¡Excelente trabajo! La reserva ha quedado vinculada y registrada de forma segura en el sistema de Aloja.'}
               </p>
             </div>
 

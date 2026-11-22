@@ -154,7 +154,7 @@ export function ThemeBackgroundImageSection() {
           <p className="mt-1.5 text-xs leading-relaxed text-ink-muted max-w-2xl">
             Personaliza la bienvenida de tu hotel con su propio emblema o imagen de marca. 
             Este logo acompañará a ti y a tu equipo en la parte superior del menú principal 
-            izquierdo, justo al lado del nombre <strong>Nexora</strong>, y en las pantallas de 
+            izquierdo, justo al lado del nombre <strong>Aloja</strong>, y en las pantallas de 
             carga y bienvenida de la plataforma, transmitiendo profesionalismo y calidez en cada jornada.
           </p>
         </div>
@@ -273,7 +273,7 @@ export function ThemeBackgroundImageSection() {
                   1. En tu menú principal
                 </span>
                 <span className="text-[10px] text-ink-muted">
-                  A la izquierda de "Nexora"
+                  A la izquierda de "Aloja"
                 </span>
               </div>
 
@@ -287,7 +287,7 @@ export function ThemeBackgroundImageSection() {
                     />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="text-base font-bold text-cream truncate">Nexora</p>
+                    <p className="text-base font-bold text-cream truncate">Aloja</p>
                     <p className="text-xs text-cream/70 truncate" title={hotelName}>
                       {hotelName}
                     </p>
@@ -317,7 +317,7 @@ export function ThemeBackgroundImageSection() {
                     />
                   </span>
                   <div className="min-w-0">
-                    <p className="text-xs font-bold text-ink truncate">Nexora · {hotelName}</p>
+                    <p className="text-xs font-bold text-ink truncate">Aloja · {hotelName}</p>
                     <p className="text-[11px] text-ink-muted flex items-center gap-1.5">
                       <span className="size-1.5 rounded-full bg-primary animate-pulse" />
                       Preparando la plataforma para tu equipo...
