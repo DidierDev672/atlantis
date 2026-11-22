@@ -1,0 +1,76 @@
+# ==============================================================================
+# Nexora PMS — Docker Compose de Producción (Zero-Trust Host Binding)
+# Regla de Seguridad: NINGÚN puerto se expone en 0.0.0.0.
+# Todo el tráfico externo entra exclusivamente por el Reverse Proxy Nginx del host
+# con TLS gestionado por Certbot (aloja.dcsolutions.systems).
+# ==============================================================================
+
+services:
+  nexora-db:
+    image: postgres:16-alpine
+    container_name: nexora-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Define DB_PASSWORD en el archivo .env}
+      POSTGRES_DB: ${DB_NAME:-nexora_db}
+      TZ: America/Bogota
+    # Aislado en la red interna; opcionalmente accesible solo desde loopback local del servidor
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - nexora_pgdata:/var/lib/postgresql/data
+    networks:
+      - nexora_internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-nexora_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nexora-api-rest:
+    build:
+      context: ./nexora-api-rest
+      dockerfile: Dockerfile
+    container_name: nexora-api-rest
+    restart: unless-stopped
+    depends_on:
+      nexora-db:
+        condition: service_healthy
+    env_file:
+      - ./nexora-api-rest/.env
+    environment:
+      DB_HOST: nexora-db
+      DB_PORT: "5432"
+      DB_SSLMODE: disable
+      DB_TIMEZONE: America/Bogota
+    # Mapeo exclusivo a loopback local (127.0.0.1:PUERTO_UNICO:PUERTO_INTERNO)
+    ports:
+      - "127.0.0.1:8081:8080"
+    networks:
+      - nexora_internal
+
+  nexora-frontend:
+    build:
+      context: ./nexora
+      dockerfile: Dockerfile
+      args:
+        VITE_API_REST: https://aloja.dcsolutions.systems/api
+    container_name: nexora-frontend
+    restart: unless-stopped
+    depends_on:
+      - nexora-api-rest
+    # Mapeo exclusivo a loopback local (127.0.0.1:3001:80)
+    ports:
+      - "127.0.0.1:3001:80"
+    networks:
+      - nexora_internal
+
+volumes:
+  nexora_pgdata:
+    name: nexora_pgdata
+
+networks:
+  nexora_internal:
+    name: nexora_internal
+    driver: bridge
