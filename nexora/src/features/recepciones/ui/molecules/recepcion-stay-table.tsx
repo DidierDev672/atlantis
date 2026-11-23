@@ -1,11 +1,8 @@
-import { useMemo, useState } from 'react'
+import { Suspense, lazy, memo, useEffect, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
-import { staggerContainer, staggerItem } from '../../../../design-tokens/motion'
+import { fadeIn, staggerContainer, staggerItem } from '../../../../design-tokens/motion'
 import { useGuestNames } from '../../application/use-guest-names'
 import { useRoomNumbers } from '../../application/use-room-numbers'
-import { HuespedDetalleModal } from './huesped-detalle-modal'
-import { RoomDetailModal } from './room-detail-modal'
-import { RecepcionStayCard } from './recepcion-stay-card'
 import { RecepcionEstadoBadge } from '../atoms/recepcion-estado-badge'
 import {
   calculateStayNights,
@@ -15,6 +12,31 @@ import {
   formatStayDate,
   type StayItem,
 } from '../../domain/stay'
+
+const LazyHuespedDetalleModal = lazy(() =>
+  import('./huesped-detalle-modal').then((m) => ({
+    default: m.HuespedDetalleModal,
+  }))
+)
+const LazyRoomDetailModal = lazy(() => import('./room-detail-modal'))
+const LazyRecepcionStayCard = lazy(() => import('./recepcion-stay-card'))
+
+function useIsMobileViewport(): boolean {
+  const [isMobile, setIsMobile] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return false
+    return window.matchMedia('(max-width: 767px)').matches
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const mq = window.matchMedia('(max-width: 767px)')
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
+  return isMobile
+}
 
 export interface RecepcionStayTableProps {
   stays: StayItem[]
@@ -28,7 +50,11 @@ export interface RecepcionStayTableProps {
  * En pantallas pequeñas (< md), se adapta automáticamente visualizándose en formato Card.
  * Implementa Stagger Reveal con motion.tbody y motion.tr orquestados.
  */
-export function RecepcionStayTable({ stays, onSelectStay }: RecepcionStayTableProps) {
+export const RecepcionStayTable = memo(function RecepcionStayTable({
+  stays,
+  onSelectStay,
+}: RecepcionStayTableProps) {
+  const isMobileViewport = useIsMobileViewport()
   const [inspectPersonId, setInspectPersonId] = useState<string | null>(null)
   const [inspectRoomId, setInspectRoomId] = useState<string | null>(null)
 
@@ -46,23 +72,28 @@ export function RecepcionStayTable({ stays, onSelectStay }: RecepcionStayTablePr
 
   return (
     <>
-      {/* 1. Vista en Tarjetas / Cards para pantallas pequeñas (< md) */}
-      <motion.div
-        variants={staggerContainer}
-        initial="hidden"
-        whileInView="visible"
-        viewport={{ once: true, amount: 0.05 }}
-        className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden"
-      >
-        {stays.map((stay) => (
-          <RecepcionStayCard
-            key={`mobile-table-card-${stay.id}`}
-            stay={stay}
-            variants={staggerItem}
-            onClick={(item) => onSelectStay?.(item)}
-          />
-        ))}
-      </motion.div>
+      {/* 1. Vista en Tarjetas / Cards solo en pantallas pequeñas (< md) */}
+      {isMobileViewport && (
+        <motion.div
+          variants={staggerContainer}
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, amount: 0.05 }}
+          className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden"
+        >
+          <Suspense fallback={null}>
+            {stays.map((stay) => (
+              <LazyRecepcionStayCard
+                key={`mobile-table-card-${stay.id}`}
+                stay={stay}
+                preResolvedRoomNumber={roomNumbers[stay.room_id]}
+                variants={staggerItem}
+                onClick={(item) => onSelectStay?.(item)}
+              />
+            ))}
+          </Suspense>
+        </motion.div>
+      )}
 
       {/* 2. Vista en Tabla completa para pantallas medianas y grandes (>= md) */}
       <div className="hidden md:block overflow-hidden rounded-2xl border border-line bg-panel shadow-xs">
@@ -96,10 +127,9 @@ export function RecepcionStayTable({ stays, onSelectStay }: RecepcionStayTablePr
           </thead>
 
           <motion.tbody
-            variants={staggerContainer}
+            variants={fadeIn}
             initial="hidden"
-            whileInView="visible"
-            viewport={{ once: true, amount: 0.05 }}
+            animate="visible"
             className="divide-y divide-line/60"
           >
             {stays.map((stay) => {
@@ -110,11 +140,8 @@ export function RecepcionStayTable({ stays, onSelectStay }: RecepcionStayTablePr
               const nights = calculateStayNights(stay.check_in_date, stay.check_out_date)
 
               return (
-                <motion.tr
+                <tr
                   key={stay.id}
-                  layout
-                  variants={staggerItem}
-                  whileHover={{ backgroundColor: 'rgba(var(--color-primary-rgb, 90, 49, 31), 0.03)' }}
                   onClick={() => onSelectStay?.(stay)}
                   className="transition-colors hover:bg-primary/5 cursor-pointer"
                 >
@@ -243,7 +270,7 @@ export function RecepcionStayTable({ stays, onSelectStay }: RecepcionStayTablePr
                   <td className="px-5 py-4 whitespace-nowrap text-center">
                     <RecepcionEstadoBadge status={stay.status} />
                   </td>
-                </motion.tr>
+                </tr>
               )
             })}
           </motion.tbody>
@@ -251,17 +278,25 @@ export function RecepcionStayTable({ stays, onSelectStay }: RecepcionStayTablePr
       </div>
     </div>
 
-    {/* Modal interactivo con los datos del huésped */}
-    <HuespedDetalleModal
-      personId={inspectPersonId}
-      onClose={() => setInspectPersonId(null)}
-    />
+    {/* Modal interactivo con los datos del huésped (carga perezosa) */}
+    {inspectPersonId && (
+      <Suspense fallback={null}>
+        <LazyHuespedDetalleModal
+          personId={inspectPersonId}
+          onClose={() => setInspectPersonId(null)}
+        />
+      </Suspense>
+    )}
 
-    {/* Modal interactivo para visualizar el detalle de la habitación (GET /room/{id}) */}
-    <RoomDetailModal
-      roomId={inspectRoomId}
-      onClose={() => setInspectRoomId(null)}
-    />
+    {/* Modal interactivo para visualizar el detalle de la habitación (carga perezosa) */}
+    {inspectRoomId && (
+      <Suspense fallback={null}>
+        <LazyRoomDetailModal
+          roomId={inspectRoomId}
+          onClose={() => setInspectRoomId(null)}
+        />
+      </Suspense>
+    )}
   </>
 )
-}
+})

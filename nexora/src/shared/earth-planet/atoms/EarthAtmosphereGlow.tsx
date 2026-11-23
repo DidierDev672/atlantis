@@ -24,7 +24,7 @@ export function EarthAtmosphereGlow({
       className="pointer-events-none absolute -inset-[15%] rounded-full"
       style={{
         background: `radial-gradient(circle, rgba(84,109,147,0) 60%, ${EARTH_PALETTE.oceanShallow}aa 76%, ${EARTH_PALETTE.cloudIce}55 88%, rgba(213,211,196,0) 100%)`,
-        filter: `blur(${Math.max(2, px * 0.04)}px)`,
+        filter: animated ? `blur(${Math.max(2, px * 0.04)}px)` : undefined,
       }}
       animate={
         animated
@@ -34,7 +34,11 @@ export function EarthAtmosphereGlow({
             }
           : { scale: 1, opacity: intensity }
       }
-      transition={{ duration: 4.8, repeat: Infinity, ease: 'easeInOut' }}
+      transition={
+        animated
+          ? { duration: 4.8, repeat: Infinity, ease: 'easeInOut' }
+          : { duration: 0 }
+      }
     />
   )
 }

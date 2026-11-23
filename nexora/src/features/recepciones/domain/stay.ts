@@ -143,7 +143,7 @@ export function getStayStatusConfig(status?: string | null): {
       return {
         label: 'En progreso',
         colorClasses: 'bg-[#EDCD44]/15 text-[#755d00] dark:text-[#f7e38a] border-[#EDCD44]/45',
-        dotClass: 'bg-[#EDCD44] animate-pulse',
+        dotClass: 'bg-[#EDCD44]',
       }
     case 'completed':
     case 'finalizada':

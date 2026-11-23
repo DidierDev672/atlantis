@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faCalendarDays, faPhone } from '@fortawesome/free-solid-svg-icons'
 import type { DropdownOption } from '../../recursos/ui/molecules/recursos-dropdown'
+import { ReservaDropdownOptionContent } from '../ui/molecules/reserva-dropdown-option-content'
 import {
   ESTADO_OPTIONS,
   formatToIsoUtc,
@@ -169,7 +168,15 @@ export function useRecepcionForm(
   }, [repository])
 
   useEffect(() => {
-    void loadDependencies()
+    let cancelled = false
+    void Promise.resolve().then(() => {
+      if (!cancelled) {
+        void loadDependencies()
+      }
+    })
+    return () => {
+      cancelled = true
+    }
   }, [loadDependencies])
 
   // Opciones de Sede
@@ -234,36 +241,15 @@ export function useRecepcionForm(
         return {
           value: r.id,
           label: `${r.guestName}${phone ? ` · ${phone}` : ''}${dateSummary}${extraGuests > 0 ? ` (+${extraGuests})` : ''}`,
-          customContent: (
-            <div className="flex w-full items-center justify-between gap-2.5 py-1">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-xs font-semibold text-ink">{r.guestName}</p>
-                  {extraGuests > 0 && (
-                    <span
-                      title={`${guestCount} huéspedes en total (${extraGuests} adicional${extraGuests > 1 ? 'es' : ''})`}
-                      className="inline-flex shrink-0 items-center justify-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary ring-1 ring-primary/25"
-                    >
-                      +{extraGuests}
-                    </span>
-                  )}
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-muted">
-                  <span className="flex items-center gap-1.5 shrink-0">
-                    <FontAwesomeIcon icon={faPhone} className="size-2.5 text-primary/70 shrink-0" aria-hidden="true" />
-                    <span className="truncate">{phone ?? 'Sin teléfono'}</span>
-                  </span>
-                  <span className="flex items-center gap-1.5 shrink-0 font-medium text-emerald-600 dark:text-emerald-400">
-                    <FontAwesomeIcon icon={faCalendarDays} className="size-2.5 shrink-0" aria-hidden="true" />
-                    <span>Entrada: {inDate}</span>
-                  </span>
-                  <span className="flex items-center gap-1.5 shrink-0 font-medium text-amber-600 dark:text-amber-400">
-                    <FontAwesomeIcon icon={faCalendarDays} className="size-2.5 shrink-0" aria-hidden="true" />
-                    <span>Salida: {outDate}</span>
-                  </span>
-                </div>
-              </div>
-            </div>
+          renderContent: () => (
+            <ReservaDropdownOptionContent
+              guestName={r.guestName}
+              phone={phone}
+              inDate={inDate}
+              outDate={outDate}
+              guestCount={guestCount}
+              extraGuests={extraGuests}
+            />
           ),
         }
       }),

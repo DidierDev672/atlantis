@@ -65,14 +65,20 @@ export function SaturnGlobe({
       {/* 3. Disco esférico de Saturno */}
       <div
         className="relative z-10 size-full overflow-hidden rounded-full shadow-md"
-        style={{
-          background: `linear-gradient(180deg, ${SATURN_PALETTE.mutedSlate} 0%, ${SATURN_PALETTE.warmSand} 50%, ${SATURN_PALETTE.deepUmber} 100%)`,
-          isolation: 'isolate',
-          WebkitMaskImage: '-webkit-radial-gradient(white, black)',
-          boxShadow: active
-            ? `0 0 16px 2px ${SATURN_PALETTE.goldenOchre}66`
-            : `0 4px 12px -2px rgba(78,73,63,0.35)`,
-        }}
+        style={
+          animated && !disabled
+            ? {
+                background: `linear-gradient(180deg, ${SATURN_PALETTE.mutedSlate} 0%, ${SATURN_PALETTE.warmSand} 50%, ${SATURN_PALETTE.deepUmber} 100%)`,
+                isolation: 'isolate',
+                WebkitMaskImage: '-webkit-radial-gradient(white, black)',
+                boxShadow: active
+                  ? `0 0 16px 2px ${SATURN_PALETTE.goldenOchre}66`
+                  : `0 4px 12px -2px rgba(78,73,63,0.35)`,
+              }
+            : {
+                background: `linear-gradient(180deg, ${SATURN_PALETTE.mutedSlate} 0%, ${SATURN_PALETTE.warmSand} 50%, ${SATURN_PALETTE.deepUmber} 100%)`,
+              }
+        }
       >
         {/* Capa atómica de bandas gaseosas y sombra de anillos */}
         <SaturnBands animated={animated && !disabled} />

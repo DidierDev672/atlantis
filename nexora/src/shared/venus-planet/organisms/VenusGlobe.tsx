@@ -59,12 +59,16 @@ export function VenusGlobe({
 
       <div
         className="absolute inset-0 overflow-hidden rounded-full"
-        style={{
-          background: SKY_BACKGROUND,
-          isolation: 'isolate',
-          // Corrige el recorte circular de capas animadas en Safari.
-          WebkitMaskImage: '-webkit-radial-gradient(white, black)',
-        }}
+        style={
+          animated
+            ? {
+                background: SKY_BACKGROUND,
+                isolation: 'isolate',
+                // Corrige el recorte circular de capas animadas en Safari.
+                WebkitMaskImage: '-webkit-radial-gradient(white, black)',
+              }
+            : { background: SKY_BACKGROUND }
+        }
       >
         <AcidSky layers={detail.cloudLayers} px={px} animated={animated} />
         <VenusLandscape animated={animated} />

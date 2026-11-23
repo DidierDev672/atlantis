@@ -1,4 +1,5 @@
 import { api } from '../../../lib/api'
+import { BoundedTtlCache } from '../../lib/bounded-ttl-cache'
 import {
   validateStatusCode,
   type StatusCodeValidationResult,
@@ -30,8 +31,8 @@ export interface CatalogQueryResult<T> {
   fromCache?: boolean
 }
 
-// Caché en memoria para evitar re-consultar endpoints idénticos en la misma sesión
-const memoryDataCache: Record<string, unknown | undefined> = {}
+// Caché en memoria acotada (LRU + TTL) para evitar crecimiento ilimitado de RAM
+const memoryDataCache = new BoundedTtlCache<string, unknown>(150, 5 * 60 * 1000)
 // Deduplicación de peticiones en vuelo (evita llamadas paralelas simultáneas al mismo ID)
 const inFlightRequests: Record<string, Promise<unknown> | undefined> = {}
 
@@ -47,7 +48,7 @@ async function fetchCatalogResource<T>(
   const cleanId = id.trim()
   const cacheKey = `${endpoint}:${cleanId}`
 
-  const cached = memoryDataCache[cacheKey]
+  const cached = memoryDataCache.get(cacheKey)
   if (cached !== undefined) {
     return {
       data: cached as T,
@@ -81,14 +82,14 @@ async function fetchCatalogResource<T>(
           : ((raw as { data?: T }).data ?? (raw as T))
 
         if (payload) {
-          memoryDataCache[cacheKey] = payload
+          memoryDataCache.set(cacheKey, payload)
           return payload
         }
       }
 
       const fallback = fallbackMap[cleanId]
       if (fallback) {
-        memoryDataCache[cacheKey] = fallback
+        memoryDataCache.set(cacheKey, fallback)
         return fallback
       }
 
@@ -96,7 +97,7 @@ async function fetchCatalogResource<T>(
     } catch {
       const fallback = fallbackMap[cleanId]
       if (fallback) {
-        memoryDataCache[cacheKey] = fallback
+        memoryDataCache.set(cacheKey, fallback)
         return fallback
       }
       return null
@@ -156,28 +157,96 @@ export const catalogApi = {
   getRole: (id: string) =>
     fetchCatalogResource<RoleCatalogItem>('/roles', id, FALLBACK_ROLES),
 
-  // 8. Lista de Subsedes por Sede (GET /sub-headquarters con filtro por headquarter_id)
+  // 8. Lista de Subsedes por Sede (GET /sub-headquarters con filtro por headquarter_id, cacheada con TTL)
   getSubHeadquartersByHeadquarter: async (hqId: string): Promise<SubHeadquarterCatalogItem[]> => {
-    try {
-      const response = await api.get('/sub-headquarters', { validateStatus: () => true })
-      if (response.status === 200 && Array.isArray(response.data)) {
-        const filtered = (response.data as SubHeadquarterCatalogItem[]).filter(
-          (sub) => sub.headquarter_id === hqId
-        )
-        if (filtered.length > 0) return filtered
-      }
-    } catch {
-      // Fallback transparente
+    const cleanHqId = hqId.trim()
+    if (!cleanHqId) return []
+
+    const cacheKey = `/sub-headquarters:by-hq:${cleanHqId}`
+    const cached = memoryDataCache.get(cacheKey)
+    if (cached !== undefined) {
+      return cached as SubHeadquarterCatalogItem[]
     }
-    return Object.values(FALLBACK_SUB_HEADQUARTERS).filter(
-      (sub) => sub.headquarter_id === hqId
-    )
+
+    const existingRequest = inFlightRequests[cacheKey]
+    if (existingRequest !== undefined) {
+      const data = (await existingRequest) as SubHeadquarterCatalogItem[] | null
+      return data ?? []
+    }
+
+    const queryPromise = (async (): Promise<SubHeadquarterCatalogItem[]> => {
+      try {
+        const response = await api.get('/sub-headquarters', { validateStatus: () => true })
+        if (response.status === 200 && Array.isArray(response.data)) {
+          const filtered = (response.data as SubHeadquarterCatalogItem[]).filter(
+            (sub) => sub.headquarter_id === cleanHqId
+          )
+          if (filtered.length > 0) {
+            memoryDataCache.set(cacheKey, filtered)
+            return filtered
+          }
+        }
+      } catch {
+        // Fallback transparente
+      } finally {
+        delete inFlightRequests[cacheKey]
+      }
+      const fallback = Object.values(FALLBACK_SUB_HEADQUARTERS).filter(
+        (sub) => sub.headquarter_id === cleanHqId
+      )
+      memoryDataCache.set(cacheKey, fallback)
+      return fallback
+    })()
+
+    inFlightRequests[cacheKey] = queryPromise
+    return queryPromise
   },
 
-  // Limpieza manual de caché si se requiere recarga fresca
-  clearCache: () => {
-    for (const key of Object.keys(memoryDataCache)) {
-      delete memoryDataCache[key]
+  /** Pre-carga una persona resuelta desde otro endpoint (ej. GET /persons) para evitar GET /person/{id} duplicados */
+  primePerson: (person: PersonCatalogItem) => {
+    const cleanId = String(person.id ?? '').trim()
+    if (cleanId) {
+      memoryDataCache.set(`/person:${cleanId}`, person)
     }
+  },
+
+  /** Pre-carga una habitación resuelta desde otro endpoint para evitar GET /room/{id} duplicados */
+  primeRoom: (room: RoomCatalogItem) => {
+    const cleanId = String(room.id ?? '').trim()
+    if (cleanId) {
+      memoryDataCache.set(`/room:${cleanId}`, room)
+    }
+  },
+
+  getCachedPerson: (id: string): PersonCatalogItem | undefined => {
+    const cleanId = id.trim()
+    if (!cleanId) return undefined
+    return memoryDataCache.get(`/person:${cleanId}`) as PersonCatalogItem | undefined
+  },
+
+  getCachedRoom: (id: string): RoomCatalogItem | undefined => {
+    const cleanId = id.trim()
+    if (!cleanId) return undefined
+    return memoryDataCache.get(`/room:${cleanId}`) as RoomCatalogItem | undefined
+  },
+
+  /** Invalidación granular por entidad para no destruir todo el caché en sesión */
+  invalidateRoom: (id: string) => {
+    const cleanId = id.trim()
+    if (cleanId) {
+      memoryDataCache.delete(`/room:${cleanId}`)
+    }
+  },
+
+  invalidatePerson: (id: string) => {
+    const cleanId = id.trim()
+    if (cleanId) {
+      memoryDataCache.delete(`/person:${cleanId}`)
+    }
+  },
+
+  // Limpieza manual de caché si se requiere recarga fresca completa
+  clearCache: () => {
+    memoryDataCache.clear()
   },
 }

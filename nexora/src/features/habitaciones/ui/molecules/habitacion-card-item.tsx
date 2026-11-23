@@ -23,7 +23,6 @@ export interface HabitacionCardItemProps {
   onRetryBed: (id: string) => void | Promise<void>;
   onOpenRoomDetail?: (room: RoomRow) => void;
   onSelectHabitacion?: (room: RoomRow) => void;
-  onOpenOperativaDrawer?: (room: RoomRow) => void;
   onOpenAssignGuestDrawer?: (room: RoomRow) => void;
   onQuickMarkAvailable?: (room: RoomRow) => Promise<void> | void;
 }
@@ -37,7 +36,6 @@ export const HabitacionCardItem = memo(function HabitacionCardItem({
   onRetryBed,
   onOpenRoomDetail,
   onSelectHabitacion,
-  onOpenOperativaDrawer,
   onOpenAssignGuestDrawer,
   onQuickMarkAvailable,
 }: HabitacionCardItemProps) {
@@ -49,10 +47,6 @@ export const HabitacionCardItem = memo(function HabitacionCardItem({
     try {
       if (isAvailable && onOpenAssignGuestDrawer) {
         onOpenAssignGuestDrawer(room);
-        return;
-      }
-      if (onOpenOperativaDrawer) {
-        onOpenOperativaDrawer(room);
         return;
       }
       if (isOccupied) {
@@ -71,7 +65,6 @@ export const HabitacionCardItem = memo(function HabitacionCardItem({
     isAvailable,
     isOccupied,
     onOpenAssignGuestDrawer,
-    onOpenOperativaDrawer,
     onOpenRoomDetail,
     onSelectHabitacion,
     room,
@@ -150,14 +143,13 @@ export const HabitacionCardItem = memo(function HabitacionCardItem({
         fallback={
           <div className="border-line/60 mt-3 flex justify-end gap-2 border-t pt-2.5">
             <div className="bg-line/40 size-9 animate-pulse rounded-xl" />
-            <div className="bg-line/40 size-9 animate-pulse rounded-xl" />
           </div>
         }
       >
         <LazyHabitacionCardFooterActions
           room={room}
           onAssignGuest={onSelectHabitacion}
-          onOpenDrawer={onOpenOperativaDrawer ?? onOpenRoomDetail}
+          onOpenRoomDetail={onOpenRoomDetail}
           onQuickMarkAvailable={onQuickMarkAvailable}
         />
       </Suspense>

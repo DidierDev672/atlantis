@@ -1,16 +1,22 @@
-import { useMemo } from 'react';
+import { Suspense, lazy, memo, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCalendarDays, faPhone } from '@fortawesome/free-solid-svg-icons';
 import { fadeIn } from '../../../../design-tokens/motion';
 import { DatePicker, parseISODate, toISODate } from '../../../../shared/date-picker';
+import { useDeviceResourceProfile } from '../../../../shared/lib/use-device-resource-profile';
 import { Input } from '../../../../shared/ui/Input';
 import {
   Loading,
   useBalancedPostLoading,
 } from '../../../../shared/loading';
-import { Rocket } from '../../../../shared/rocket/organisms/Rocket';
 import { Button } from '../../../recursos/ui/atoms/button';
+
+const LazyRocket = lazy(() =>
+  import('../../../../shared/rocket/organisms/Rocket').then((m) => ({
+    default: m.Rocket,
+  }))
+);
 import {
   RecursosDropdown,
   type DropdownOption,
@@ -72,7 +78,7 @@ function combineDateAndTime(date: Date | null, timeStr: string): string {
   return `${dateStr}T${time}`;
 }
 
-export function RecepcionCardForm({
+export const RecepcionCardForm = memo(function RecepcionCardForm({
   formValues,
   errors,
   sedeOptions = [],
@@ -89,6 +95,9 @@ export function RecepcionCardForm({
   onFieldChange,
   onSubmit,
 }: RecepcionCardFormProps) {
+  const {
+    policy: { enableBackdropBlur },
+  } = useDeviceResourceProfile();
   // Cálculo de duración aproximada en días/horas si ambas fechas están presentes
   const durationSummary = (() => {
     if (!formValues.checkIn || !formValues.checkOut) return null;
@@ -262,7 +271,9 @@ export function RecepcionCardForm({
           <motion.div
             role="status"
             aria-live="polite"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs"
+            className={`fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 ${
+              enableBackdropBlur ? 'backdrop-blur-xs' : ''
+            }`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -273,14 +284,20 @@ export function RecepcionCardForm({
               exit={{ opacity: 0, scale: 0.95, y: 12 }}
               className="bg-panel border-line flex w-full max-w-sm flex-col items-center rounded-3xl border p-8 text-center shadow-2xl"
             >
-              <Rocket
-                size="md"
-                autoLaunch
-                loop
-                interactive={false}
-                timing={{ ignitionMs: 600, ascentMs: 1400 }}
-                className="ring-primary/20 bg-canvas/60 shadow-xl ring-1"
-              />
+              <Suspense
+                fallback={
+                  <div className="bg-line/35 size-24 animate-pulse rounded-2xl" />
+                }
+              >
+                <LazyRocket
+                  size="md"
+                  autoLaunch
+                  loop
+                  interactive={false}
+                  timing={{ ignitionMs: 600, ascentMs: 1400 }}
+                  className="ring-primary/20 bg-canvas/60 shadow-xl ring-1"
+                />
+              </Suspense>
               <div className="mt-5 space-y-1.5">
                 <h4 className="text-ink text-lg font-bold">
                   {stage === 'preparing'
@@ -666,4 +683,4 @@ export function RecepcionCardForm({
       </form>
     </motion.div>
   );
-}
+});

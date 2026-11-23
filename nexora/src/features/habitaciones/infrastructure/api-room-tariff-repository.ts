@@ -1,5 +1,7 @@
 import { isAxiosError } from 'axios'
 import { api } from '../../../lib/api'
+import { validateStatusCode } from '../../../shared/lib/status-code-validator'
+import { executeBalancedRequest } from '../../reservas/infrastructure/api-load-balancer'
 import type {
   RoomTariffPayload,
   RoomTariffRepository,
@@ -13,20 +15,27 @@ export class ApiRoomTariffRepository implements RoomTariffRepository {
     error?: unknown
   }> {
     try {
-      const response = await api.post('/room_tariff', payload, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        validateStatus: () => true, // Evaluamos manualmente el status code sin excepciones automáticas
-      })
+      const response = await executeBalancedRequest(
+        () =>
+          api.post('/room_tariff', payload, {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            validateStatus: () => true,
+          }),
+        { maxRetries: 2 }
+      )
+
+      const validation = validateStatusCode(response.status)
 
       return {
-        ok: response.status === 201,
+        ok: validation.isValid,
         status: response.status,
         data: response.data,
       }
     } catch (error) {
       const status = isAxiosError(error) ? (error.response?.status ?? 0) : 0
+      validateStatusCode(status)
       return {
         ok: false,
         status,

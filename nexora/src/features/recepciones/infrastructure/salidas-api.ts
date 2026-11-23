@@ -1,10 +1,14 @@
 import axios from 'axios'
 import { api } from '../../../lib/api'
+import { catalogApi } from '../../../shared/catalog'
+import { BoundedTtlCache } from '../../../shared/lib/bounded-ttl-cache'
 import {
   validateStatusCode,
   type StatusCodeValidationResult,
 } from '../../../shared/lib/status-code-validator'
 import { executeBalancedRequest } from '../../reservas/infrastructure/api-load-balancer'
+import { detectarRecursosDispositivoRecepciones } from './recepciones-resource-detector'
+import type { StayItem } from '../domain/stay'
 import {
   buildReceptionCountMap,
   classifyDepartureWindow,
@@ -23,6 +27,19 @@ import {
   type ReceptionRecordRef,
   type SalidaHuespedItem,
 } from '../domain/salida-huesped'
+
+const stayPersonsCache = new BoundedTtlCache<string, string[]>(200, 2 * 60 * 1000)
+const inFlightStayPersons = new Map<string, Promise<string[]>>()
+const salidasSummaryCache = new BoundedTtlCache<string, FetchSalidasHuespedesResult>(
+  2,
+  90 * 1000
+)
+let inFlightSalidasRequest: Promise<FetchSalidasHuespedesResult> | null = null
+
+export interface FetchSalidasOptions {
+  prefetchedStays?: StayItem[]
+  forceRefresh?: boolean
+}
 
 interface StayOrReserveLinkDto extends ReceptionRecordRef {
   id?: string
@@ -230,16 +247,30 @@ async function fetchStayPersonsByStayIds(
   stayIds: string[]
 ): Promise<Map<string, string[]>> {
   const result = new Map<string, string[]>()
-  const uniqueIds = Array.from(new Set(stayIds.map((id) => id.trim()).filter(Boolean)))
+  const uniqueIds = Array.from(
+    new Set(stayIds.map((id) => id.trim()).filter(Boolean))
+  )
   if (uniqueIds.length === 0) return result
 
-  const CONCURRENCY = 4
-  let cursor = 0
+  const missingIds: string[] = []
+  for (const stayId of uniqueIds) {
+    const cached = stayPersonsCache.get(stayId)
+    if (cached !== undefined) {
+      if (cached.length > 0) {
+        result.set(stayId, cached)
+      }
+      continue
+    }
+    missingIds.push(stayId)
+  }
 
-  async function worker() {
-    while (cursor < uniqueIds.length) {
-      const idx = cursor++
-      const stayId = uniqueIds[idx]
+  if (missingIds.length === 0) return result
+
+  const fetchSingleStayPersons = (stayId: string): Promise<string[]> => {
+    const existing = inFlightStayPersons.get(stayId)
+    if (existing) return existing
+
+    const req = (async () => {
       try {
         const res = await executeBalancedRequest(
           () =>
@@ -247,7 +278,7 @@ async function fetchStayPersonsByStayIds(
               `/stays_person/${encodeURIComponent(stayId)}`,
               { validateStatus: () => true }
             ),
-          { maxRetries: 1 }
+          { maxRetries: 0 }
         )
         if (validateStatusCode(res.status).isValid) {
           const persons = extractArray<PersonApiDto>(res.data, [
@@ -255,21 +286,44 @@ async function fetchStayPersonsByStayIds(
             'data',
             'items',
           ])
-          const ids = persons
-            .map((p) => resolvePersonId(p))
-            .filter(Boolean)
-          if (ids.length > 0) {
-            result.set(stayId, ids)
-          }
+          const ids = persons.map((p) => resolvePersonId(p)).filter(Boolean)
+          stayPersonsCache.set(stayId, ids)
+          return ids
         }
+        if (res.status === 404) {
+          stayPersonsCache.set(stayId, [])
+        }
+        return []
       } catch {
-        // Ignorar fallo individual de enriquecimiento para no bloquear el listado
+        return []
+      } finally {
+        inFlightStayPersons.delete(stayId)
+      }
+    })()
+
+    inFlightStayPersons.set(stayId, req)
+    return req
+  }
+
+  const concurrency = Math.max(
+    1,
+    detectarRecursosDispositivoRecepciones().policy.stayPersonsConcurrency
+  )
+  let cursor = 0
+
+  async function worker() {
+    while (cursor < missingIds.length) {
+      const idx = cursor++
+      const stayId = missingIds[idx]
+      const ids = await fetchSingleStayPersons(stayId)
+      if (ids.length > 0) {
+        result.set(stayId, ids)
       }
     }
   }
 
   await Promise.all(
-    Array.from({ length: Math.min(CONCURRENCY, uniqueIds.length) }, () =>
+    Array.from({ length: Math.min(concurrency, missingIds.length) }, () =>
       worker()
     )
   )
@@ -335,31 +389,52 @@ export async function fetchReceptionsByPersonId(
   }
 }
 
-export async function fetchSalidasHuespedes(): Promise<FetchSalidasHuespedesResult> {
-  try {
-    const [personsRes, staysRes, reservesRes] = await Promise.allSettled([
-      executeBalancedRequest(
-        () =>
-          api.get<unknown>('/persons', {
-            validateStatus: () => true,
-          }),
-        { maxRetries: 2 }
-      ),
-      executeBalancedRequest(
-        () =>
-          api.get<unknown>('/stays', {
-            validateStatus: () => true,
-          }),
-        { maxRetries: 2 }
-      ),
-      executeBalancedRequest(
-        () =>
-          api.get<unknown>('/reserve', {
-            validateStatus: () => true,
-          }),
-        { maxRetries: 2 }
-      ),
-    ])
+export async function fetchSalidasHuespedes(
+  options: FetchSalidasOptions = {}
+): Promise<FetchSalidasHuespedesResult> {
+  const cacheKey = 'salidas:latest'
+
+  if (!options.forceRefresh) {
+    const cached = salidasSummaryCache.get(cacheKey)
+    if (cached) return cached
+    if (inFlightSalidasRequest) return inFlightSalidasRequest
+  }
+
+  const executeFetch = async (): Promise<FetchSalidasHuespedesResult> => {
+    try {
+      const hasPrefetchedStays =
+        Array.isArray(options.prefetchedStays) &&
+        options.prefetchedStays.length > 0
+      const { maxRetries } = detectarRecursosDispositivoRecepciones().policy
+
+      const [personsRes, staysRes, reservesRes] = await Promise.allSettled([
+        executeBalancedRequest(
+          () =>
+            api.get<unknown>('/persons', {
+              validateStatus: () => true,
+            }),
+          { maxRetries }
+        ),
+        hasPrefetchedStays
+          ? Promise.resolve({
+              status: 200,
+              data: options.prefetchedStays,
+            })
+          : executeBalancedRequest(
+              () =>
+                api.get<unknown>('/stays', {
+                  validateStatus: () => true,
+                }),
+              { maxRetries }
+            ),
+        executeBalancedRequest(
+          () =>
+            api.get<unknown>('/reserve', {
+              validateStatus: () => true,
+            }),
+          { maxRetries }
+        ),
+      ])
 
     if (personsRes.status === 'rejected') {
       const err = personsRes.reason
@@ -387,6 +462,23 @@ export async function fetchSalidasHuespedes(): Promise<FetchSalidasHuespedesResu
       'data',
       'items',
     ])
+
+    // Pre-cargar personas en el catálogo compartido para evitar GET /person/{id} posteriores
+    for (const person of rawPersons) {
+      const pid = resolvePersonId(person)
+      if (pid) {
+        catalogApi.primePerson({
+          id: pid,
+          name: resolvePersonName(person),
+          document_type: person.document_type,
+          document_number: person.document_number,
+          phone_number: person.phone_number,
+          email: person.email,
+          date_of_birth: person.date_of_birth,
+          gender: person.gender,
+        })
+      }
+    }
 
     const linkMap = new Map<string, GuestLinkMeta>()
     const reservePersonIdsMap = new Map<string, string[]>()
@@ -501,19 +593,27 @@ export async function fetchSalidasHuespedes(): Promise<FetchSalidasHuespedesResu
             })
         : rawPersons.map((person, idx) => mapPersonToSalidaItem(person, idx))
 
-    return {
-      guests,
-      validation,
-      hasLinkData,
-    }
-  } catch (error) {
-    const status = axios.isAxiosError(error)
-      ? (error.response?.status ?? 500)
-      : 500
-    return {
-      guests: [],
-      validation: validateStatusCode(status),
-      hasLinkData: false,
+      const finalResult: FetchSalidasHuespedesResult = {
+        guests,
+        validation,
+        hasLinkData,
+      }
+      salidasSummaryCache.set(cacheKey, finalResult)
+      return finalResult
+    } catch (error) {
+      const status = axios.isAxiosError(error)
+        ? (error.response?.status ?? 500)
+        : 500
+      return {
+        guests: [],
+        validation: validateStatusCode(status),
+        hasLinkData: false,
+      }
+    } finally {
+      inFlightSalidasRequest = null
     }
   }
+
+  inFlightSalidasRequest = executeFetch()
+  return inFlightSalidasRequest
 }

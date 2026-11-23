@@ -6,14 +6,15 @@ import { LoadingMessage } from '../molecules/LoadingMessage';
 import { SaturnLoader } from '../molecules/SaturnLoader';
 import type { LoadingProps, LoadingVariant } from '../type';
 import { DEFAULT_HOTEL_LOGO, useTemaStore } from '../../../features/tema/application/tema-store';
+import { useDeviceResourceProfile } from '../../lib/use-device-resource-profile';
 
 const CONTAINER_STYLES: Record<LoadingVariant, string> = {
   inline: 'inline-flex flex-row items-center gap-2.5 py-1',
   block: 'flex w-full flex-col items-center justify-center gap-3 py-10',
   overlay:
-    'bg-panel/70 absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-[inherit] backdrop-blur-sm',
+    'bg-panel/85 absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-[inherit]',
   fullscreen:
-    'bg-panel/80 fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 backdrop-blur-sm',
+    'bg-panel/90 fixed inset-0 z-50 flex flex-col items-center justify-center gap-4',
 };
 
 /**
@@ -40,6 +41,9 @@ export function Loading({
 
   const hotelLogo = useTemaStore((state) => state.hotelLogo);
   const hotelName = useTemaStore((state) => state.hotelName);
+  const {
+    policy: { enableBackdropBlur },
+  } = useDeviceResourceProfile();
 
   return (
     <AnimatePresence>
@@ -49,7 +53,13 @@ export function Loading({
           role="status"
           aria-live="polite"
           aria-busy="true"
-          className={cn(CONTAINER_STYLES[variant], className)}
+          className={cn(
+            CONTAINER_STYLES[variant],
+            enableBackdropBlur && (variant === 'overlay' || variant === 'fullscreen')
+              ? 'backdrop-blur-sm'
+              : '',
+            className
+          )}
           initial={{ opacity: 0, scale: 0.97 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.97 }}
@@ -61,7 +71,10 @@ export function Loading({
               initial={{ scale: 0.85, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.05, duration: 0.2 }}
-              className="flex items-center gap-2.5 rounded-2xl border border-line/60 bg-panel/90 px-3.5 py-1.5 shadow-xs mb-1 backdrop-blur-xs"
+              className={cn(
+                'flex items-center gap-2.5 rounded-2xl border border-line/60 bg-panel/95 px-3.5 py-1.5 shadow-xs mb-1',
+                enableBackdropBlur && 'backdrop-blur-xs'
+              )}
             >
               <span className="grid size-7 place-items-center rounded-lg bg-cream text-primary overflow-hidden shadow-xs shrink-0">
                 <img

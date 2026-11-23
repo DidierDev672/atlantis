@@ -1,4 +1,5 @@
 import { motion, useReducedMotion } from 'framer-motion';
+import { useDeviceResourceProfile } from '../../lib/use-device-resource-profile';
 
 import { OrbitingSatellite } from '../atoms/mitades/OrbitingSatellite';
 import { SaturnPlanet } from '../atoms/SaturnPlanet';
@@ -24,7 +25,10 @@ const STARS = [
 export function SaturnLoader({ size }: SaturnLoaderProps) {
   const box = SIZE_PX[size];
   const reduced = useReducedMotion() ?? false;
-  const animated = !reduced;
+  const {
+    policy: { enableAnimations },
+  } = useDeviceResourceProfile();
+  const animated = !reduced && enableAnimations;
   const showStars = box >= 48; // en tamaño `sm` las estrellas solo meten ruido
 
   return (

@@ -75,6 +75,7 @@ export interface DropdownOption {
   id?: string;
   rawName?: string;
   customContent?: React.ReactNode;
+  renderContent?: () => React.ReactNode;
 }
 
 export interface RecursosDropdownProps {
@@ -1141,9 +1142,11 @@ export function RecursosDropdown({
                                 : 'text-ink hover:bg-black/5 dark:hover:bg-white/5'
                             )}
                           >
-                            {opt.customContent ? (
+                            {opt.renderContent || opt.customContent ? (
                               <div className="min-w-0 flex-1 pr-2">
-                                {opt.customContent}
+                                {opt.renderContent
+                                  ? opt.renderContent()
+                                  : opt.customContent}
                               </div>
                             ) : (
                               <span className="flex-1 truncate pr-2">

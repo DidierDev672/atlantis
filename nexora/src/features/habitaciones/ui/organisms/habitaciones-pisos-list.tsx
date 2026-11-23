@@ -41,7 +41,6 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
   const handleViewModeChange = onViewModeChange ?? setInternalViewMode;
 
   const [selectedFloorKey, setSelectedFloorKey] = useState<string>('all');
-  const [drawerRoom, setDrawerRoom] = useState<RoomRow | null>(null);
   const [assignGuestDrawerRoom, setAssignGuestDrawerRoom] =
     useState<RoomRow | null>(null);
   const [selectedBuilding, setSelectedBuilding] =
@@ -151,35 +150,6 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
       );
     }
   }, [assignGuestDrawerRoom, markRoomOccupiedLocal]);
-
-  const handleDrawerStatusChange = useCallback(
-    async (room: RoomRow, newStatus: string) => {
-      try {
-        await updateRoomStatus(room, newStatus);
-        setDrawerRoom((prev) =>
-          prev && prev.id === room.id ? { ...prev, status: newStatus } : prev
-        );
-      } catch (err) {
-        console.error('Error al cambiar estado desde el drawer:', err);
-        throw err;
-      }
-    },
-    [updateRoomStatus]
-  );
-
-  const activeDrawerRoom = useMemo(() => {
-    if (!drawerRoom) return null;
-    return allRooms.find((r) => r.id === drawerRoom.id) ?? drawerRoom;
-  }, [allRooms, drawerRoom]);
-
-  const drawerNightlyRate = useMemo(() => {
-    if (!activeDrawerRoom) return 0;
-    return (
-      activeDrawerRoom.priceOverride ??
-      getTariffPrice(activeDrawerRoom.id) ??
-      0
-    );
-  }, [activeDrawerRoom, getTariffPrice]);
 
   const activeStatuses = useMemo(
     () =>
@@ -298,10 +268,7 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
             })
           }
           onOpenRoomDetail={setSelectedRoomForDetail}
-          onSelectHabitacion={
-            onSelectHabitacion ?? handleOpenAssignGuestDrawer
-          }
-          onOpenOperativaDrawer={setDrawerRoom}
+          onSelectHabitacion={onSelectHabitacion ?? handleOpenAssignGuestDrawer}
           onOpenAssignGuestDrawer={handleOpenAssignGuestDrawer}
           onQuickMarkAvailable={handleQuickMarkAvailable}
         />
@@ -311,8 +278,6 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
         selectedBuilding={selectedBuilding}
         selectedRoomForTarifas={selectedRoomForTarifas}
         selectedRoomForDetail={selectedRoomForDetail}
-        activeDrawerRoom={activeDrawerRoom}
-        drawerNightlyRate={drawerNightlyRate}
         assignGuestDrawerRoom={assignGuestDrawerRoom}
         hasTariff={hasTariff}
         getRateId={getRateId}
@@ -321,25 +286,11 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
         onCloseBuilding={() => setSelectedBuilding(null)}
         onCloseTarifas={() => setSelectedRoomForTarifas(null)}
         onCloseDetail={() => setSelectedRoomForDetail(null)}
-        onCloseOperativaDrawer={() => setDrawerRoom(null)}
         onCloseAssignGuestDrawer={() => setAssignGuestDrawerRoom(null)}
         onAssignGuestSuccess={handleAssignGuestSuccess}
-        onAssignGuestFromOperativa={(room) => {
-          setDrawerRoom(null);
-          if (onSelectHabitacion) {
-            onSelectHabitacion(room);
-          } else {
-            handleOpenAssignGuestDrawer(room);
-          }
-        }}
-        onChangeDrawerStatus={handleDrawerStatusChange}
         onTariffApplied={markRoomWithTariff}
         onSelectTarifas={setSelectedRoomForTarifas}
         onSelectBuilding={setSelectedBuilding}
-        onOpenFullDetailFromDrawer={(room) => {
-          setDrawerRoom(null);
-          setSelectedRoomForDetail(room);
-        }}
       />
     </motion.section>
   );

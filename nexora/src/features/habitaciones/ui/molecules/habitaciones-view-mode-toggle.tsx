@@ -2,13 +2,9 @@ import { memo, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
-import {
-  faGrip,
-  faTableCellsLarge,
-  faTableList,
-} from '@fortawesome/free-solid-svg-icons';
+import { faGrip, faTableCellsLarge } from '@fortawesome/free-solid-svg-icons';
 
-export type HabitacionesViewMode = 'cards' | 'compact' | 'table';
+export type HabitacionesViewMode = 'cards' | 'compact';
 
 export interface HabitacionesViewModeToggleProps {
   viewMode: HabitacionesViewMode;
@@ -23,11 +19,10 @@ const VIEW_MODES: ReadonlyArray<{
 }> = [
   { mode: 'cards', label: 'Tarjetas', icon: faTableCellsLarge },
   { mode: 'compact', label: 'Compacta', icon: faGrip },
-  { mode: 'table', label: 'Tabla', icon: faTableList },
 ];
 
 /**
- * Selector icon-only de modo de visualización (Tarjetas / Compacta / Tabla) con FontAwesome.
+ * Selector icon-only de modo de visualización (Tarjetas / Compacta) con FontAwesome.
  */
 export const HabitacionesViewModeToggle = memo(function HabitacionesViewModeToggle({
   viewMode,

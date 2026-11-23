@@ -16,17 +16,13 @@ import {
   type FloorStatusBadgeFilter,
 } from '../../domain/piso-badge-filter';
 import { HabitacionesErrorState } from '../molecules/habitaciones-error-state';
-import {
-  HabitacionCardsSkeleton,
-  HabitacionTableSkeletonRows,
-} from '../molecules/habitacion-table-skeleton';
+import { HabitacionCardsSkeleton } from '../molecules/habitacion-cards-skeleton';
 import type { HabitacionesViewMode } from '../molecules/habitaciones-view-mode-toggle';
 import { PisoAccordionHeader } from '../molecules/piso-accordion-header';
 import { PisoBadgeEmptyState } from '../molecules/piso-badge-empty-state';
 import { PisoRoomsSearchBar } from '../molecules/piso-rooms-search-bar';
 
 const LazyHabitacionFloorCards = lazy(() => import('./habitacion-floor-cards'));
-const LazyHabitacionFloorTable = lazy(() => import('./habitacion-floor-table'));
 const LazyHabitacionFloorCompactGrid = lazy(
   () => import('./habitacion-floor-compact-grid')
 );
@@ -52,7 +48,6 @@ export interface PisoAccordionItemProps {
   onOpenTarifas: (row: RoomRow, hasTariff: boolean, rateId: string | null) => void;
   onOpenRoomDetail: (row: RoomRow) => void;
   onSelectHabitacion?: (row: RoomRow) => void;
-  onOpenOperativaDrawer?: (row: RoomRow) => void;
   onOpenAssignGuestDrawer?: (row: RoomRow) => void;
   onQuickMarkAvailable?: (row: RoomRow) => Promise<void> | void;
 }
@@ -78,7 +73,6 @@ export const PisoAccordionItem = memo(function PisoAccordionItem({
   onOpenTarifas,
   onOpenRoomDetail,
   onSelectHabitacion,
-  onOpenOperativaDrawer,
   onOpenAssignGuestDrawer,
   onQuickMarkAvailable,
 }: PisoAccordionItemProps) {
@@ -193,46 +187,17 @@ export const PisoAccordionItem = memo(function PisoAccordionItem({
               ) : (
                 <Suspense
                   fallback={
-                    viewMode === 'table' ? (
-                      <div className="border-line overflow-x-auto rounded-xl border">
-                        <table className="w-full text-left text-xs">
-                          <HabitacionTableSkeletonRows
-                            count={Math.min(visibleRooms.length, 4)}
-                          />
-                        </table>
-                      </div>
-                    ) : (
-                      <HabitacionCardsSkeleton
-                        count={Math.min(visibleRooms.length, 4)}
-                        className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3.5"
-                      />
-                    )
+                    <HabitacionCardsSkeleton
+                      count={Math.min(visibleRooms.length, 4)}
+                      className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3.5"
+                    />
                   }
                 >
-                  {viewMode === 'table' ? (
-                    <LazyHabitacionFloorTable
-                      rooms={visibleRooms}
-                      hasTariff={hasTariff}
-                      getRateId={getRateId}
-                      getTariffPrice={getTariffPrice}
-                      getTariffName={getTariffName}
-                      isVerifying={isVerifying}
-                      onRetryBuilding={onRetryBuilding}
-                      onRetryBed={onRetryBed}
-                      onOpenBuilding={onOpenBuilding}
-                      onOpenTarifas={onOpenTarifas}
-                      onOpenRoomDetail={
-                        onOpenOperativaDrawer ?? onOpenRoomDetail
-                      }
-                      onSelectHabitacion={onSelectHabitacion}
-                    />
-                  ) : viewMode === 'compact' ? (
+                  {viewMode === 'compact' ? (
                     <LazyHabitacionFloorCompactGrid
                       rooms={visibleRooms}
                       hasTariff={hasTariff}
-                      onSelectRoom={
-                        onOpenOperativaDrawer ?? onOpenRoomDetail
-                      }
+                      onSelectRoom={onOpenRoomDetail}
                     />
                   ) : (
                     <LazyHabitacionFloorCards
@@ -248,7 +213,6 @@ export const PisoAccordionItem = memo(function PisoAccordionItem({
                       onOpenTarifas={onOpenTarifas}
                       onOpenRoomDetail={onOpenRoomDetail}
                       onSelectHabitacion={onSelectHabitacion}
-                      onOpenOperativaDrawer={onOpenOperativaDrawer}
                       onOpenAssignGuestDrawer={onOpenAssignGuestDrawer}
                       onQuickMarkAvailable={onQuickMarkAvailable}
                     />

@@ -1,7 +1,5 @@
-export { RandomPlanet, SHARED_PLANETS } from './RandomPlanet';
-export type {
-  RandomPlanetProps,
-  PlanetName,
-  PlanetOption,
-} from './RandomPlanet';
+export { RandomPlanet } from './RandomPlanet';
+export { SHARED_PLANETS } from './planets-catalog';
+export type { RandomPlanetProps } from './RandomPlanet';
+export type { PlanetName, PlanetOption } from './planets-catalog';
 

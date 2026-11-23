@@ -1,124 +1,142 @@
-import { useEffect, useState } from 'react'
-import { fetchRoomById, SAMPLE_ROOMS } from '../infrastructure/room-api'
+import { useEffect, useState } from 'react';
+import { detectarRecursosDispositivoRecepciones } from '../infrastructure/recepciones-resource-detector';
+import { catalogApi } from '../../../shared/catalog';
+import { SAMPLE_ROOMS } from '../infrastructure/room-api';
 
-const globalRoomNumberCache: Record<string, string> = {
-  ...Object.fromEntries(
-    Object.entries(SAMPLE_ROOMS).map(([id, r]) => [id, r.number])
-  ),
+function extractFallbackRoomNumber(id: string): string {
+  const match = id.match(/^(?:room|hab|habitacion)[-_]?(\d+)$/i);
+  return match ? match[1] : '';
+}
+
+function getCachedRoomNumber(id: string): string | undefined {
+  const cached = catalogApi.getCachedRoom(id);
+  if (cached?.number) return String(cached.number);
+  const sample = SAMPLE_ROOMS[id];
+  if (sample?.number) {
+    catalogApi.primeRoom({ ...sample, id });
+    return sample.number;
+  }
+  return undefined;
+}
+
+async function resolveRoomNumberDeduped(id: string): Promise<string | null> {
+  const cached = getCachedRoomNumber(id);
+  if (cached !== undefined) return cached;
+
+  try {
+    const res = await catalogApi.getRoom(id);
+    if (res.data?.number) {
+      return String(res.data.number);
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Hook para resolver y almacenar en caché los números de habitación (`number`)
- * a partir de sus IDs consumiendo GET /room/{id} con Axios y validando con validateStatusCode.
+ * Hook compartido para resolver números de habitación sobre `catalogApi`
+ * (caché única LRU+TTL + deduplicación en vuelo + lotes acotados),
+ * evitando repetir GET /room/{id} entre Cards, Tabla y Drawer.
  */
 export function useRoomNumbers(roomIds: string[]): Record<string, string> {
   const [numbers, setNumbers] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {}
+    const initial: Record<string, string> = {};
     for (const id of roomIds) {
-      if (globalRoomNumberCache[id]) {
-        initial[id] = globalRoomNumberCache[id]
-      } else {
-        // Extracción preventiva de dígitos si el formato es room-102 o hab-201
-        const match = id.match(/^(?:room|hab|habitacion)[-_]?(\d+)$/i)
-        initial[id] = match ? match[1] : id
-      }
+      const hit = getCachedRoomNumber(id);
+      initial[id] = hit ?? (extractFallbackRoomNumber(id) || id);
     }
-    return initial
-  })
+    return initial;
+  });
 
-  const idsKey = roomIds.join(',')
+  const idsKey = roomIds.join(',');
 
   useEffect(() => {
-    let isMounted = true
+    let isMounted = true;
+    const uniqueIds = Array.from(
+      new Set(roomIds.map((id) => id.trim()).filter(Boolean))
+    );
+    const missingIds = uniqueIds.filter(
+      (id) => getCachedRoomNumber(id) === undefined
+    );
 
-    const missingIds = roomIds.filter((id) => !globalRoomNumberCache[id])
+    const syncFromCache = () => {
+      if (!isMounted) return;
+      setNumbers((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const id of uniqueIds) {
+          const val = getCachedRoomNumber(id);
+          if (val && next[id] !== val) {
+            next[id] = val;
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    };
 
     if (missingIds.length === 0) {
-      setNumbers((prev) => {
-        let changed = false
-        const next = { ...prev }
-        for (const id of roomIds) {
-          if (next[id] !== globalRoomNumberCache[id]) {
-            next[id] = globalRoomNumberCache[id]
-            changed = true
-          }
-        }
-        return changed ? next : prev
-      })
-      return
+      void Promise.resolve().then(syncFromCache);
+      return () => {
+        isMounted = false;
+      };
     }
 
-    void Promise.all(
-      missingIds.map(async (id) => {
-        try {
-          const res = await fetchRoomById(id)
-          if (res.validation.isValid && res.data?.number) {
-            globalRoomNumberCache[id] = String(res.data.number)
-          }
-        } catch {
-          // Ignorar fallo puntual
+    const loadBatched = async () => {
+      try {
+        const batchSize =
+          detectarRecursosDispositivoRecepciones().policy.batchConcurrency;
+        for (let i = 0; i < missingIds.length; i += batchSize) {
+          if (!isMounted) return;
+          const chunk = missingIds.slice(i, i + batchSize);
+          await Promise.allSettled(chunk.map(resolveRoomNumberDeduped));
         }
-      })
-    ).then(() => {
-      if (isMounted) {
-        setNumbers((prev) => {
-          const next = { ...prev }
-          for (const id of roomIds) {
-            if (globalRoomNumberCache[id]) {
-              next[id] = globalRoomNumberCache[id]
-            }
-          }
-          return next
-        })
+        syncFromCache();
+      } catch (err) {
+        console.error('Error al resolver números de habitación:', err);
       }
-    })
+    };
+
+    void loadBatched();
 
     return () => {
-      isMounted = false
-    }
-  }, [idsKey])
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey]);
 
-  return numbers
+  return numbers;
 }
 
 /**
  * Hook individual para resolver el número (`number`) de una habitación por su id.
  */
 export function useRoomNumber(roomId?: string | null): string {
-  const [roomNumber, setRoomNumber] = useState<string>(() => {
-    if (!roomId) return ''
-    if (globalRoomNumberCache[roomId]) return globalRoomNumberCache[roomId]
-    const match = roomId.match(/^(?:room|hab|habitacion)[-_]?(\d+)$/i)
-    return match ? match[1] : ''
-  })
+  const [resolved, setResolved] = useState<{ id: string; value: string } | null>(
+    null
+  );
 
   useEffect(() => {
-    if (!roomId) {
-      setRoomNumber('')
-      return
-    }
+    if (!roomId) return;
+    if (getCachedRoomNumber(roomId) !== undefined) return;
 
-    if (globalRoomNumberCache[roomId]) {
-      setRoomNumber(globalRoomNumberCache[roomId])
-      return
-    }
+    let isMounted = true;
 
-    let isMounted = true
-
-    void fetchRoomById(roomId).then((res) => {
-      if (!isMounted) return
-      if (res.validation.isValid && res.data?.number) {
-        const num = String(res.data.number)
-        globalRoomNumberCache[roomId] = num
-        setRoomNumber(num)
+    void resolveRoomNumberDeduped(roomId).then((num) => {
+      if (isMounted && num) {
+        setResolved({ id: roomId, value: num });
       }
-    })
+    });
 
     return () => {
-      isMounted = false
-    }
-  }, [roomId])
+      isMounted = false;
+    };
+  }, [roomId]);
 
-  return roomNumber
+  if (!roomId) return '';
+  const cached = getCachedRoomNumber(roomId);
+  if (cached !== undefined) return cached;
+  if (resolved?.id === roomId) return resolved.value;
+  return extractFallbackRoomNumber(roomId);
 }
-
