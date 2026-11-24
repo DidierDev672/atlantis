@@ -14,6 +14,7 @@ import {
 
 export interface UseSalidasRecepcionesOptions {
   initialStays?: StayItem[];
+  refreshToken?: number;
 }
 
 export interface UseSalidasRecepcionesReturn {
@@ -169,6 +170,22 @@ export function useSalidasRecepciones(
     setServiceRequestValidation(null);
     await loadAndSyncGuests(seq, true);
   }, [loadAndSyncGuests]);
+
+  const prevRefreshTokenRef = useRef(options.refreshToken ?? 0);
+  useEffect(() => {
+    const nextToken = options.refreshToken ?? 0;
+    if (nextToken === prevRefreshTokenRef.current) return;
+    prevRefreshTokenRef.current = nextToken;
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled) {
+        void reload();
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [options.refreshToken, reload]);
 
   useEffect(() => {
     const seq = ++requestSeqRef.current;

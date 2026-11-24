@@ -272,6 +272,17 @@ export class ApiRecepcionRepository implements RecepcionRepository {
     }
   }
 
+  private balancedGet(
+    url: string,
+    validateStatus: (status: number) => boolean = () => true
+  ) {
+    const { maxRetries } = detectarRecursosDispositivoRecepciones().policy
+    return executeBalancedRequest(
+      () => api.get<unknown>(url, { validateStatus }),
+      { maxRetries: Math.min(1, maxRetries) }
+    )
+  }
+
   private async fetchCachedCollection<T>(
     cacheKey: string,
     fetcher: () => Promise<T>
@@ -303,9 +314,7 @@ export class ApiRecepcionRepository implements RecepcionRepository {
   async getSedes(): Promise<SedeInfo[]> {
     return this.fetchCachedCollection('headquarters', async () => {
       try {
-        const response = await api.get<unknown>('/headquarters', {
-          validateStatus: () => true,
-        })
+        const response = await this.balancedGet('/headquarters')
 
         const validation = validateStatusCode(response.status)
         if (!validation.isValid) {
@@ -377,9 +386,7 @@ export class ApiRecepcionRepository implements RecepcionRepository {
 
     const fetchPromise = (async () => {
       try {
-        const response = await api.get<unknown>(`/headquarters/${id}`, {
-          validateStatus: () => true,
-        })
+        const response = await this.balancedGet(`/headquarters/${id}`)
 
         const validation = validateStatusCode(response.status)
         if (!validation.isValid) {
@@ -438,9 +445,7 @@ export class ApiRecepcionRepository implements RecepcionRepository {
   async getEdificios(sedeId?: string): Promise<EdificioInfo[]> {
     const all = await this.fetchCachedCollection('buildings', async () => {
       try {
-        const response = await api.get<unknown>('/building', {
-          validateStatus: () => true,
-        })
+        const response = await this.balancedGet('/building')
 
         const validation = validateStatusCode(response.status)
         if (!validation.isValid) {
@@ -517,9 +522,7 @@ export class ApiRecepcionRepository implements RecepcionRepository {
 
     const fetchPromise = (async () => {
       try {
-        const response = await api.get<unknown>(`/building/${id}`, {
-          validateStatus: () => true,
-        })
+        const response = await this.balancedGet(`/building/${id}`)
 
         const validation = validateStatusCode(response.status)
         if (!validation.isValid) {
@@ -592,11 +595,8 @@ export class ApiRecepcionRepository implements RecepcionRepository {
 
     const fetchPromise = (async () => {
       try {
-        const response = await api.get<unknown>(
-          `/sub-headquarters/by-headquarter/${headquartersId}`,
-          {
-            validateStatus: () => true,
-          },
+        const response = await this.balancedGet(
+          `/sub-headquarters/by-headquarter/${headquartersId}`
         )
 
         const validation = validateStatusCode(response.status)
@@ -660,9 +660,7 @@ export class ApiRecepcionRepository implements RecepcionRepository {
   private async getAllSubSedes(): Promise<SubSedeInfo[]> {
     return this.fetchCachedCollection('sub-headquarters', async () => {
       try {
-        const response = await api.get<unknown>('/sub-headquarters', {
-          validateStatus: () => true,
-        })
+        const response = await this.balancedGet('/sub-headquarters')
         if (validateStatusCode(response.status).isValid) {
           const rawData = response.data
           const raw: RawSubSede[] = Array.isArray(rawData)
@@ -770,7 +768,7 @@ export class ApiRecepcionRepository implements RecepcionRepository {
     const allRooms = await this.fetchCachedCollection('rooms', async () => {
       try {
         const [roomsResponse, edificios, sedes, subSedes] = await Promise.all([
-          api.get<unknown>('/room', { validateStatus: () => true }),
+          this.balancedGet('/room'),
           this.getEdificios(),
           this.getSedes(),
           this.getAllSubSedes(),
@@ -981,9 +979,10 @@ export class ApiRecepcionRepository implements RecepcionRepository {
   async getCamas(roomId?: string): Promise<CamaInfo[]> {
     const allBeds = await this.fetchCachedCollection('beds', async () => {
       try {
-        const response = await api.get<unknown>('/beds', {
-          validateStatus: (s) => s >= 200 && s < 300,
-        })
+        const response = await this.balancedGet(
+          '/beds',
+          (s) => s >= 200 && s < 300
+        )
 
         const raw: RawBed[] = Array.isArray(response.data)
           ? response.data
@@ -1050,9 +1049,10 @@ export class ApiRecepcionRepository implements RecepcionRepository {
 
   async getTiposCama(): Promise<TipoCamaInfo[]> {
     try {
-      const response = await api.get<unknown>('/types-bed', {
-        validateStatus: (s) => s === 200,
-      })
+      const response = await this.balancedGet(
+        '/types-bed',
+        (s) => s === 200
+      )
 
       const raw: RawTipoCama[] = Array.isArray(response.data)
         ? response.data
@@ -1227,9 +1227,10 @@ export class ApiRecepcionRepository implements RecepcionRepository {
   async getHuespedes(): Promise<HuespedInfo[]> {
     return this.fetchCachedCollection('persons', async () => {
       try {
-        const response = await api.get<unknown>('/persons', {
-          validateStatus: (s) => s >= 200 && s < 300,
-        })
+        const response = await this.balancedGet(
+          '/persons',
+          (s) => s >= 200 && s < 300
+        )
 
         const raw: RawPerson[] = Array.isArray(response.data)
           ? response.data

@@ -1,17 +1,29 @@
+import { memo } from 'react'
 import { motion } from 'motion/react'
 import { fadeIn, fadeUp } from '../../../../design-tokens/motion'
 import { Button } from '../../../recursos/ui/atoms/button'
-import { Loader } from '../../../roles/ui/atoms/loader'
 import { useRecepcionForm } from '../../application/use-recepcion-form'
+import type { Recepcion } from '../../domain/recepcion'
 import { RecepcionCardForm } from '../molecules/recepcion-card-form'
 import { RecepcionSuccess } from '../molecules/recepcion-success'
 
-export function RecepcionPanel() {
+export interface RecepcionPanelProps {
+  onSuccess?: (recepcion: Recepcion) => void
+}
+
+export const RecepcionPanel = memo(function RecepcionPanel({
+  onSuccess,
+}: RecepcionPanelProps = {}) {
   const {
     formValues,
     errors,
     loadingDependencies,
+    loadingLocation,
     dependencyError,
+    locationValidationError,
+    detectedHeadquarter,
+    detectedSubHeadquarter,
+    isLocationLocked,
     sedeOptions,
     edificioOptions,
     habitacionOptions,
@@ -28,7 +40,8 @@ export function RecepcionPanel() {
     handleSubmit,
     handleReset,
     loadDependencies,
-  } = useRecepcionForm()
+    toggleManualLocation,
+  } = useRecepcionForm(undefined, onSuccess)
 
   return (
     <motion.section
@@ -38,14 +51,6 @@ export function RecepcionPanel() {
       aria-label="Panel de registro de recepciones"
       className="w-full"
     >
-      {/* Loader visual durante el guardado */}
-      <Loader
-        overlay
-        visible={submitting}
-        size={36}
-        label="Registrando la recepción y asignando habitación…"
-      />
-
       {/* Error de dependencias si falla la carga inicial */}
       {dependencyError && !successRecepcion && (
         <motion.div
@@ -101,8 +106,14 @@ export function RecepcionPanel() {
             metodoPagoOptions={metodoPagoOptions}
             estadoOptions={estadoOptions}
             loadingDependencies={loadingDependencies}
+            loadingLocation={loadingLocation}
+            locationValidationError={locationValidationError}
+            detectedHeadquarter={detectedHeadquarter}
+            detectedSubHeadquarter={detectedSubHeadquarter}
+            isLocationLocked={isLocationLocked}
             submitting={submitting}
             syncNotice={syncNotice}
+            onToggleManualLocation={toggleManualLocation}
             onFieldChange={handleFieldChange}
             onSubmit={handleSubmit}
           />
@@ -143,4 +154,4 @@ export function RecepcionPanel() {
       )}
     </motion.section>
   )
-}
+})

@@ -12,6 +12,7 @@ import { CuentaHuespedDrawer } from './organisms/cuenta-huesped-drawer';
 
 export interface SalidasRecepcionesPageProps {
   initialStays?: StayItem[];
+  refreshToken?: number;
 }
 
 /**
@@ -21,6 +22,7 @@ export interface SalidasRecepcionesPageProps {
  */
 export const SalidasRecepcionesPage = memo(function SalidasRecepcionesPage({
   initialStays,
+  refreshToken,
 }: SalidasRecepcionesPageProps) {
   const {
     guests,
@@ -35,7 +37,7 @@ export const SalidasRecepcionesPage = memo(function SalidasRecepcionesPage({
     setDepartureFilter,
     reload,
     ensureServiceRequestsForPersonIds,
-  } = useSalidasRecepciones({ initialStays });
+  } = useSalidasRecepciones({ initialStays, refreshToken });
 
   const [selectedAccountGuestKey, setSelectedAccountGuestKey] = useState<
     string | null
