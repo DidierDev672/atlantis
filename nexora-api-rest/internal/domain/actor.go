@@ -98,10 +98,178 @@ func (a Actor) IsSuperAdmin() bool {
 	return norm == RoleSuperAdmin || norm == "superadmin" || norm == "soporte"
 }
 
-// IsAdmin reports whether the actor has the hotel owner admin role.
+// IsAdmin reports whether the actor has the hotel admin, support or manager role.
 func (a Actor) IsAdmin() bool {
+	if a.IsSuperAdmin() {
+		return true
+	}
 	norm := normalizeRoleName(a.RoleName)
-	return norm == RoleAdmin || norm == "administrador"
+	return norm == RoleAdmin || norm == "administrador" || norm == RoleManager || norm == "gerente" || norm == "gerente_sede"
+}
+
+// IsReception reports whether the actor has the operational receptionist role.
+func (a Actor) IsReception() bool {
+	norm := normalizeRoleName(a.RoleName)
+	return norm == RoleReception || norm == "recepcionista" || norm == "recepcion"
+}
+
+// HasFullAccess reports whether the actor has unrestricted access to all application routes and endpoints.
+func (a Actor) HasFullAccess() bool {
+	return a.IsSuperAdmin() || a.IsAdmin()
+}
+
+// AllowedNavRoutes returns the frontend navigation IDs (NavId) authorized for this actor's role.
+func (a Actor) AllowedNavRoutes() []string {
+	if a.HasFullAccess() {
+		return []string{
+			"home",
+			"recepcion",
+			"salidas",
+			"habitacion",
+			"reservas",
+			"personas",
+			"servicios",
+			"sedes",
+			"cama",
+			"tarifas",
+			"usuarios",
+			"recursos",
+			"auditoria",
+			"paletas",
+			"configuracion",
+			"perfil",
+		}
+	}
+	if a.IsReception() {
+		return []string{
+			"recepcion",
+			"salidas",
+			"habitacion",
+			"reservas",
+			"personas",
+			"servicios",
+			"perfil",
+		}
+	}
+	return []string{"home", "perfil"}
+}
+
+// AllowedPermissions returns the granular capability identifiers granted to this actor's role.
+func (a Actor) AllowedPermissions() []string {
+	if a.HasFullAccess() {
+		return []string{
+			"*",
+			"admin.full_access",
+			"reception.manage",
+			"checkout.manage",
+			"billing.manage",
+			"persons.manage",
+			"rooms.manage",
+			"reserves.manage",
+			"services.manage",
+			"menu.manage",
+			"rates.manage",
+			"users.manage",
+			"roles.manage",
+			"headquarters.manage",
+			"audit.read",
+			"settings.manage",
+		}
+	}
+	if a.IsReception() {
+		return []string{
+			"reception.manage",
+			"checkout.manage",
+			"billing.manage",
+			"persons.manage",
+			"rooms.read",
+			"rooms.update_status",
+			"reserves.manage",
+			"services.sell",
+			"services.dispatch",
+			"menu.read",
+			"rates.read",
+		}
+	}
+	return []string{"profile.read"}
+}
+
+// CanAccessEndpoint evaluates whether the authenticated actor is authorized to invoke the given HTTP method and path.
+func (a Actor) CanAccessEndpoint(method, path string) bool {
+	cleanPath := strings.TrimSpace(path)
+	if cleanPath == "" || cleanPath == "/login" || method == "OPTIONS" {
+		return true
+	}
+	if cleanPath == "/auth/me" {
+		return strings.TrimSpace(string(a.UserID)) != ""
+	}
+
+	// Admin, SuperAdmin and Manager have full access to all routes.
+	if a.HasFullAccess() {
+		return true
+	}
+
+	if a.IsReception() {
+		// 1. Full CRUD operational endpoints for Receptionist:
+		// Check-in/stays, Check-out/billing (folios), Guests/persons, Reservations, Room Service orders & assignments
+		fullAccessPrefixes := []string{
+			"/stay",
+			"/stays",
+			"/stays_person",
+			"/stay_person",
+			"/folio",
+			"/folios",
+			"/person",
+			"/persons",
+			"/reserve",
+			"/service-request",
+			"/service-assignment",
+			"/service-assignments",
+			"/guest-attendant",
+		}
+		for _, prefix := range fullAccessPrefixes {
+			if cleanPath == prefix || strings.HasPrefix(cleanPath, prefix+"/") {
+				return true
+			}
+		}
+
+		// 2. Rooms: Receptionist can read rooms and update room operational state (GET, PUT),
+		// but cannot create or delete physical rooms (POST, DELETE).
+		if cleanPath == "/room" || strings.HasPrefix(cleanPath, "/room/") {
+			return method == "GET" || method == "PUT"
+		}
+
+		// 3. Read-only catalogs required for daily reception, room assignment, quoting and selling products:
+		// Note: POST/PUT/DELETE on /menu-category and /item-menu are restricted to Admin.
+		if method == "GET" {
+			readOnlyPrefixes := []string{
+				"/room-types",
+				"/building",
+				"/beds",
+				"/bed",
+				"/types-bed",
+				"/rates",
+				"/rate",
+				"/room_tariffs",
+				"/room_tariff",
+				"/menu-category",
+				"/item-menu",
+				"/headquarters",
+				"/sub-headquarters",
+				"/palette",
+				"/roles",
+			}
+			for _, prefix := range readOnlyPrefixes {
+				if cleanPath == prefix || strings.HasPrefix(cleanPath, prefix+"/") {
+					return true
+				}
+			}
+		}
+
+		return false
+	}
+
+	return false
 }
 
 // CanAccessHeadquarter checks whether the actor is allowed to operate on hqID.
@@ -110,7 +278,7 @@ func (a Actor) CanAccessHeadquarter(hqID HeadquarterID) bool {
 	if target == "" {
 		return true
 	}
-	if a.IsSuperAdmin() || a.AllHeadquarters {
+	if a.HasFullAccess() || a.AllHeadquarters {
 		return true
 	}
 	if a.PrimaryHeadquarterID != nil && string(*a.PrimaryHeadquarterID) == target {

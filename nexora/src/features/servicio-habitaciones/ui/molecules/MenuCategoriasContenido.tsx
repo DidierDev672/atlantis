@@ -26,8 +26,8 @@ export interface MenuCategoriasContenidoProps {
   onMostrarCincoMas: () => void
   onVerDetalle: (categoria: MenuCategoria) => void
   onVerProductos: (categoria: MenuCategoria) => void
-  onAgregarProducto: (categoria: MenuCategoria) => void
-  onNuevoRegistro: () => void
+  onAgregarProducto?: (categoria: MenuCategoria) => void
+  onNuevoRegistro?: () => void
   onRecargar: () => void
   onResetFiltros: () => void
 }

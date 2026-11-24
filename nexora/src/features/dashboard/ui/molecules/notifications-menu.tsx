@@ -32,7 +32,7 @@ export function NotificationsMenu() {
             <button
               type="button"
               role="menuitem"
-              className="flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left outline-none transition-colors hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-primary/30"
+              className="flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left outline-none transition-colors hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-primary/30 cursor-pointer"
             >
               <span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" />
               <span className="min-w-0">
@@ -44,7 +44,12 @@ export function NotificationsMenu() {
         ))}
       </ul>
       <div className="border-t border-line px-3 py-2">
-        <p className="text-center text-xs font-medium text-primary">Ver todas las notificaciones</p>
+        <button
+          type="button"
+          className="w-full text-center text-xs font-medium text-primary hover:underline cursor-pointer"
+        >
+          Ver todas las notificaciones
+        </button>
       </div>
     </MenuPopover>
   )

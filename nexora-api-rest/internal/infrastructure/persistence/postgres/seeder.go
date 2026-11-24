@@ -130,6 +130,171 @@ func SeedInitialData(ctx context.Context, conn *pgxpool.Pool, cfg config.Bootstr
 		}
 	}
 
+	// 5. Asegurar usuario recepcionista operativo
+	receptionRoleID := roleIDs[domain.RoleReception]
+	if receptionRoleID != "" && strings.TrimSpace(cfg.ReceptionEmail) != "" {
+		if err := ensureSeedUser(ctx, conn, seedUserParams{
+			Name:            cfg.ReceptionName,
+			Email:           strings.ToLower(strings.TrimSpace(cfg.ReceptionEmail)),
+			Password:        cfg.ReceptionPassword,
+			RoleID:          receptionRoleID,
+			HeadquarterID:   defaultHQID,
+			AllHeadquarters: false,
+			CreatedBy:       systemActor,
+		}); err != nil {
+			return fmt.Errorf("seed reception user: %w", err)
+		}
+	}
+
+	// 6. Sembrar catálogo de módulos, recursos, permisos y matriz role_permissions (admin y reception)
+	if err := seedRBACCatalog(ctx, conn, roleIDs); err != nil {
+		return fmt.Errorf("seed RBAC catalog: %w", err)
+	}
+
+	return nil
+}
+
+type seedModuleDef struct {
+	Code          string
+	SortOrder     int16
+	TypePath      string
+	TypeComponent string
+}
+
+type seedResourceDef struct {
+	ModuleCode   string
+	Code         string
+	Name         string
+	Component    string
+	SortOrder    int16
+	ShowInMenu   bool
+	Action       string
+	Description  string
+	ForReception bool
+}
+
+func seedRBACCatalog(ctx context.Context, conn *pgxpool.Pool, roleIDs map[string]string) error {
+	modules := []seedModuleDef{
+		{Code: "operacion", SortOrder: 1, TypePath: "/operacion", TypeComponent: "Operacion"},
+		{Code: "configuracion_hotelera", SortOrder: 2, TypePath: "/configuracion-hotelera", TypeComponent: "ConfiguracionHotelera"},
+		{Code: "accesos", SortOrder: 3, TypePath: "/accesos", TypeComponent: "Accesos"},
+		{Code: "sistema", SortOrder: 4, TypePath: "/sistema", TypeComponent: "Sistema"},
+	}
+
+	moduleIDs := make(map[string]int, len(modules))
+	for _, m := range modules {
+		var modID int
+		err := conn.QueryRow(ctx,
+			"SELECT id FROM modules WHERE LOWER(TRIM(code)) = LOWER(TRIM($1)) OR LOWER(TRIM(type_path)) = LOWER(TRIM($2)) LIMIT 1",
+			m.Code, m.TypePath,
+		).Scan(&modID)
+		if err != nil || modID == 0 {
+			err = conn.QueryRow(ctx,
+				`INSERT INTO modules (code, sort_order, type_path, type_component)
+				 VALUES ($1, $2, $3, $4)
+				 RETURNING id`,
+				m.Code, m.SortOrder, m.TypePath, m.TypeComponent,
+			).Scan(&modID)
+			if err != nil {
+				return fmt.Errorf("insert module %s: %w", m.Code, err)
+			}
+		}
+		moduleIDs[m.Code] = modID
+	}
+
+	resources := []seedResourceDef{
+		{ModuleCode: "operacion", Code: "home", Name: "Resumen de hoy", Component: "HomeOverview", SortOrder: 1, ShowInMenu: true, Action: "dashboard.view", Description: "Acceso al resumen ejecutivo y métricas generales del hotel", ForReception: false},
+		{ModuleCode: "operacion", Code: "recepcion", Name: "Recepción y Check-in", Component: "RecepcionesPage", SortOrder: 2, ShowInMenu: true, Action: "reception.manage", Description: "Recepción de huéspedes, check-in, asignación de habitación y garantías", ForReception: true},
+		{ModuleCode: "operacion", Code: "salidas", Name: "Salidas, Check-out y Facturación", Component: "SalidasRecepcionesPage", SortOrder: 3, ShowInMenu: true, Action: "checkout_billing.manage", Description: "Salida de huéspedes, check-out, cobro de folios y facturación", ForReception: true},
+		{ModuleCode: "operacion", Code: "habitacion", Name: "Habitaciones y Asignación", Component: "HabitacionesPage", SortOrder: 4, ShowInMenu: true, Action: "rooms.operational", Description: "Consulta de inventario de habitaciones, disponibilidad y cambio de estado operativo", ForReception: true},
+		{ModuleCode: "operacion", Code: "reservas", Name: "Reservas de Habitaciones", Component: "ReservasPage", SortOrder: 5, ShowInMenu: true, Action: "reserves.manage", Description: "Creación, modificación y seguimiento de reservaciones", ForReception: true},
+		{ModuleCode: "operacion", Code: "servicios", Name: "Venta de Productos y Servicios de Habitación", Component: "ServicioHabitacionesPage", SortOrder: 6, ShowInMenu: true, Action: "services.sell_dispatch", Description: "Venta de productos en servicios del hotel, room service y cargo a la habitación", ForReception: true},
+		{ModuleCode: "accesos", Code: "personas", Name: "Directorio de Personas y Huéspedes", Component: "PersonasPage", SortOrder: 7, ShowInMenu: true, Action: "persons.manage", Description: "Ingreso y actualización de datos de huéspedes, acompañantes y personal", ForReception: true},
+		{ModuleCode: "accesos", Code: "usuarios", Name: "Usuarios del Sistema", Component: "UsuariosPage", SortOrder: 8, ShowInMenu: true, Action: "users.manage", Description: "Administración de usuarios operadores, credenciales y sedes", ForReception: false},
+		{ModuleCode: "accesos", Code: "recursos", Name: "Asignación de Permisos", Component: "RecursosPage", SortOrder: 9, ShowInMenu: true, Action: "permissions.manage", Description: "Configuración de roles, recursos y políticas RBAC", ForReception: false},
+		{ModuleCode: "accesos", Code: "perfil", Name: "Mi Perfil de Usuario", Component: "UserProfile", SortOrder: 10, ShowInMenu: false, Action: "profile.view", Description: "Consulta del perfil del usuario autenticado", ForReception: true},
+		{ModuleCode: "configuracion_hotelera", Code: "sedes", Name: "Sedes y Sub-sedes", Component: "SedesView", SortOrder: 11, ShowInMenu: true, Action: "headquarters.manage", Description: "Administración de sedes, sub-sedes y edificios del hotel", ForReception: false},
+		{ModuleCode: "configuracion_hotelera", Code: "cama", Name: "Tipos de Camas 3D", Component: "Cama3dPage", SortOrder: 12, ShowInMenu: true, Action: "beds.manage", Description: "Configuración de tipos de camas e inventario físico", ForReception: false},
+		{ModuleCode: "configuracion_hotelera", Code: "tarifas", Name: "Tarifas del Hotel", Component: "TarifasPage", SortOrder: 13, ShowInMenu: true, Action: "rates.manage", Description: "Creación y configuración comercial de tarifas y planes", ForReception: false},
+		{ModuleCode: "sistema", Code: "auditoria", Name: "Auditoría Operativa y Tarifaria", Component: "AuditoriaPage", SortOrder: 14, ShowInMenu: true, Action: "audit.view", Description: "Auditoría gerencial de habitaciones, tarifas e invariantes", ForReception: false},
+		{ModuleCode: "sistema", Code: "paletas", Name: "Personalización Visual", Component: "PaletteView", SortOrder: 15, ShowInMenu: true, Action: "palettes.manage", Description: "Personalización de paletas de colores e identidad del hotel", ForReception: false},
+		{ModuleCode: "sistema", Code: "configuracion", Name: "Configuración y Módulos", Component: "ConfiguracionesPage", SortOrder: 16, ShowInMenu: true, Action: "settings.manage", Description: "Panel maestro de configuración de módulos y catálogo de productos/categorías", ForReception: false},
+	}
+
+	adminRoles := []string{
+		roleIDs[domain.RoleSuperAdmin],
+		roleIDs[domain.RoleAdmin],
+		roleIDs[domain.RoleManager],
+	}
+	receptionRoleID := roleIDs[domain.RoleReception]
+
+	for _, res := range resources {
+		modID := moduleIDs[res.ModuleCode]
+		if modID == 0 {
+			continue
+		}
+
+		var resID int
+		err := conn.QueryRow(ctx,
+			"SELECT id FROM resources WHERE LOWER(TRIM(code)) = LOWER(TRIM($1)) LIMIT 1",
+			res.Code,
+		).Scan(&resID)
+		if err != nil || resID == 0 {
+			err = conn.QueryRow(ctx,
+				`INSERT INTO resources (module_id, code, name, sort_order, show_in_menu, component)
+				 VALUES ($1, $2, $3, $4, $5, $6)
+				 RETURNING id`,
+				modID, res.Code, res.Name, res.SortOrder, res.ShowInMenu, res.Component,
+			).Scan(&resID)
+			if err != nil {
+				return fmt.Errorf("insert resource %s: %w", res.Code, err)
+			}
+		}
+
+		var permID int
+		err = conn.QueryRow(ctx,
+			"SELECT id FROM permission_resources WHERE resource_id = $1 AND action = $2 LIMIT 1",
+			resID, res.Action,
+		).Scan(&permID)
+		if err != nil || permID == 0 {
+			err = conn.QueryRow(ctx,
+				`INSERT INTO permission_resources (resource_id, action, description, permission)
+				 VALUES ($1, $2, $3, TRUE)
+				 ON CONFLICT (resource_id, action) DO UPDATE SET permission = TRUE, description = EXCLUDED.description
+				 RETURNING id`,
+				resID, res.Action, res.Description,
+			).Scan(&permID)
+			if err != nil {
+				return fmt.Errorf("insert permission_resource %s: %w", res.Action, err)
+			}
+		}
+
+		permIDStr := fmt.Sprintf("%d", permID)
+
+		// Asignar todos los permisos a los roles administrativos (admin, super_admin, manager)
+		for _, rID := range adminRoles {
+			if rID == "" {
+				continue
+			}
+			_, _ = conn.Exec(ctx,
+				`INSERT INTO role_permissions (id, role_id, permission_id, granted_at)
+				 VALUES ($1, $2, $3, now())
+				 ON CONFLICT (role_id, permission_id) DO NOTHING`,
+				newSeedID(), rID, permIDStr,
+			)
+		}
+
+		// Asignar permisos operativos y de facturación al rol recepcionista (reception)
+		if res.ForReception && receptionRoleID != "" {
+			_, _ = conn.Exec(ctx,
+				`INSERT INTO role_permissions (id, role_id, permission_id, granted_at)
+				 VALUES ($1, $2, $3, now())
+				 ON CONFLICT (role_id, permission_id) DO NOTHING`,
+				newSeedID(), receptionRoleID, permIDStr,
+			)
+		}
+	}
+
 	return nil
 }
 
@@ -151,10 +316,10 @@ func ensureSeedUser(ctx context.Context, conn *pgxpool.Pool, p seedUserParams) e
 	).Scan(&existingID)
 
 	if err == nil && existingID != "" {
-		// Asegurar que tenga all_headquarters y vínculo con la sede inicial si aún no lo tenía
+		// Asegurar que tenga all_headquarters según su rol y vínculo con la sede inicial si aún no lo tenía
 		_, _ = conn.Exec(ctx,
-			`UPDATE users SET all_headquarters = TRUE, headquarters_id = COALESCE(headquarters_id, $2), deleted_at = NULL WHERE id = $1`,
-			existingID, p.HeadquarterID,
+			`UPDATE users SET all_headquarters = $3, headquarters_id = COALESCE(headquarters_id, $2), deleted_at = NULL WHERE id = $1`,
+			existingID, p.HeadquarterID, p.AllHeadquarters,
 		)
 		if p.HeadquarterID != "" {
 			_, _ = conn.Exec(ctx,

@@ -387,6 +387,7 @@ export function updateAuthUserFromLoginResponse(
     name_full: resolvedName,
     email: resolvedEmail,
     role: resolvedRole,
+    role_name: resolvedRole,
     id_number: resolvedId,
     date_of_birth: resolvedBirth,
     phone: resolvedPhone,
@@ -530,14 +531,89 @@ export function isSuperAdminUser(): boolean {
   return email === 'soporte@nexora.com'
 }
 
+export function isReceptionUser(): boolean {
+  const role = getCurrentUserRoleName()
+  return role === 'reception' || role === 'recepcionista' || role === 'recepcion'
+}
+
 export function isAdminUser(): boolean {
+  if (isReceptionUser()) return false
   if (isSuperAdminUser()) return true
   const role = getCurrentUserRoleName()
-  return role === 'admin' || role === 'administrador' || role === ''
+  return (
+    role === 'admin' ||
+    role === 'administrador' ||
+    role === 'manager' ||
+    role === 'gerente' ||
+    role === 'gerente_sede' ||
+    role === ''
+  )
 }
 
 export function canManageHeadquarters(): boolean {
-  return isSuperAdminUser()
+  return isAdminUser()
+}
+
+export function canManageMenuCatalog(): boolean {
+  return isAdminUser() && !isReceptionUser()
+}
+
+export const ALL_ADMIN_ROUTES: readonly string[] = [
+  'home',
+  'recepcion',
+  'salidas',
+  'habitacion',
+  'reservas',
+  'personas',
+  'servicios',
+  'sedes',
+  'cama',
+  'tarifas',
+  'usuarios',
+  'recursos',
+  'auditoria',
+  'paletas',
+  'configuracion',
+  'perfil',
+] as const
+
+export const RECEPTION_ALLOWED_ROUTES: readonly string[] = [
+  'recepcion',
+  'salidas',
+  'habitacion',
+  'reservas',
+  'personas',
+  'servicios',
+  'perfil',
+] as const
+
+export function getAllowedRoutesForCurrentUser(): readonly string[] {
+  if (isReceptionUser()) {
+    return RECEPTION_ALLOWED_ROUTES
+  }
+  if (isAdminUser()) {
+    return ALL_ADMIN_ROUTES
+  }
+  const user = readAuthUser()
+  if (user && Array.isArray(user.allowed_routes)) {
+    const dynamicRoutes = user.allowed_routes.filter(
+      (r): r is string => typeof r === 'string' && r.trim().length > 0,
+    )
+    if (dynamicRoutes.length > 0) {
+      return dynamicRoutes
+    }
+  }
+  return ALL_ADMIN_ROUTES
+}
+
+export function canAccessRoute(navId: string): boolean {
+  if (isAdminUser()) return true
+  const allowed = getAllowedRoutesForCurrentUser()
+  return allowed.includes(navId)
+}
+
+export function getDefaultRouteForCurrentUser(): 'home' | 'habitacion' {
+  return isReceptionUser() ? 'habitacion' : 'home'
 }
 
 /**

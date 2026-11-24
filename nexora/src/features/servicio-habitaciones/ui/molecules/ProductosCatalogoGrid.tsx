@@ -19,7 +19,7 @@ export interface ProductosCatalogoGridProps {
   onLoadMore: () => void
   onMostrarCincoMas: () => void
   onVerDetalle: (producto: ItemMenuProducto) => void
-  onEditar: (producto: ItemMenuProducto) => void
+  onEditar?: (producto: ItemMenuProducto) => void
 }
 
 /**

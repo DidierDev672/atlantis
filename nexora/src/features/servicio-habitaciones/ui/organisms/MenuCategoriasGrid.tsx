@@ -258,7 +258,7 @@ export function MenuCategoriasGrid({
         onViewModeChange={handleViewModeChange}
         loading={loading}
         onRecargar={() => void handleRecargar()}
-        onNuevoRegistro={handleNuevoRegistro}
+        onNuevoRegistro={onNuevoRegistro ? handleNuevoRegistro : undefined}
       />
 
       <StatusCodeAlert
@@ -289,8 +289,8 @@ export function MenuCategoriasGrid({
         onMostrarCincoMas={handleMostrarCincoMas}
         onVerDetalle={handleOpenDetalle}
         onVerProductos={handleOpenProductos}
-        onAgregarProducto={handleAgregarProducto}
-        onNuevoRegistro={handleNuevoRegistro}
+        onAgregarProducto={onAgregarProducto ? handleAgregarProducto : undefined}
+        onNuevoRegistro={onNuevoRegistro ? handleNuevoRegistro : undefined}
         onRecargar={() => void handleRecargar()}
         onResetFiltros={handleResetFilters}
       />
@@ -304,7 +304,7 @@ export function MenuCategoriasGrid({
         onCloseProductos={handleCloseProductos}
         onCloseAgregarProducto={handleCloseAgregarProducto}
         onCloseRegistrarCategoria={handleCloseRegistrarCategoria}
-        onAgregarProducto={handleAgregarProducto}
+        onAgregarProducto={onAgregarProducto ? handleAgregarProducto : undefined}
         onProductoGuardado={handleProductoGuardadoLocal}
         onCategoriaGuardada={handleCategoriaGuardadaLocal}
       />

@@ -93,8 +93,8 @@ export const MenuCategoriaCard = memo(function MenuCategoriaCard({
     [handleCardClick],
   )
 
-  const acciones = useMemo<readonly MenuCategoriaCardAccion[]>(
-    () => [
+  const acciones = useMemo<readonly MenuCategoriaCardAccion[]>(() => {
+    const base: MenuCategoriaCardAccion[] = [
       {
         key: 'detalle',
         label: 'Ver detalle',
@@ -111,17 +111,19 @@ export const MenuCategoriaCard = memo(function MenuCategoriaCard({
         variant: 'accent',
         onClick: () => onVerProductos?.(categoria),
       },
-      {
+    ]
+    if (onAgregarProducto) {
+      base.push({
         key: 'agregar',
         label: 'Agregar producto',
         icon: faPlus,
         title: `Agregar producto a ${categoria.name}`,
         variant: 'primary',
-        onClick: () => onAgregarProducto?.(categoria),
-      },
-    ],
-    [categoria, onAgregarProducto, onVerDetalle, onVerProductos],
-  )
+        onClick: () => onAgregarProducto(categoria),
+      })
+    }
+    return base
+  }, [categoria, onAgregarProducto, onVerDetalle, onVerProductos])
 
   return (
     <article
@@ -162,7 +164,7 @@ export const MenuCategoriaCard = memo(function MenuCategoriaCard({
           {categoria.name}
         </h3>
 
-        <div className="grid grid-cols-3 gap-2">
+        <div className={`grid ${acciones.length === 2 ? 'grid-cols-2' : 'grid-cols-3'} gap-2`}>
           {acciones.map((accion) => (
             <button
               key={accion.key}

@@ -17,6 +17,7 @@ import type { RegistrarCategoriaDrawerProps } from '../organisms/RegistrarCatego
 import type { CarritoProductosDrawerProps } from '../organisms/CarritoProductosDrawer';
 import { CarritoFlotanteFab } from '../atoms/CarritoFlotanteFab';
 import { useCarritoStore } from '../../application/carrito-store';
+import { canManageMenuCatalog } from '../../../../shared/auth-storage';
 import {
   invalidarCacheCategoriasMenu,
   invalidarCacheProductosMenu,
@@ -112,6 +113,11 @@ const NAV_ITEMS: NavTabItem[] = [
 ];
 
 export function MenuServiciosHabitacionPage() {
+  const isCatalogAdmin = canManageMenuCatalog();
+  const visibleNavItems = isCatalogAdmin
+    ? NAV_ITEMS
+    : NAV_ITEMS.filter((item) => item.id !== 'nuevo');
+
   const [vistaActiva, setVistaActiva] = useState<VistaActiva>('productos');
   const [visitedTabs, setVisitedTabs] = useState<VistaActiva[]>(['productos']);
   const [viewModeCategorias, setViewModeCategorias] =
@@ -210,7 +216,7 @@ export function MenuServiciosHabitacionPage() {
           animate="visible"
           className="border-line/80 bg-panel mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-1.5 rounded-2xl border p-1.5 shadow-lg"
         >
-          {NAV_ITEMS.map((item) => {
+          {visibleNavItems.map((item) => {
             const isActive = vistaActiva === item.id;
             return (
               <button
@@ -250,8 +256,8 @@ export function MenuServiciosHabitacionPage() {
               viewMode={viewModeCategorias}
               onViewModeChange={setViewModeCategorias}
               refreshVersion={categoriasRefreshVersion}
-              onNuevoRegistro={handleAbrirDrawerCategoria}
-              onAgregarProducto={handleAbrirDrawerProducto}
+              onNuevoRegistro={isCatalogAdmin ? handleAbrirDrawerCategoria : undefined}
+              onAgregarProducto={isCatalogAdmin ? handleAbrirDrawerProducto : undefined}
             />
           </Suspense>
         </div>
@@ -264,7 +270,8 @@ export function MenuServiciosHabitacionPage() {
         >
           <ItemMenuProductosMasonry
             refreshVersion={productosRefreshVersion}
-            onAgregarNuevo={handleAbrirDrawerNuevoProducto}
+            onAgregarNuevo={isCatalogAdmin ? handleAbrirDrawerNuevoProducto : undefined}
+            canEditCatalog={isCatalogAdmin}
           />
         </div>
       )}
@@ -284,7 +291,7 @@ export function MenuServiciosHabitacionPage() {
         </div>
       )}
 
-      {visitedTabs.includes('nuevo') && (
+      {isCatalogAdmin && visitedTabs.includes('nuevo') && (
         <div
           className={vistaActiva === 'nuevo' ? 'mx-auto block max-w-4xl' : 'hidden'}
           aria-hidden={vistaActiva !== 'nuevo'}

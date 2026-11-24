@@ -139,7 +139,7 @@ export async function preloadBuildingsMap(
       new Set(
         mappedRows
           .map((r) => r.buildingId)
-          .filter((id): id is string => Boolean(id) && !byId.has(id))
+          .filter((id): id is string => id !== undefined && !byId.has(id))
       )
     );
 

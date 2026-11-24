@@ -37,7 +37,10 @@ type SessionUser struct {
 	Name                string               `json:"name"`
 	Email               string               `json:"email"`
 	RoleID              string               `json:"role_id"`
+	Role                string               `json:"role"`
 	RoleName            string               `json:"role_name"`
+	AllowedRoutes       []string             `json:"allowed_routes"`
+	Permissions         []string             `json:"permissions"`
 	AllHeadquarters     bool                 `json:"all_headquarters"`
 	HeadquartersID      *string              `json:"headquarters_id,omitempty"`
 	HeadquartersIDs     []string             `json:"headquarters_ids"`

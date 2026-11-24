@@ -9,7 +9,7 @@ import {
 import { MenuItem, MenuPopover } from './menu-popover'
 import { useNavbarUser } from '../../application/use-navbar-user'
 import { LogoutGoodbyeModal } from './logout-goodbye-modal'
-import { clearAuthSession } from '../../../../shared/auth-storage'
+import { clearAuthSession, canAccessRoute } from '../../../../shared/auth-storage'
 
 import type { NavId } from '../navigation'
 
@@ -22,6 +22,7 @@ export function UserMenu({ onNavigate, onLogout }: UserMenuProps = {}) {
   const { name, initials, email } = useNavbarUser()
   const [showGoodbye, setShowGoodbye] = useState(false)
   const [farewellName, setFarewellName] = useState('')
+  const showConfiguracion = canAccessRoute('configuracion')
 
   const handleLogoutClick = () => {
     // 1. Guardar el nombre para personalizar el mensaje de despedida antes de limpiar
@@ -46,7 +47,7 @@ export function UserMenu({ onNavigate, onLogout }: UserMenuProps = {}) {
       <MenuPopover
         label="Menú de perfil"
         align="right"
-        triggerClassName="h-10 rounded-full border-transparent bg-transparent px-1 hover:bg-primary/5"
+        triggerClassName="h-10 rounded-full border-transparent bg-transparent px-1 hover:bg-primary/5 cursor-pointer"
         renderTrigger={(open) => (
           <span className="flex items-center gap-1.5">
             <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary text-xs font-bold text-cream">
@@ -76,11 +77,13 @@ export function UserMenu({ onNavigate, onLogout }: UserMenuProps = {}) {
             label="Ver mi perfil"
             onClick={() => onNavigate?.('perfil')}
           />
-          <MenuItem
-            icon={<SettingsIcon className="size-4" />}
-            label="Configuración"
-            onClick={() => onNavigate?.('configuracion')}
-          />
+          {showConfiguracion && (
+            <MenuItem
+              icon={<SettingsIcon className="size-4" />}
+              label="Configuración"
+              onClick={() => onNavigate?.('configuracion')}
+            />
+          )}
           <MenuItem
             icon={<LogOutIcon className="size-4" />}
             label="Cerrar sesión"

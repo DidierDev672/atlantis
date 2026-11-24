@@ -1,14 +1,12 @@
 import { AnimatePresence, LayoutGroup, motion } from 'motion/react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faDoorOpen } from '@fortawesome/free-solid-svg-icons'
+import { faDoorOpen, faThumbTack } from '@fortawesome/free-solid-svg-icons'
 import type { NavId } from '../navigation'
 import {
   BedIcon,
-  BriefcaseIcon,
   BuildingIcon,
   CalendarIcon,
-  ChevronDownIcon,
   ClipboardCheckIcon,
   CloseIcon,
   ConciergeBellIcon,
@@ -24,6 +22,7 @@ import {
 } from '../icons'
 import { SidebarNavItem } from '../molecules/sidebar-nav-item'
 import { DEFAULT_HOTEL_LOGO, useTemaStore } from '../../../tema/application/tema-store'
+import { canAccessRoute } from '../../../../shared/auth-storage'
 import { cn } from '../lib/cn'
 
 const NAV_ICONS: Record<NavId, ReactNode> = {
@@ -37,7 +36,7 @@ const NAV_ICONS: Record<NavId, ReactNode> = {
   salidas: <FontAwesomeIcon icon={faDoorOpen} className="size-[18px]" aria-hidden="true" />,
   auditoria: <ClipboardCheckIcon className="size-[18px]" />,
   usuarios: <UsersIcon className="size-[18px]" />,
-  personas: <UserIcon className="size-[18px]" />,
+  personas: <ClipboardCheckIcon className="size-[18px]" />,
   recursos: <ShieldIcon className="size-[18px]" />,
   paletas: <PaletteIcon className="size-[18px]" />,
   configuracion: <SettingsIcon className="size-[18px]" />,
@@ -45,19 +44,21 @@ const NAV_ICONS: Record<NavId, ReactNode> = {
   servicios: <UtensilsIcon className="size-[18px]" />,
 }
 
-interface OperacionSubItem {
+interface OperacionNavItem {
   id: NavId
   label: string
 }
 
 /**
- * Submódulos operativos del hotel pertenecientes al acordeón "Operación".
- * Orden solicitado: Habitaciones, Recepción, Reservas, Servicios de habitaciones.
+ * Módulos operativos del hotel expuestos de manera directa e independiente en el Sidebar.
+ * - Habitaciones: Operación por piso, Check-in y cargos a la habitación.
+ * - Registros: Tabla maestra diaria e histórica de huéspedes, saldos, Check-out y Facturación Electrónica.
+ * - Reservas: Gestión de reservas futuras.
+ * - Servicios de habitaciones: Pedidos de tienda y restaurante.
  */
-const OPERACION_SUB_ITEMS: readonly OperacionSubItem[] = [
+const OPERACION_NAV_ITEMS: readonly OperacionNavItem[] = [
   { id: 'habitacion', label: 'Habitaciones' },
-  { id: 'recepcion', label: 'Recepción' },
-  { id: 'salidas', label: 'Salidas de recepción' },
+  { id: 'personas', label: 'Registros' },
   { id: 'reservas', label: 'Reservas' },
   { id: 'servicios', label: 'Servicios de habitaciones' },
 ] as const
@@ -67,6 +68,9 @@ interface SidebarBodyProps {
   onNavigate: (id: NavId) => void
   onClose?: () => void
   isMobile?: boolean
+  collapsed?: boolean
+  pinned?: boolean
+  onTogglePin?: () => void
 }
 
 function SidebarBody({
@@ -74,39 +78,90 @@ function SidebarBody({
   onNavigate,
   onClose,
   isMobile = false,
+  collapsed = false,
+  pinned = false,
+  onTogglePin,
 }: SidebarBodyProps) {
   const hotelLogo = useTemaStore((state) => state.hotelLogo)
   const hotelName = useTemaStore((state) => state.hotelName)
+  const [, setAuthTick] = useState(0)
 
-  // Determinar si alguna de las pantallas hijas de Operación está activa
-  const isOperacionActive = OPERACION_SUB_ITEMS.some((item) => item.id === activeId)
-  const [userToggle, setUserToggle] = useState<{ activeId: NavId; isOpen: boolean } | null>(null)
+  useEffect(() => {
+    const handleAuthChange = () => setAuthTick((prev) => prev + 1)
+    window.addEventListener('nexora:auth-change', handleAuthChange)
+    return () => window.removeEventListener('nexora:auth-change', handleAuthChange)
+  }, [])
 
-  // Respetar toggle manual del usuario para el estado actual; de lo contrario, auto-expandir si un hijo está activo
-  const operacionOpen =
-    userToggle && userToggle.activeId === activeId
-      ? userToggle.isOpen
-      : isOperacionActive
+  const showHome = canAccessRoute('home')
+  const showConfiguracion = canAccessRoute('configuracion')
+  const visibleOperacionItems = OPERACION_NAV_ITEMS.filter((item) =>
+    canAccessRoute(item.id),
+  )
 
   return (
     <div className="flex h-full flex-col">
-      {/* Branding / Encabezado del hotel */}
-      <div className="flex items-center justify-between gap-3 px-5 pt-6 pb-5">
-        <div className="flex items-center gap-3 min-w-0">
-          <span className="grid size-10 place-items-center rounded-xl text-primary shadow-sm overflow-hidden shrink-0">
+      {/* Branding / Encabezado del hotel (Clickeable en desktop para fijar/desfijar el menú) */}
+      <div
+        className={cn(
+          'flex items-center justify-between gap-2 pt-5 pb-4 transition-all duration-200',
+          collapsed ? 'px-3 justify-center' : 'px-4',
+        )}
+      >
+        <button
+          type="button"
+          onClick={!isMobile ? onTogglePin : undefined}
+          title={
+            !isMobile
+              ? pinned
+                ? 'Menú fijado · Clic en Aloja para contraer automáticamente con el mouse'
+                : 'Clic en Aloja para dejar el menú fijo abierto'
+              : undefined
+          }
+          className={cn(
+            'group flex items-center min-w-0 rounded-xl p-1.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-cream/40',
+            !isMobile && 'cursor-pointer hover:bg-white/10',
+            collapsed ? 'justify-center' : 'gap-3 flex-1',
+          )}
+        >
+          <span className="relative grid size-10 place-items-center rounded-xl text-primary shadow-sm overflow-hidden shrink-0 ring-1 ring-white/15">
             <img
               src={hotelLogo || DEFAULT_HOTEL_LOGO}
               alt={hotelName || 'Logo del proyecto'}
               className={hotelLogo ? 'size-full object-cover' : 'size-full object-contain'}
             />
+            {!isMobile && pinned && collapsed && (
+              <span className="absolute top-0.5 right-0.5 size-2 rounded-full bg-emerald-400" />
+            )}
           </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-base font-bold text-cream truncate">Aloja</p>
-            <p className="text-[11px] text-cream/70 truncate" title={hotelName}>
-              {hotelName}
-            </p>
-          </div>
-        </div>
+
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="text-base font-bold text-cream truncate">Aloja</p>
+                {!isMobile && (
+                  <span
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-semibold transition-colors',
+                      pinned
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30'
+                        : 'bg-white/10 text-cream/60 group-hover:text-cream/90',
+                    )}
+                  >
+                    <FontAwesomeIcon
+                      icon={faThumbTack}
+                      className={cn('size-2.5 transition-transform', !pinned && 'rotate-45')}
+                      aria-hidden="true"
+                    />
+                    <span>{pinned ? 'Fijo' : 'Auto'}</span>
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-cream/70 truncate" title={hotelName}>
+                {hotelName}
+              </p>
+            </div>
+          )}
+        </button>
 
         {/* Botón de cierre en vista móvil */}
         {isMobile && onClose && (
@@ -121,127 +176,57 @@ function SidebarBody({
         )}
       </div>
 
-      {/* Navegación principal */}
-      <nav className="flex-1 space-y-1.5 px-3" aria-label="Navegación principal">
-        {/* 1. Home */}
-        <SidebarNavItem
-          active={activeId === 'home'}
-          icon={NAV_ICONS.home}
-          label="Home"
-          onClick={() => onNavigate('home')}
-        />
+      {/* Navegación principal filtrada por permisos del rol */}
+      <nav className="flex-1 space-y-1.5 px-3 overflow-y-auto" aria-label="Navegación principal">
+        {/* 1. Home (solo roles con permiso a Home) */}
+        {showHome && (
+          <SidebarNavItem
+            active={activeId === 'home'}
+            icon={NAV_ICONS.home}
+            label="Home"
+            collapsed={collapsed}
+            onClick={() => onNavigate('home')}
+          />
+        )}
 
-        {/* 2. Acordeón "Operación" con efecto Fade In (prompt/prompt-fade-in.md) */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, ease: 'easeOut' }}
-          className="space-y-1"
-        >
-          <motion.button
-            type="button"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.5, ease: 'easeOut' }}
-            whileTap={{ scale: 0.98 }}
-            onClick={() =>
-              setUserToggle({
-                activeId,
-                isOpen: !operacionOpen,
-              })
-            }
-            aria-expanded={operacionOpen}
-            className={cn(
-              'relative flex w-full items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-cream/40 cursor-pointer',
-              isOperacionActive
-                ? 'text-cream bg-white/10 font-semibold'
-                : 'text-cream/70 hover:bg-sidebar-hover hover:text-cream',
-            )}
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="relative shrink-0 text-cream/90">
-                <BriefcaseIcon className="size-[18px]" />
-              </span>
-              <span className="relative truncate">Operación</span>
-            </div>
+        {/* 2. Módulos operativos independientes */}
+        {visibleOperacionItems.map((item) => (
+          <SidebarNavItem
+            key={item.id}
+            active={activeId === item.id}
+            icon={NAV_ICONS[item.id]}
+            label={item.label}
+            collapsed={collapsed}
+            onClick={() => onNavigate(item.id)}
+          />
+        ))}
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-cream/70">
-                {OPERACION_SUB_ITEMS.length}
-              </span>
-              <motion.span
-                animate={{ rotate: operacionOpen ? 180 : 0 }}
-                transition={{ duration: 0.2 }}
-                className="text-cream/60"
-              >
-                <ChevronDownIcon className="size-4" />
-              </motion.span>
-            </div>
-          </motion.button>
-
-          {/* Sub-items del acordeón con animación Fade In */}
-          <AnimatePresence initial={false}>
-            {operacionOpen && (
-              <motion.div
-                key="operacion-accordion-content"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.5, ease: 'easeOut' }}
-                className="overflow-hidden"
-              >
-                <div className="ml-4 space-y-0.5 border-l border-white/15 pl-2.5 pt-1 pb-1">
-                  {OPERACION_SUB_ITEMS.map((subItem) => {
-                    const isSubActive = activeId === subItem.id
-                    return (
-                      <motion.button
-                        key={subItem.id}
-                        type="button"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ duration: 0.5, ease: 'easeOut' }}
-                        whileTap={{ scale: 0.98 }}
-                        onClick={() => onNavigate(subItem.id)}
-                        aria-current={isSubActive ? 'page' : undefined}
-                        className={cn(
-                          'relative flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-cream/40 cursor-pointer',
-                          isSubActive
-                            ? 'text-cream bg-white/15 font-semibold shadow-2xs'
-                            : 'text-cream/65 hover:bg-white/10 hover:text-cream',
-                        )}
-                      >
-                        {isSubActive && (
-                          <motion.span
-                            layoutId="sidebar-subitem-active"
-                            className="absolute inset-0 rounded-lg bg-white/10"
-                            transition={{ type: 'spring', stiffness: 420, damping: 32 }}
-                          />
-                        )}
-                        <span className="relative shrink-0 text-cream/80">
-                          {NAV_ICONS[subItem.id]}
-                        </span>
-                        <span className="relative truncate">{subItem.label}</span>
-                      </motion.button>
-                    )
-                  })}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-
-        {/* 3. Configuración */}
-        <SidebarNavItem
-          active={activeId === 'configuracion'}
-          icon={NAV_ICONS.configuracion}
-          label="Configuración"
-          onClick={() => onNavigate('configuracion')}
-        />
+        {/* 3. Configuración (solo para roles administrativos) */}
+        {showConfiguracion && (
+          <SidebarNavItem
+            active={activeId === 'configuracion'}
+            icon={NAV_ICONS.configuracion}
+            label="Configuración"
+            collapsed={collapsed}
+            onClick={() => onNavigate('configuracion')}
+          />
+        )}
       </nav>
 
       {/* Pie de versión */}
-      <div className="border-t border-white/10 px-5 py-4">
-        <p className="text-[11px] text-cream/40">Aloja v1.0 · Panel de operaciones</p>
+      <div
+        className={cn(
+          'border-t border-white/10 py-3.5 transition-all duration-200 overflow-hidden',
+          collapsed ? 'px-2 text-center' : 'px-5',
+        )}
+      >
+        {collapsed ? (
+          <p className="text-[10px] font-semibold text-cream/40">v1.0</p>
+        ) : (
+          <p className="text-[11px] text-cream/40 truncate">
+            Aloja v1.0 · {pinned ? 'Menú fijo' : 'Clic en Aloja para fijar'}
+          </p>
+        )}
       </div>
     </div>
   )
@@ -252,9 +237,20 @@ export interface SidebarProps {
   onClose: () => void
   activeId: NavId
   onNavigate: (id: NavId) => void
+  pinned?: boolean
+  onTogglePin?: () => void
 }
 
-export function Sidebar({ open, onClose, activeId, onNavigate }: SidebarProps) {
+export function Sidebar({
+  open,
+  onClose,
+  activeId,
+  onNavigate,
+  pinned = false,
+  onTogglePin,
+}: SidebarProps) {
+  const [isHovered, setIsHovered] = useState(false)
+
   // Manejo de bloqueo de scroll y atajo de teclado Escape en móvil
   useEffect(() => {
     if (!open) return
@@ -273,12 +269,35 @@ export function Sidebar({ open, onClose, activeId, onNavigate }: SidebarProps) {
     }
   }, [open, onClose])
 
+  const isExpandedDesktop = pinned || isHovered
+
+  const handleTogglePin = () => {
+    if (pinned) {
+      // Si estaba fijado y el usuario da clic en Aloja para cerrarlo, también limpiamos hover inmediato
+      setIsHovered(false)
+    }
+    onTogglePin?.()
+  }
+
   return (
     <>
-      {/* Versión fija para Desktop */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 bg-sidebar lg:block">
-        <LayoutGroup>
-          <SidebarBody activeId={activeId} onNavigate={onNavigate} />
+      {/* Versión colapsable / expandible con el mouse para Desktop */}
+      <aside
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        className={cn(
+          'fixed inset-y-0 left-0 z-45 hidden bg-sidebar transition-[width,box-shadow] duration-200 ease-out lg:block',
+          isExpandedDesktop ? 'w-64 shadow-2xl' : 'w-20',
+        )}
+      >
+        <LayoutGroup id="desktop-sidebar">
+          <SidebarBody
+            activeId={activeId}
+            onNavigate={onNavigate}
+            collapsed={!isExpandedDesktop}
+            pinned={pinned}
+            onTogglePin={handleTogglePin}
+          />
         </LayoutGroup>
       </aside>
 
@@ -306,12 +325,13 @@ export function Sidebar({ open, onClose, activeId, onNavigate }: SidebarProps) {
               exit={{ x: '-100%' }}
               transition={{ type: 'tween', duration: 0.25, ease: 'easeOut' }}
             >
-              <LayoutGroup>
+              <LayoutGroup id="mobile-sidebar">
                 <SidebarBody
                   activeId={activeId}
                   onNavigate={onNavigate}
                   onClose={onClose}
                   isMobile
+                  collapsed={false}
                 />
               </LayoutGroup>
             </motion.aside>

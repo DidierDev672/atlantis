@@ -72,6 +72,8 @@ export interface ItemMenuProductosMasonryProps {
   onAgregarNuevo?: () => void;
   /** Incrementar para refrescar el catálogo tras registrar un producto externamente */
   refreshVersion?: number;
+  /** Indica si el usuario actual puede crear o editar productos del catálogo (solo admin) */
+  canEditCatalog?: boolean;
 }
 
 /**
@@ -82,6 +84,7 @@ export interface ItemMenuProductosMasonryProps {
 export function ItemMenuProductosMasonry({
   onAgregarNuevo,
   refreshVersion = 0,
+  canEditCatalog = true,
 }: ItemMenuProductosMasonryProps) {
   const {
     productos,
@@ -180,7 +183,7 @@ export function ItemMenuProductosMasonry({
         onCategoriasChange={handleCategoriasChange}
         onOrdenesChange={handleOrdenesChange}
         onRefrescar={handleRefrescar}
-        onAgregarNuevo={handleAbrirAgregarProducto}
+        onAgregarNuevo={canEditCatalog ? handleAbrirAgregarProducto : undefined}
       />
 
       <StatusCodeAlert
@@ -249,7 +252,7 @@ export function ItemMenuProductosMasonry({
           {productosFiltrados.length === 0 ? (
             <ItemMenuProductosEmptyState
               totalProductos={productos.length}
-              onAgregarNuevo={handleAbrirAgregarProducto}
+              onAgregarNuevo={canEditCatalog ? handleAbrirAgregarProducto : undefined}
             />
           ) : (
             <ProductosCatalogoGrid
@@ -261,7 +264,7 @@ export function ItemMenuProductosMasonry({
               onLoadMore={handleLoadMore}
               onMostrarCincoMas={mostrarCincoMas}
               onVerDetalle={setProductoSeleccionado}
-              onEditar={setProductoParaEditar}
+              onEditar={canEditCatalog ? setProductoParaEditar : undefined}
             />
           )}
         </div>
