@@ -1,29 +1,45 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api } from '../../../lib/api'
+import type { StatusCodeValidationResult } from '../../../shared/lib/status-code-validator'
 import { RegistrarEdificio } from '../application/registrar-edificio'
 import type { EdificioInput } from '../domain/edificio'
 import { EdificioApiError } from '../domain/edificio-error'
 import { ApiEdificioRepository } from '../infrastructure/api-edificio-repository'
+import {
+  fetchAllHeadquarters,
+  fetchHeadquarterById,
+  fetchSubHeadquartersByHeadquarter,
+  readAuthUserUbicacionIds,
+  type EdificioSedeInfo,
+  type EdificioSubSedeInfo,
+} from '../infrastructure/api-ubicacion-edificio-repository'
 import { edificioErrorCopy } from '../ui/lib/error-copy'
 import type { Option } from '../ui/molecules/edificio-form'
 
 const edificioRepository = new ApiEdificioRepository()
 
-function mapIdNameOptions(items: unknown[]): Option[] {
-  return items
-    .map((raw) => raw as { id?: unknown; name?: unknown })
-    .filter((item) => item.id != null && typeof item.name === 'string')
-    .map((item) => ({ value: String(item.id), label: String(item.name) }))
+interface DetectedUbicacionSnapshot {
+  sedeId: string
+  subSedeId: string
+  sedes: Option[]
+  subSedes: Option[]
+  headquarter: EdificioSedeInfo | null
+  subHeadquarter: EdificioSubSedeInfo | null
 }
 
-function mapSubSedeOptions(items: unknown[]): Option[] {
-  return items
-    .map((raw) => raw as { id?: unknown; name?: unknown })
-    .filter((item) => typeof item.name === 'string')
-    .map((item) => ({
-      value: String(item.id ?? item.name),
-      label: String(item.name),
-    }))
+function mapSedeOptions(items: ReadonlyArray<EdificioSedeInfo>): Option[] {
+  return items.map((item) => ({ value: item.id, label: item.name }))
+}
+
+function mapSubSedeOptions(
+  items: ReadonlyArray<EdificioSubSedeInfo>
+): Option[] {
+  return items.map((item) => ({ value: item.id, label: item.name }))
+}
+
+function firstFailedValidation(
+  ...validations: ReadonlyArray<StatusCodeValidationResult | null>
+): StatusCodeValidationResult | null {
+  return validations.find((item) => Boolean(item && !item.isValid)) ?? null
 }
 
 export interface UseEdificioRegistroOptions {
@@ -32,8 +48,8 @@ export interface UseEdificioRegistroOptions {
 }
 
 /**
- * Hook de aplicación reutilizable para registrar edificios y sus pisos (`POST /building`),
- * incluyendo carga de sedes, sub-sedes y manejo de errores con `try / catch`.
+ * Hook de aplicación reutilizable para registrar edificios y pisos (`POST /building`),
+ * detectando automáticamente Sede y Sub sede desde `auth_user` con balanceo y validación HTTP.
  */
 export function useEdificioRegistro({
   open,
@@ -41,63 +57,201 @@ export function useEdificioRegistro({
 }: UseEdificioRegistroOptions) {
   const [sedes, setSedes] = useState<Option[]>([])
   const [sedesLoading, setSedesLoading] = useState(false)
-  const [sedesError, setSedesError] = useState<string | null>(null)
   const [subSedes, setSubSedes] = useState<Option[]>([])
   const [subSedesLoading, setSubSedesLoading] = useState(false)
+
+  const [autoSedeId, setAutoSedeId] = useState('')
+  const [autoSubSedeId, setAutoSubSedeId] = useState('')
+  const [locationVersion, setLocationVersion] = useState(0)
+  const [isUbicacionBloqueada, setIsUbicacionBloqueada] = useState(true)
+  const [detectedHeadquarter, setDetectedHeadquarter] =
+    useState<EdificioSedeInfo | null>(null)
+  const [detectedSubHeadquarter, setDetectedSubHeadquarter] =
+    useState<EdificioSubSedeInfo | null>(null)
+  const [locationValidation, setLocationValidation] =
+    useState<StatusCodeValidationResult | null>(null)
+
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [success, setSuccess] = useState<{
     nombre: string
     numPisos: string
   } | null>(null)
+
   const submittingRef = useRef(false)
+  const isMountedRef = useRef(true)
+  const detectedSnapshotRef = useRef<DetectedUbicacionSnapshot>({
+    sedeId: '',
+    subSedeId: '',
+    sedes: [],
+    subSedes: [],
+    headquarter: null,
+    subHeadquarter: null,
+  })
+
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   const fetchSedes = useCallback(async () => {
     setSedesLoading(true)
-    setSedesError(null)
+    setSubSedesLoading(true)
+    setLocationValidation(null)
+
     try {
-      const response = await api.get<unknown>('/headquarters')
-      setSedes(
-        Array.isArray(response.data) ? mapIdNameOptions(response.data) : []
+      const { headquartersId, subHeadquartersId } = readAuthUserUbicacionIds()
+
+      if (!headquartersId) {
+        const allRes = await fetchAllHeadquarters()
+        if (!isMountedRef.current) return
+        const options = mapSedeOptions(allRes.headquarters)
+        detectedSnapshotRef.current = {
+          sedeId: '',
+          subSedeId: '',
+          sedes: options,
+          subSedes: [],
+          headquarter: null,
+          subHeadquarter: null,
+        }
+        setSedes(options)
+        setSubSedes([])
+        setAutoSedeId('')
+        setAutoSubSedeId('')
+        setDetectedHeadquarter(null)
+        setDetectedSubHeadquarter(null)
+        setIsUbicacionBloqueada(false)
+        setLocationValidation(firstFailedValidation(allRes.validation))
+        setLocationVersion((prev) => prev + 1)
+        return
+      }
+
+      const [hqResult, subHqResult] = await Promise.all([
+        fetchHeadquarterById(headquartersId),
+        fetchSubHeadquartersByHeadquarter(headquartersId),
+      ])
+      if (!isMountedRef.current) return
+
+      const hq = hqResult.headquarter
+      const nextSedes = hq ? mapSedeOptions([hq]) : []
+      const nextSubSedes = mapSubSedeOptions(subHqResult.subHeadquarters)
+
+      const matchedSubHq =
+        (subHeadquartersId
+          ? subHqResult.subHeadquarters.find(
+              (item) => item.id === subHeadquartersId
+            )
+          : undefined) ??
+        subHqResult.subHeadquarters[0] ??
+        null
+
+      const nextSedeId = hq?.id ?? ''
+      const nextSubSedeId = matchedSubHq?.id ?? ''
+
+      detectedSnapshotRef.current = {
+        sedeId: nextSedeId,
+        subSedeId: nextSubSedeId,
+        sedes: nextSedes,
+        subSedes: nextSubSedes,
+        headquarter: hq,
+        subHeadquarter: matchedSubHq,
+      }
+
+      setSedes(nextSedes)
+      setSubSedes(nextSubSedes)
+      setAutoSedeId(nextSedeId)
+      setAutoSubSedeId(nextSubSedeId)
+      setDetectedHeadquarter(hq)
+      setDetectedSubHeadquarter(matchedSubHq)
+      setIsUbicacionBloqueada(true)
+      setLocationValidation(
+        firstFailedValidation(hqResult.validation, subHqResult.validation)
       )
-    } catch {
-      setSedesError(
-        'No pudimos cargar las sedes, pero el formulario sigue listo. Revisa tu conexión e inténtalo de nuevo.'
-      )
+      setLocationVersion((prev) => prev + 1)
+    } catch (error) {
+      console.error('Error al detectar ubicación del recepcionista:', error)
+      if (!isMountedRef.current) return
+      setIsUbicacionBloqueada(false)
     } finally {
-      setSedesLoading(false)
+      if (isMountedRef.current) {
+        setSedesLoading(false)
+        setSubSedesLoading(false)
+      }
     }
   }, [])
 
   useEffect(() => {
     if (!open) return
+    let active = true
     void Promise.resolve()
-      .then(() => fetchSedes())
-      .catch((error) => {
-        console.error('Error al cargar sedes:', error)
+      .then(() => {
+        if (!active) return
+        return fetchSedes()
       })
+      .catch((error) => {
+        console.error('Error al inicializar detección de ubicación:', error)
+      })
+    return () => {
+      active = false
+    }
   }, [open, fetchSedes])
 
   const handleSedeChange = useCallback(async (sedeId: string) => {
     setSubSedes([])
-    if (!sedeId) {
-      setSubSedesLoading(false)
-      return
-    }
+    if (!sedeId) return
+
     setSubSedesLoading(true)
     try {
-      const response = await api.get<unknown>(
-        `/sub-headquarters/by-headquarter/${sedeId}`
-      )
-      setSubSedes(
-        Array.isArray(response.data) ? mapSubSedeOptions(response.data) : []
-      )
-    } catch {
-      setSubSedes([])
+      const res = await fetchSubHeadquartersByHeadquarter(sedeId)
+      if (!isMountedRef.current) return
+      setSubSedes(mapSubSedeOptions(res.subHeadquarters))
+      if (!res.validation.isValid) {
+        setLocationValidation(res.validation)
+      }
+    } catch (error) {
+      console.error('Error al consultar sub-sedes por sede:', error)
+      if (isMountedRef.current) setSubSedes([])
     } finally {
-      setSubSedesLoading(false)
+      if (isMountedRef.current) setSubSedesLoading(false)
     }
   }, [])
+
+  const handleToggleEdicionManual = useCallback(async () => {
+    try {
+      if (isUbicacionBloqueada) {
+        setIsUbicacionBloqueada(false)
+        setSedesLoading(true)
+        const allRes = await fetchAllHeadquarters()
+        if (!isMountedRef.current) return
+        if (allRes.headquarters.length > 0) {
+          setSedes(mapSedeOptions(allRes.headquarters))
+        }
+        setLocationValidation(firstFailedValidation(allRes.validation))
+        return
+      }
+
+      const snapshot = detectedSnapshotRef.current
+      if (!snapshot.sedeId) return
+
+      setIsUbicacionBloqueada(true)
+      setSedes(snapshot.sedes)
+      setSubSedes(snapshot.subSedes)
+      setAutoSedeId(snapshot.sedeId)
+      setAutoSubSedeId(snapshot.subSedeId)
+      setDetectedHeadquarter(snapshot.headquarter)
+      setDetectedSubHeadquarter(snapshot.subHeadquarter)
+      setLocationValidation(null)
+      setLocationVersion((prev) => prev + 1)
+    } catch (error) {
+      console.error('Error al alternar edición manual de ubicación:', error)
+    } finally {
+      if (isMountedRef.current) {
+        setSedesLoading(false)
+      }
+    }
+  }, [isUbicacionBloqueada])
 
   const handleSubmit = useCallback(
     async (values: EdificioInput) => {
@@ -123,13 +277,22 @@ export function useEdificioRegistro({
     [onSuccess]
   )
 
-  const resetForm = useCallback(() => {
+  const clearFormFeedback = useCallback(() => {
     setSuccess(null)
     setSubmitError(null)
+  }, [])
+
+  const resetForm = useCallback(() => {
+    clearFormFeedback()
     void fetchSedes().catch((error) => {
       console.error('Error al recargar sedes tras reiniciar:', error)
     })
-  }, [fetchSedes])
+  }, [clearFormFeedback, fetchSedes])
+
+  const sedesError =
+    locationValidation && !locationValidation.isValid
+      ? locationValidation.message
+      : null
 
   return {
     sedes,
@@ -137,12 +300,21 @@ export function useEdificioRegistro({
     sedesError,
     subSedes,
     subSedesLoading,
+    autoSedeId,
+    autoSubSedeId,
+    locationVersion,
+    isUbicacionBloqueada,
+    detectedHeadquarter,
+    detectedSubHeadquarter,
+    locationValidation,
     submitting,
     submitError,
     success,
     fetchSedes,
     handleSedeChange,
+    handleToggleEdicionManual,
     handleSubmit,
+    clearFormFeedback,
     resetForm,
   }
 }

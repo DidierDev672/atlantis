@@ -1,11 +1,28 @@
-import { memo, useCallback } from 'react'
-import { motion } from 'motion/react'
-import { fadeUp } from '../../../../design-tokens/motion'
+import {
+  Suspense,
+  lazy,
+  memo,
+  useCallback,
+  type ComponentType,
+} from 'react'
+import { MotionConfig } from 'motion/react'
+import { useDeviceResourceProfile } from '../../../../shared/lib/use-device-resource-profile'
 import { useEdificioRegistro } from '../../application/use-edificio-registro'
-import { Button } from '../atoms/button'
+import type { EdificioInput } from '../../domain/edificio'
 import { Loader } from '../atoms/loader'
 import { Modal } from '../atoms/modal'
-import { EdificioForm } from '../molecules/edificio-form'
+import type { EdificioFormProps } from '../molecules/edificio-form'
+
+const LazyEdificioForm = lazy<ComponentType<EdificioFormProps>>(async () => {
+  try {
+    const mod = await import('../molecules/edificio-form')
+    return { default: mod.EdificioForm }
+  } catch (error) {
+    console.error('Error al cargar EdificioForm en modal:', error)
+    const Fallback: ComponentType<EdificioFormProps> = () => null
+    return { default: Fallback }
+  }
+})
 
 export interface EdificioRegistroModalProps {
   open: boolean
@@ -13,150 +30,137 @@ export interface EdificioRegistroModalProps {
   onSuccess?: () => void
 }
 
-export const EdificioRegistroModal = memo(function EdificioRegistroModal({
-  open,
+const EdificioRegistroModalInner = memo(function EdificioRegistroModalInner({
   onClose,
   onSuccess,
-}: EdificioRegistroModalProps) {
+}: Omit<EdificioRegistroModalProps, 'open'>) {
+  const { policy } = useDeviceResourceProfile()
+
+  const handleRegistrationSuccess = useCallback(() => {
+    try {
+      onSuccess?.()
+      onClose()
+    } catch (error) {
+      console.error('Error al finalizar registro de edificio:', error)
+    }
+  }, [onClose, onSuccess])
+
   const {
     sedes,
     sedesLoading,
-    sedesError,
     subSedes,
     subSedesLoading,
+    autoSedeId,
+    autoSubSedeId,
+    locationVersion,
+    isUbicacionBloqueada,
+    detectedHeadquarter,
+    detectedSubHeadquarter,
+    locationValidation,
     submitting,
     submitError,
-    success,
-    fetchSedes,
     handleSedeChange,
+    handleToggleEdicionManual,
     handleSubmit,
-    resetForm,
-  } = useEdificioRegistro({ open, onSuccess })
+    clearFormFeedback,
+  } = useEdificioRegistro({ open: true, onSuccess: handleRegistrationSuccess })
 
   const handleClose = useCallback(() => {
     try {
       if (submitting) return
-      resetForm()
+      clearFormFeedback()
       onClose()
     } catch (error) {
       console.error('Error al cerrar modal de edificio:', error)
     }
-  }, [onClose, resetForm, submitting])
+  }, [clearFormFeedback, onClose, submitting])
+
+  const handleSedeSelect = useCallback(
+    (sedeId: string) => {
+      void handleSedeChange(sedeId).catch((error) => {
+        console.error('Error al consultar sub-sedes en modal:', error)
+      })
+    },
+    [handleSedeChange]
+  )
+
+  const handleManualToggle = useCallback(() => {
+    void handleToggleEdicionManual().catch((error) => {
+      console.error('Error al alternar edición manual en modal:', error)
+    })
+  }, [handleToggleEdicionManual])
+
+  const handleFormSubmit = useCallback(
+    (values: EdificioInput) => {
+      void handleSubmit(values).catch((error) => {
+        console.error('Error al enviar formulario de edificio:', error)
+      })
+    },
+    [handleSubmit]
+  )
 
   return (
-    <>
+    <MotionConfig reducedMotion={policy.enableAnimations ? 'user' : 'always'}>
       <Modal
-        isOpen={open}
+        isOpen
         onClose={handleClose}
-        title={success ? undefined : 'Crear edificio'}
+        title="Crear edificio"
         className="max-w-xl"
       >
-        {success ? (
-          <SuccessState
-            success={success}
-            onReset={resetForm}
-            onClose={handleClose}
+        <Suspense
+          fallback={
+            <div className="flex min-h-56 items-center justify-center">
+              <Loader label="Preparando formulario…" />
+            </div>
+          }
+        >
+          <LazyEdificioForm
+            sedes={sedes}
+            sedesLoading={sedesLoading}
+            subSedes={subSedes}
+            subSedesLoading={subSedesLoading}
+            autoSedeId={autoSedeId}
+            autoSubSedeId={autoSubSedeId}
+            locationVersion={locationVersion}
+            isUbicacionBloqueada={isUbicacionBloqueada}
+            detectedHeadquarter={detectedHeadquarter}
+            detectedSubHeadquarter={detectedSubHeadquarter}
+            locationValidation={locationValidation}
+            submitting={submitting}
+            submitError={submitError}
+            onSedeChange={handleSedeSelect}
+            onToggleEdicionManual={handleManualToggle}
+            onSubmit={handleFormSubmit}
           />
-        ) : (
-          <>
-            {sedesError && (
-              <motion.div
-                variants={fadeUp}
-                initial="hidden"
-                animate="visible"
-                className="mb-4 flex flex-col items-start gap-3 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <p role="status" className="text-sm font-medium text-black">
-                  {sedesError}
-                </p>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="shrink-0"
-                  onClick={() => void fetchSedes()}
-                  disabled={sedesLoading}
-                >
-                  Reintentar
-                </Button>
-              </motion.div>
-            )}
-            <EdificioForm
-              sedes={sedes}
-              sedesLoading={sedesLoading}
-              subSedes={subSedes}
-              subSedesLoading={subSedesLoading}
-              submitting={submitting}
-              submitError={submitError}
-              onSedeChange={(sedeId) => void handleSedeChange(sedeId)}
-              onSubmit={(values) => void handleSubmit(values)}
-            />
-          </>
-        )}
+        </Suspense>
       </Modal>
 
       <Loader
         overlay
+        disableBlur
         visible={submitting}
         size={40}
-        label={success?.nombre ? `Creando ${success.nombre}…` : 'Creando edificio…'}
+        label="Creando edificio…"
       >
         <span className="text-ink-soft max-w-xs text-center text-xs leading-relaxed">
           Un momento: le estamos dando forma y pisos a tu nuevo edificio.
         </span>
       </Loader>
-    </>
+    </MotionConfig>
   )
 })
 
-function SuccessState({
-  success,
-  onReset,
+/**
+ * Organismo: Modal de registro de edificios desmontado cuando `open` es `false`
+ * para mantener cero consumo de RAM/VRAM en reposo.
+ */
+export const EdificioRegistroModal = memo(function EdificioRegistroModal({
+  open,
   onClose,
-}: {
-  success: { nombre: string; numPisos: string }
-  onReset: () => void
-  onClose: () => void
-}) {
-  const pisos = Number(success.numPisos)
+  onSuccess,
+}: EdificioRegistroModalProps) {
+  if (!open) return null
   return (
-    <motion.div
-      variants={fadeUp}
-      initial="hidden"
-      animate="visible"
-      className="flex flex-col items-center gap-4 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-6 py-10 text-center"
-    >
-      <span className="grid size-14 place-items-center rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-300">
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="size-7"
-          aria-hidden="true"
-        >
-          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-          <path d="m9 11 3 3L22 4" />
-        </svg>
-      </span>
-      <div className="space-y-1">
-        <h3 className="text-ink text-xl font-bold">
-          ¡«{success.nombre}» ya tiene {pisos} {pisos === 1 ? 'piso' : 'pisos'}!
-        </h3>
-        <p className="text-ink-muted text-sm leading-relaxed">
-          Quedó ubicado dentro de tu sede, listo para que empieces a mover tus
-          habitaciones hacia él y mantener todo en su lugar.
-        </p>
-      </div>
-      <div className="flex flex-wrap items-center justify-center gap-2">
-        <Button type="button" variant="secondary" onClick={onReset}>
-          Crear otro edificio
-        </Button>
-        <Button type="button" onClick={onClose}>
-          Listo
-        </Button>
-      </div>
-    </motion.div>
+    <EdificioRegistroModalInner onClose={onClose} onSuccess={onSuccess} />
   )
-}
+})

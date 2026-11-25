@@ -1,6 +1,18 @@
-import { memo, useCallback, useState, type FormEvent } from 'react'
+import {
+  Suspense,
+  lazy,
+  memo,
+  useCallback,
+  useMemo,
+  useState,
+  type ComponentType,
+  type FormEvent,
+} from 'react'
 import { motion } from 'motion/react'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { faBuilding, faLayerGroup } from '@fortawesome/free-solid-svg-icons'
 import { fadeUp } from '../../../../design-tokens/motion'
+import type { StatusCodeValidationResult } from '../../../../shared/lib/status-code-validator'
 import { Input } from '../../../../shared/ui/Input'
 import {
   RecursosDropdown,
@@ -16,19 +28,45 @@ import {
   type EdificioInput,
   type EdificioValidationErrors,
 } from '../../domain/edificio'
+import type {
+  EdificioSedeInfo,
+  EdificioSubSedeInfo,
+} from '../../infrastructure/api-ubicacion-edificio-repository'
 import { Button } from '../atoms/button'
 import { FadeIn } from '../atoms/fade-in'
+import type { EdificioUbicacionFieldsProps } from './edificio-ubicacion-fields'
 
 export type Option = DropdownOption
+
+const LazyEdificioUbicacionFields = lazy<
+  ComponentType<EdificioUbicacionFieldsProps>
+>(async () => {
+  try {
+    const mod = await import('./edificio-ubicacion-fields')
+    return { default: mod.EdificioUbicacionFields }
+  } catch (error) {
+    console.error('Error al cargar EdificioUbicacionFields:', error)
+    const Fallback: ComponentType<EdificioUbicacionFieldsProps> = () => null
+    return { default: Fallback }
+  }
+})
 
 export interface EdificioFormProps {
   sedes: ReadonlyArray<Option>
   sedesLoading: boolean
   subSedes: ReadonlyArray<Option>
   subSedesLoading: boolean
+  autoSedeId?: string
+  autoSubSedeId?: string
+  locationVersion?: number
+  isUbicacionBloqueada?: boolean
+  detectedHeadquarter?: EdificioSedeInfo | null
+  detectedSubHeadquarter?: EdificioSubSedeInfo | null
+  locationValidation?: StatusCodeValidationResult | null
   submitting: boolean
   submitError: string | null
   onSedeChange: (sedeId: string) => void
+  onToggleEdicionManual?: () => void
   onSubmit: (values: EdificioInput) => void
 }
 
@@ -42,17 +80,50 @@ export const EdificioForm = memo(function EdificioForm({
   sedesLoading,
   subSedes,
   subSedesLoading,
+  autoSedeId = '',
+  autoSubSedeId = '',
+  locationVersion = 0,
+  isUbicacionBloqueada = false,
+  detectedHeadquarter = null,
+  detectedSubHeadquarter = null,
+  locationValidation = null,
   submitting,
   submitError,
   onSedeChange,
+  onToggleEdicionManual,
   onSubmit,
 }: EdificioFormProps) {
   const [nombre, setNombre] = useState('')
   const [numPisos, setNumPisos] = useState('')
-  const [sedeId, setSedeId] = useState('')
-  const [subSedeId, setSubSedeId] = useState('')
+  const [manualOverride, setManualOverride] = useState<{
+    version: number
+    sedeId?: string
+    subSedeId?: string
+  }>({ version: locationVersion })
   const [estado, setEstado] = useState<EdificioEstado>('disponible')
   const [errors, setErrors] = useState<EdificioValidationErrors>({})
+
+  const sedeId = useMemo(() => {
+    if (
+      isUbicacionBloqueada ||
+      manualOverride.version !== locationVersion ||
+      manualOverride.sedeId === undefined
+    ) {
+      return autoSedeId
+    }
+    return manualOverride.sedeId
+  }, [autoSedeId, isUbicacionBloqueada, locationVersion, manualOverride])
+
+  const subSedeId = useMemo(() => {
+    if (
+      isUbicacionBloqueada ||
+      manualOverride.version !== locationVersion ||
+      manualOverride.subSedeId === undefined
+    ) {
+      return autoSubSedeId
+    }
+    return manualOverride.subSedeId
+  }, [autoSubSedeId, isUbicacionBloqueada, locationVersion, manualOverride])
 
   const clearError = useCallback((field: keyof EdificioValidationErrors) => {
     setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev))
@@ -61,8 +132,11 @@ export const EdificioForm = memo(function EdificioForm({
   const handleSedeChange = useCallback(
     (value: string) => {
       try {
-        setSedeId(value)
-        setSubSedeId('')
+        setManualOverride({
+          version: locationVersion,
+          sedeId: value,
+          subSedeId: '',
+        })
         clearError('sedeId')
         clearError('subSedeId')
         onSedeChange(value)
@@ -70,20 +144,37 @@ export const EdificioForm = memo(function EdificioForm({
         console.error('Error al seleccionar sede:', error)
       }
     },
-    [clearError, onSedeChange],
+    [clearError, locationVersion, onSedeChange]
   )
 
   const handleSubSedeChange = useCallback(
     (value: string) => {
       try {
-        setSubSedeId(value)
+        setManualOverride((prev) => ({
+          version: locationVersion,
+          sedeId:
+            prev.version === locationVersion && prev.sedeId !== undefined
+              ? prev.sedeId
+              : autoSedeId,
+          subSedeId: value,
+        }))
         clearError('subSedeId')
       } catch (error) {
         console.error('Error al seleccionar sub sede:', error)
       }
     },
-    [clearError],
+    [autoSedeId, clearError, locationVersion]
   )
+
+  const handleToggleManual = useCallback(() => {
+    try {
+      clearError('sedeId')
+      clearError('subSedeId')
+      onToggleEdicionManual?.()
+    } catch (error) {
+      console.error('Error al cambiar modo de edición de ubicación:', error)
+    }
+  }, [clearError, onToggleEdicionManual])
 
   const handleEstadoChange = useCallback(
     (value: string) => {
@@ -94,7 +185,7 @@ export const EdificioForm = memo(function EdificioForm({
         console.error('Error al cambiar estado del edificio:', error)
       }
     },
-    [clearError],
+    [clearError]
   )
 
   const submit = useCallback(
@@ -117,7 +208,7 @@ export const EdificioForm = memo(function EdificioForm({
         console.error('Error al validar formulario de edificio:', error)
       }
     },
-    [estado, nombre, numPisos, onSubmit, sedeId, subSedeId],
+    [estado, nombre, numPisos, onSubmit, sedeId, subSedeId]
   )
 
   return (
@@ -138,7 +229,13 @@ export const EdificioForm = memo(function EdificioForm({
             }}
             error={errors.nombre}
             hint="Un nombre que lo identifique dentro de la sede."
-            icon={<BuildingIcon />}
+            icon={
+              <FontAwesomeIcon
+                icon={faBuilding}
+                className="size-4"
+                aria-hidden="true"
+              />
+            }
           />
         </FadeIn>
 
@@ -158,65 +255,41 @@ export const EdificioForm = memo(function EdificioForm({
             }}
             error={errors.numPisos}
             hint="Cuántas plantas forman el edificio."
-            icon={<FloorsIcon />}
-          />
-        </FadeIn>
-      </div>
-
-      <div className="relative z-30 grid gap-4 has-[[aria-expanded='true']]:z-50 sm:grid-cols-2">
-        <FadeIn
-          duration={0.45}
-          delay={0.14}
-          className="relative z-30 has-[[aria-expanded='true']]:z-50"
-        >
-          <RecursosDropdown
-            label="Sede"
-            placeholder={sedesLoading ? 'Cargando sedes…' : 'Elige una sede…'}
-            searchPlaceholder="Buscar sede…"
-            searchable
-            options={sedes}
-            value={sedeId}
-            onChange={handleSedeChange}
-            error={errors.sedeId}
-            required
-            disabled={sedesLoading}
-            isLoading={sedesLoading}
-            direction="auto"
-            emptyLabel="Aún no hay sedes registradas."
-          />
-        </FadeIn>
-
-        <FadeIn
-          duration={0.45}
-          delay={0.21}
-          className="relative z-30 has-[[aria-expanded='true']]:z-50"
-        >
-          <RecursosDropdown
-            label="Sub sede"
-            searchable
-            searchPlaceholder="Buscar sub sede…"
-            options={subSedes}
-            value={subSedeId}
-            onChange={handleSubSedeChange}
-            disabled={!sedeId || subSedesLoading}
-            isLoading={subSedesLoading}
-            error={errors.subSedeId}
-            direction="auto"
-            placeholder={
-              subSedesLoading
-                ? 'Cargando sub sedes…'
-                : 'Opcional: elige una sub sede'
-            }
-            emptyLabel={
-              !sedeId
-                ? 'Primero elige una sede para ver sus sub sedes.'
-                : subSedesLoading
-                  ? 'Cargando sub sedes…'
-                  : 'Esta sede no tiene sub sedes.'
+            icon={
+              <FontAwesomeIcon
+                icon={faLayerGroup}
+                className="size-4"
+                aria-hidden="true"
+              />
             }
           />
         </FadeIn>
       </div>
+
+      <Suspense
+        fallback={
+          <div className="border-line/70 bg-canvas/50 h-28 animate-pulse rounded-2xl border" />
+        }
+      >
+        <LazyEdificioUbicacionFields
+          sedes={sedes}
+          sedesLoading={sedesLoading}
+          subSedes={subSedes}
+          subSedesLoading={subSedesLoading}
+          sedeId={sedeId}
+          subSedeId={subSedeId}
+          sedeError={errors.sedeId}
+          subSedeError={errors.subSedeId}
+          isUbicacionBloqueada={isUbicacionBloqueada}
+          submitting={submitting}
+          detectedHeadquarter={detectedHeadquarter}
+          detectedSubHeadquarter={detectedSubHeadquarter}
+          locationValidation={locationValidation}
+          onSedeChange={handleSedeChange}
+          onSubSedeChange={handleSubSedeChange}
+          onToggleEdicionManual={handleToggleManual}
+        />
+      </Suspense>
 
       <FadeIn
         duration={0.45}
@@ -269,41 +342,3 @@ export const EdificioForm = memo(function EdificioForm({
     </form>
   )
 })
-
-function BuildingIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-4"
-      aria-hidden="true"
-    >
-      <rect x="4" y="2" width="16" height="20" rx="2" />
-      <path d="M9 22v-4h6v4" />
-      <path d="M8 6h.01M16 6h.01M12 6h.01M12 10h.01M12 14h.01M16 10h.01M16 14h.01M8 10h.01M8 14h.01" />
-    </svg>
-  )
-}
-
-function FloorsIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-4"
-      aria-hidden="true"
-    >
-      <path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z" />
-      <path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65" />
-      <path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65" />
-    </svg>
-  )
-}
