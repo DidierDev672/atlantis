@@ -1,178 +1,72 @@
-import {
-  Suspense,
-  lazy,
-  memo,
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-} from 'react'
-import { isAxiosError } from 'axios'
+import { Suspense, memo, useCallback, useState } from 'react'
 import { motion } from 'motion/react'
 import { fadeIn } from '../../../../design-tokens/motion'
-import { readAuthTokenEmail } from '../../../../shared/auth-storage'
-import { validateStatusCode } from '../../../../shared/lib/status-code-validator'
-import { AsignarTarifaHabitacion } from '../../application/asignar-tarifa-habitacion'
-import { RegistrarHabitacionDetalle } from '../../application/registrar-habitacion-detalle'
-import { useHabitacionRegistroCatalogs } from '../../application/use-habitacion-registro-catalogs'
-import type { HabitacionDetalleInput } from '../../domain/habitacion-detalle'
-import { HabitacionApiError } from '../../domain/habitacion-error'
-import type {
-  RoomTariffFeedback,
-  RoomTariffPayload,
-} from '../../domain/room-tariff'
-import { ApiHabitacionDetalleRepository } from '../../infrastructure/api-habitacion-detalle-repository'
-import { ApiRoomTariffRepository } from '../../infrastructure/api-room-tariff-repository'
+import { lazyWithFallback } from '../../application/lazy-with-fallback'
+import {
+  habitacionDetalleRepository,
+  useRegistrarHabitacionDetalle,
+} from '../../application/use-registrar-habitacion-detalle'
 import { Loader } from '../atoms/loader'
-import { roomTypeErrorCopy } from '../lib/error-copy'
 import {
   HabitacionCatalogLoadBanner,
   HabitacionRegistroSuccess,
 } from '../molecules/habitacion-registro-feedback'
 
-const LazyHabitacionDetalleForm = lazy(
-  () => import('../molecules/habitacion-detalle-form')
+const LazyHabitacionDetalleForm = lazyWithFallback(
+  () => import('../molecules/habitacion-detalle-form').then((m) => m.default),
+  'HabitacionDetalleForm'
 )
 
-const LazyHabitacionTipoModal = lazy(() =>
-  import('./habitacion-tipo-modal').then((m) => ({
-    default: m.HabitacionTipoModal,
-  }))
+const LazyHabitacionTipoModal = lazyWithFallback(
+  () => import('./habitacion-tipo-modal').then((m) => m.HabitacionTipoModal),
+  'HabitacionTipoModal'
 )
 
-const LazyEdificioRegistroModal = lazy(() =>
-  import('../../../edificios/ui/organisms/edificio-registro-modal').then(
-    (m) => ({ default: m.EdificioRegistroModal })
-  )
+const LazyEdificioRegistroModal = lazyWithFallback(
+  () =>
+    import('../../../edificios/ui/organisms/edificio-registro-modal').then(
+      (m) => m.EdificioRegistroModal
+    ),
+  'EdificioRegistroModal'
 )
 
-const LazyHabitacionRegistroRocketOverlay = lazy(
-  () => import('./habitacion-registro-rocket-overlay')
+const LazyHabitacionRegistroRocketOverlay = lazyWithFallback(
+  () =>
+    import('./habitacion-registro-rocket-overlay').then((m) => m.default),
+  'HabitacionRegistroRocketOverlay'
 )
-
-const habitacionDetalleRepository = new ApiHabitacionDetalleRepository()
-const roomTariffRepository = new ApiRoomTariffRepository()
 
 export const HabitacionDetallePanel = memo(function HabitacionDetallePanel() {
-  const catalogs = useHabitacionRegistroCatalogs()
-  const [selectedTarifaId, setSelectedTarifaId] = useState('')
-  const [tarifaFeedback, setTarifaFeedback] =
-    useState<RoomTariffFeedback | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-  const [submittingNumero, setSubmittingNumero] = useState('')
-  const [submitError, setSubmitError] = useState<string | null>(null)
-  const [submitErrorStatus, setSubmitErrorStatus] = useState<number | null>(
-    null
-  )
-  const [successNumero, setSuccessNumero] = useState<string | null>(null)
-  const [successValidationMessage, setSuccessValidationMessage] = useState<
-    string | null
-  >(null)
+  const {
+    catalogs,
+    selectedTarifaId,
+    setSelectedTarifaId,
+    selectedTarifa,
+    tarifaFeedback,
+    submitting,
+    submittingNumero,
+    submitError,
+    submitErrorStatus,
+    successNumero,
+    successValidationMessage,
+    handleSubmit,
+    resetForm,
+    handleClearForm,
+  } = useRegistrarHabitacionDetalle()
+
   const [tipoModalOpen, setTipoModalOpen] = useState(false)
   const [edificioModalOpen, setEdificioModalOpen] = useState(false)
-  const submittingRef = useRef(false)
-
-  const selectedTarifa = useMemo(
-    () => catalogs.rates.find((r) => r.value === selectedTarifaId) ?? null,
-    [catalogs.rates, selectedTarifaId]
-  )
-
-  const handleSubmit = useCallback(
-    async (values: HabitacionDetalleInput) => {
-      if (submittingRef.current) return
-      submittingRef.current = true
-      setSubmitting(true)
-      setSubmittingNumero(values.numero.trim())
-      setSubmitError(null)
-      setSubmitErrorStatus(null)
-      setTarifaFeedback(null)
-
-      try {
-        const result = await RegistrarHabitacionDetalle(
-          habitacionDetalleRepository
-        )(values)
-        setSuccessNumero(values.numero.trim())
-        if (result?.validation?.message) {
-          setSuccessValidationMessage(result.validation.message)
-        }
-
-        if (selectedTarifaId) {
-          const tarifaSeleccionada = catalogs.rates.find(
-            (r) => r.value === selectedTarifaId
-          )
-          const roomId = result?.roomId
-          const createdByEmail = readAuthTokenEmail()
-
-          if (roomId) {
-            const tariffPayload: RoomTariffPayload = {
-              room_id: roomId,
-              rate_id: selectedTarifaId,
-              is_default: true,
-              status: 'active',
-              created_by: createdByEmail,
-            }
-
-            const feedback = await AsignarTarifaHabitacion(
-              roomTariffRepository
-            )({
-              payload: tariffPayload,
-              tarifaNombre: tarifaSeleccionada?.label,
-              numeroHabitacion: values.numero.trim(),
-            })
-            setTarifaFeedback(feedback)
-          } else {
-            setTarifaFeedback({
-              type: 'error',
-              status: 0,
-              title: 'Aviso: No se pudo vincular la tarifa en este momento',
-              message: `La habitación ${values.numero.trim()} se guardó en tu inventario, pero no recibimos su identificador para vincular automáticamente la tarifa «${tarifaSeleccionada?.label ?? 'seleccionada'}».`,
-              subtext:
-                'Puedes asociar o modificar su tarifa luego desde el detalle de la habitación.',
-            })
-          }
-        }
-      } catch (error) {
-        const status =
-          error instanceof HabitacionApiError
-            ? error.status
-            : isAxiosError(error)
-              ? (error.response?.status ?? 0)
-              : 0
-        setSubmitErrorStatus(status)
-        if (error instanceof HabitacionApiError && error.friendlyMessage) {
-          setSubmitError(error.friendlyMessage)
-        } else {
-          const validation = validateStatusCode(status)
-          setSubmitError(validation.message ?? roomTypeErrorCopy(status))
-        }
-      } finally {
-        setSubmitting(false)
-        setSubmittingNumero('')
-        submittingRef.current = false
-      }
-    },
-    [catalogs.rates, selectedTarifaId]
-  )
-
-  const resetForm = useCallback(() => {
-    setSuccessNumero(null)
-    setSuccessValidationMessage(null)
-    setSubmitError(null)
-    setSubmitErrorStatus(null)
-    setSelectedTarifaId('')
-    setTarifaFeedback(null)
-  }, [])
 
   const handleOpenTipoModal = useCallback(() => setTipoModalOpen(true), [])
+  const handleCloseTipoModal = useCallback(() => setTipoModalOpen(false), [])
   const handleOpenEdificioModal = useCallback(
     () => setEdificioModalOpen(true),
     []
   )
-  const handleClearForm = useCallback(() => {
-    setSubmitError(null)
-    setSubmitErrorStatus(null)
-    setTarifaFeedback(null)
-  }, [])
+  const handleCloseEdificioModal = useCallback(
+    () => setEdificioModalOpen(false),
+    []
+  )
 
   return (
     <>
@@ -272,7 +166,7 @@ export const HabitacionDetallePanel = memo(function HabitacionDetallePanel() {
         <Suspense fallback={null}>
           <LazyHabitacionTipoModal
             open={tipoModalOpen}
-            onClose={() => setTipoModalOpen(false)}
+            onClose={handleCloseTipoModal}
             onSuccess={() => void catalogs.fetchRoomTypes(true)}
           />
         </Suspense>
@@ -282,7 +176,7 @@ export const HabitacionDetallePanel = memo(function HabitacionDetallePanel() {
         <Suspense fallback={null}>
           <LazyEdificioRegistroModal
             open={edificioModalOpen}
-            onClose={() => setEdificioModalOpen(false)}
+            onClose={handleCloseEdificioModal}
             onSuccess={() => void catalogs.fetchEdificios(true)}
           />
         </Suspense>

@@ -1,121 +1,208 @@
-import { Suspense, lazy, memo, useCallback, useState } from 'react';
-import { AnimatePresence, MotionConfig, motion } from 'motion/react';
+import { Suspense, memo, useCallback, useState } from 'react';
+import { MotionConfig } from 'motion/react';
+import { lazyWithFallback } from '../application/lazy-with-fallback';
+import { ResourcePolicyProvider } from '../application/resource-policy/resource-policy-provider';
+import { useResourcePolicy } from '../application/resource-policy/use-resource-policy';
 import { useDeviceResourceProfile } from '../application/use-device-resource-profile';
 import { FloorAccordionSkeleton } from './atoms/floor-accordion-skeleton';
-import { Loader } from './atoms/loader';
 import { HabitacionesErrorBoundary } from './molecules/habitaciones-error-boundary';
 import type { HabitacionesTabKey } from './molecules/habitaciones-mode-switch';
 import { type HabitacionesViewMode } from './molecules/habitaciones-view-mode-toggle';
 
-const LazyHabitacionesModeSwitch = lazy(
-  () => import('./molecules/habitaciones-mode-switch')
+const LazyHabitacionesModeSwitch = lazyWithFallback(
+  () => import('./molecules/habitaciones-mode-switch').then((m) => m.default),
+  'HabitacionesModeSwitch'
 );
 
-const LazyHabitacionesPisosList = lazy(
-  () => import('./organisms/habitaciones-pisos-list')
+const LazyHabitacionesPisosList = lazyWithFallback(
+  () => import('./organisms/habitaciones-pisos-list').then((m) => m.default),
+  'HabitacionesPisosList'
 );
 
-const LazyHabitacionDetallePanel = lazy(() =>
-  import('./organisms/habitacion-detalle-panel').then((m) => ({
-    default: m.HabitacionDetallePanel,
-  }))
+const LazyRegistrarHabitacionDrawer = lazyWithFallback(
+  () =>
+    import('./organisms/registrar-habitacion-drawer').then(
+      (m) => m.RegistrarHabitacionDrawer
+    ),
+  'RegistrarHabitacionDrawer'
 );
 
-const LazyDeviceResourceBadge = lazy(
-  () => import('./atoms/device-resource-badge')
+const LazyEdificioRegistroDrawer = lazyWithFallback(
+  () =>
+    import('../../edificios/ui/organisms/edificio-registro-drawer').then(
+      (m) => m.EdificioRegistroDrawer
+    ),
+  'EdificioRegistroDrawer'
 );
 
-export const HabitacionesPage = memo(function HabitacionesPage() {
+const LazyDeviceResourceBadge = lazyWithFallback(
+  () => import('./atoms/device-resource-badge').then((m) => m.default),
+  'DeviceResourceBadge'
+);
+
+const HabitacionesPageContent = memo(function HabitacionesPageContent() {
   const resourceProfile = useDeviceResourceProfile();
-  const [activeTab, setActiveTab] = useState<HabitacionesTabKey>('lista');
-  const [viewMode, setViewMode] = useState<HabitacionesViewMode>(
-    () => resourceProfile.policy.defaultViewMode
+  const resourcePolicy = useResourcePolicy();
+  const [isRegistroDrawerOpen, setIsRegistroDrawerOpen] = useState(false);
+  const [isPisosDrawerOpen, setIsPisosDrawerOpen] = useState(false);
+  const [listRefreshVersion, setListRefreshVersion] = useState(0);
+  const [viewMode, setViewMode] = useState<HabitacionesViewMode>(() =>
+    resourcePolicy.deviceTier === 'low'
+      ? 'compact'
+      : resourceProfile.policy.defaultViewMode
   );
 
-  const handleTabChange = useCallback((tab: HabitacionesTabKey) => {
+  const handleOpenRegistroDrawer = useCallback(() => {
     try {
-      setActiveTab(tab);
+      setIsPisosDrawerOpen(false);
+      setIsRegistroDrawerOpen(true);
     } catch (err) {
-      console.error('Error al alternar pestaña de habitaciones:', err);
+      console.error('Error al abrir drawer de registrar habitación:', err);
     }
   }, []);
 
-  const handleNewHabitacion = useCallback(() => {
-    handleTabChange('registro');
-  }, [handleTabChange]);
+  const handleCloseRegistroDrawer = useCallback(() => {
+    try {
+      setIsRegistroDrawerOpen(false);
+    } catch (err) {
+      console.error('Error al cerrar drawer de registrar habitación:', err);
+    }
+  }, []);
+
+  const handleOpenPisosDrawer = useCallback(() => {
+    try {
+      setIsRegistroDrawerOpen(false);
+      setIsPisosDrawerOpen(true);
+    } catch (err) {
+      console.error('Error al abrir drawer de registrar pisos:', err);
+    }
+  }, []);
+
+  const handleClosePisosDrawer = useCallback(() => {
+    try {
+      setIsPisosDrawerOpen(false);
+    } catch (err) {
+      console.error('Error al cerrar drawer de registrar pisos:', err);
+    }
+  }, []);
+
+  const handleTabChange = useCallback(
+    (tab: HabitacionesTabKey) => {
+      try {
+        if (tab === 'registro') {
+          handleOpenRegistroDrawer();
+        } else if (tab === 'pisos') {
+          handleOpenPisosDrawer();
+        } else {
+          handleCloseRegistroDrawer();
+          handleClosePisosDrawer();
+        }
+      } catch (err) {
+        console.error('Error al alternar vista de habitaciones:', err);
+      }
+    },
+    [
+      handleClosePisosDrawer,
+      handleCloseRegistroDrawer,
+      handleOpenPisosDrawer,
+      handleOpenRegistroDrawer,
+    ]
+  );
+
+  const handleCatalogMutated = useCallback(() => {
+    try {
+      setListRefreshVersion((prev) => prev + 1);
+    } catch (err) {
+      console.error('Error al actualizar listado de habitaciones:', err);
+    }
+  }, []);
+
+  const handleBoundaryReset = useCallback(() => {
+    setIsRegistroDrawerOpen(false);
+    setIsPisosDrawerOpen(false);
+  }, []);
+
+  const allowAnimations =
+    resourcePolicy.animation !== 'none' &&
+    resourceProfile.policy.enableAnimations;
+
+  const activeSwitchTab: HabitacionesTabKey = isRegistroDrawerOpen
+    ? 'registro'
+    : isPisosDrawerOpen
+      ? 'pisos'
+      : 'lista';
 
   return (
-    <MotionConfig
-      reducedMotion={resourceProfile.policy.enableAnimations ? 'user' : 'always'}
-    >
+    <MotionConfig reducedMotion={allowAnimations ? 'user' : 'always'}>
       <div className="bg-canvas min-h-screen w-full px-3 py-5 pb-20 sm:px-5 lg:px-6">
         <div className="w-full space-y-6">
-          <HabitacionesErrorBoundary
-            onReset={() => {
-              setActiveTab('lista');
-            }}
-          >
+          <HabitacionesErrorBoundary onReset={handleBoundaryReset}>
             <div className="space-y-3.5">
               <div className="fixed right-5 bottom-5 z-30">
                 <Suspense
                   fallback={
-                    <div className="bg-line/40 h-10 w-20 animate-pulse rounded-full shadow-md" />
+                    <div
+                      className={`bg-line/40 h-28 w-10 rounded-full shadow-md ${
+                        allowAnimations ? 'animate-pulse' : ''
+                      }`}
+                    />
                   }
                 >
                   <LazyHabitacionesModeSwitch
-                    activeTab={activeTab}
+                    activeTab={activeSwitchTab}
                     onChange={handleTabChange}
                   />
                 </Suspense>
               </div>
 
               <Suspense fallback={null}>
-                <LazyDeviceResourceBadge profile={resourceProfile} />
+                <LazyDeviceResourceBadge
+                  profile={resourceProfile}
+                  policy={resourcePolicy}
+                />
               </Suspense>
 
-              <AnimatePresence mode="wait">
-                {activeTab === 'lista' ? (
-                  <motion.div
-                    key="tab-habitaciones-lista"
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    <Suspense fallback={<FloorAccordionSkeleton count={3} />}>
-                      <LazyHabitacionesPisosList
-                        onNewHabitacion={handleNewHabitacion}
-                        viewMode={viewMode}
-                        onViewModeChange={setViewMode}
-                      />
-                    </Suspense>
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="tab-habitaciones-registro"
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.2 }}
-                    className="mx-auto max-w-3xl"
-                  >
-                    <Suspense
-                      fallback={
-                        <div className="border-line bg-panel flex min-h-64 items-center justify-center rounded-2xl border p-8">
-                          <Loader label="Cargando formulario de registro…" />
-                        </div>
-                      }
-                    >
-                      <LazyHabitacionDetallePanel />
-                    </Suspense>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+              <Suspense fallback={<FloorAccordionSkeleton count={3} />}>
+                <LazyHabitacionesPisosList
+                  onNewHabitacion={handleOpenRegistroDrawer}
+                  viewMode={viewMode}
+                  onViewModeChange={setViewMode}
+                  refreshVersion={listRefreshVersion}
+                />
+              </Suspense>
+
+              {isRegistroDrawerOpen && (
+                <Suspense fallback={null}>
+                  <LazyRegistrarHabitacionDrawer
+                    isOpen={isRegistroDrawerOpen}
+                    onClose={handleCloseRegistroDrawer}
+                    onHabitacionRegistrada={handleCatalogMutated}
+                  />
+                </Suspense>
+              )}
+
+              {isPisosDrawerOpen && (
+                <Suspense fallback={null}>
+                  <LazyEdificioRegistroDrawer
+                    isOpen={isPisosDrawerOpen}
+                    onClose={handleClosePisosDrawer}
+                    onSuccess={handleCatalogMutated}
+                  />
+                </Suspense>
+              )}
             </div>
           </HabitacionesErrorBoundary>
         </div>
       </div>
     </MotionConfig>
+  );
+});
+
+export const HabitacionesPage = memo(function HabitacionesPage() {
+  return (
+    <ResourcePolicyProvider>
+      <HabitacionesPageContent />
+    </ResourcePolicyProvider>
   );
 });
 

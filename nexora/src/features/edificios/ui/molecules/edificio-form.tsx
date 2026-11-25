@@ -1,7 +1,11 @@
-import { useState, type FormEvent } from 'react'
+import { memo, useCallback, useState, type FormEvent } from 'react'
 import { motion } from 'motion/react'
 import { fadeUp } from '../../../../design-tokens/motion'
 import { Input } from '../../../../shared/ui/Input'
+import {
+  RecursosDropdown,
+  type DropdownOption,
+} from '../../../recursos/ui/molecules/recursos-dropdown'
 import {
   EDIFICIO_ESTADOS,
   EDIFICIO_ESTADO_LABELS,
@@ -14,12 +18,8 @@ import {
 } from '../../domain/edificio'
 import { Button } from '../atoms/button'
 import { FadeIn } from '../atoms/fade-in'
-import { SelectField } from '../atoms/select-field'
 
-export interface Option {
-  value: string
-  label: string
-}
+export type Option = DropdownOption
 
 export interface EdificioFormProps {
   sedes: ReadonlyArray<Option>
@@ -37,7 +37,7 @@ const estadoOptions: ReadonlyArray<Option> = EDIFICIO_ESTADOS.map((value) => ({
   label: EDIFICIO_ESTADO_LABELS[value],
 }))
 
-export function EdificioForm({
+export const EdificioForm = memo(function EdificioForm({
   sedes,
   sedesLoading,
   subSedes,
@@ -54,33 +54,71 @@ export function EdificioForm({
   const [estado, setEstado] = useState<EdificioEstado>('disponible')
   const [errors, setErrors] = useState<EdificioValidationErrors>({})
 
-  const clearError = (field: keyof EdificioValidationErrors) => {
+  const clearError = useCallback((field: keyof EdificioValidationErrors) => {
     setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev))
-  }
+  }, [])
 
-  const handleSedeChange = (value: string) => {
-    setSedeId(value)
-    setSubSedeId('')
-    clearError('sedeId')
-    clearError('subSedeId')
-    onSedeChange(value)
-  }
+  const handleSedeChange = useCallback(
+    (value: string) => {
+      try {
+        setSedeId(value)
+        setSubSedeId('')
+        clearError('sedeId')
+        clearError('subSedeId')
+        onSedeChange(value)
+      } catch (error) {
+        console.error('Error al seleccionar sede:', error)
+      }
+    },
+    [clearError, onSedeChange],
+  )
 
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const values: EdificioInput = {
-      nombre,
-      numPisos,
-      sedeId,
-      subSedeId,
-      estado,
-    }
-    const nextErrors = validateEdificioInput(values)
-    setErrors(nextErrors)
-    if (Object.keys(nextErrors).length === 0) {
-      onSubmit(values)
-    }
-  }
+  const handleSubSedeChange = useCallback(
+    (value: string) => {
+      try {
+        setSubSedeId(value)
+        clearError('subSedeId')
+      } catch (error) {
+        console.error('Error al seleccionar sub sede:', error)
+      }
+    },
+    [clearError],
+  )
+
+  const handleEstadoChange = useCallback(
+    (value: string) => {
+      try {
+        setEstado((value || 'disponible') as EdificioEstado)
+        clearError('estado')
+      } catch (error) {
+        console.error('Error al cambiar estado del edificio:', error)
+      }
+    },
+    [clearError],
+  )
+
+  const submit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      try {
+        const values: EdificioInput = {
+          nombre,
+          numPisos,
+          sedeId,
+          subSedeId,
+          estado,
+        }
+        const nextErrors = validateEdificioInput(values)
+        setErrors(nextErrors)
+        if (Object.keys(nextErrors).length === 0) {
+          onSubmit(values)
+        }
+      } catch (error) {
+        console.error('Error al validar formulario de edificio:', error)
+      }
+    },
+    [estado, nombre, numPisos, onSubmit, sedeId, subSedeId],
+  )
 
   return (
     <form onSubmit={submit} className="space-y-4" noValidate>
@@ -125,33 +163,50 @@ export function EdificioForm({
         </FadeIn>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FadeIn duration={0.45} delay={0.14}>
-          <SelectField
+      <div className="relative z-30 grid gap-4 has-[[aria-expanded='true']]:z-50 sm:grid-cols-2">
+        <FadeIn
+          duration={0.45}
+          delay={0.14}
+          className="relative z-30 has-[[aria-expanded='true']]:z-50"
+        >
+          <RecursosDropdown
             label="Sede"
             placeholder={sedesLoading ? 'Cargando sedes…' : 'Elige una sede…'}
+            searchPlaceholder="Buscar sede…"
+            searchable
             options={sedes}
             value={sedeId}
-            onChange={(event) => handleSedeChange(event.target.value)}
+            onChange={handleSedeChange}
             error={errors.sedeId}
             required
             disabled={sedesLoading}
+            isLoading={sedesLoading}
+            direction="auto"
             emptyLabel="Aún no hay sedes registradas."
           />
         </FadeIn>
 
-        <FadeIn duration={0.45} delay={0.21}>
-          <SelectField
+        <FadeIn
+          duration={0.45}
+          delay={0.21}
+          className="relative z-30 has-[[aria-expanded='true']]:z-50"
+        >
+          <RecursosDropdown
             label="Sub sede"
+            searchable
+            searchPlaceholder="Buscar sub sede…"
             options={subSedes}
             value={subSedeId}
-            onChange={(event) => {
-              setSubSedeId(event.target.value)
-              clearError('subSedeId')
-            }}
+            onChange={handleSubSedeChange}
             disabled={!sedeId || subSedesLoading}
+            isLoading={subSedesLoading}
             error={errors.subSedeId}
-            placeholder={subSedesLoading ? 'Cargando sub sedes…' : 'Opcional: elige una sub sede'}
+            direction="auto"
+            placeholder={
+              subSedesLoading
+                ? 'Cargando sub sedes…'
+                : 'Opcional: elige una sub sede'
+            }
             emptyLabel={
               !sedeId
                 ? 'Primero elige una sede para ver sus sub sedes.'
@@ -163,13 +218,19 @@ export function EdificioForm({
         </FadeIn>
       </div>
 
-      <FadeIn duration={0.45} delay={0.28}>
-        <SelectField
+      <FadeIn
+        duration={0.45}
+        delay={0.28}
+        className="relative z-20 has-[[aria-expanded='true']]:z-50"
+      >
+        <RecursosDropdown
           label="Estado"
           options={estadoOptions}
           value={estado}
-          onChange={(event) => setEstado(event.target.value as EdificioEstado)}
+          onChange={handleEstadoChange}
           error={errors.estado}
+          searchable={false}
+          direction="auto"
           required
         />
       </FadeIn>
@@ -177,7 +238,7 @@ export function EdificioForm({
       <FadeIn
         duration={0.45}
         delay={0.35}
-        className="flex items-center justify-end border-t border-line pt-4"
+        className="border-line flex items-center justify-end border-t pt-4"
       >
         <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
           {submitting ? (
@@ -200,14 +261,14 @@ export function EdificioForm({
           initial="hidden"
           animate="visible"
           role="alert"
-          className="rounded-xl border border-danger/25 bg-danger/10 px-4 py-3 text-sm font-medium text-danger"
+          className="border-danger/25 bg-danger/10 text-danger rounded-xl border px-4 py-3 text-sm font-medium"
         >
           {submitError}
         </motion.p>
       ) : null}
     </form>
   )
-}
+})
 
 function BuildingIcon() {
   return (

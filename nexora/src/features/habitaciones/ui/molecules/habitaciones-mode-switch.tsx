@@ -2,9 +2,14 @@ import { memo, useCallback } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
-import { faList, faPlus } from '@fortawesome/free-solid-svg-icons';
+import {
+  faLayerGroup,
+  faList,
+  faPlus,
+} from '@fortawesome/free-solid-svg-icons';
+import { useResourcePolicy } from '../../application/resource-policy/use-resource-policy';
 
-export type HabitacionesTabKey = 'lista' | 'registro';
+export type HabitacionesTabKey = 'lista' | 'registro' | 'pisos';
 
 export interface HabitacionesModeSwitchProps {
   activeTab: HabitacionesTabKey;
@@ -18,17 +23,20 @@ const TABS: ReadonlyArray<{
 }> = [
   { key: 'lista', label: 'Lista de habitaciones', icon: faList },
   { key: 'registro', label: 'Registrar habitación', icon: faPlus },
+  { key: 'pisos', label: 'Edificios y pisos', icon: faLayerGroup },
 ];
 
 /**
- * Molécula: Switch flotante minimalista icon-only (FontAwesome) sin backdrop-blur
- * para evitar consumo continuo de GPU/VRAM durante el scroll.
+ * Molécula: Switch flotante vertical minimalista icon-only (FontAwesome)
+ * sin backdrop-blur para evitar consumo continuo de GPU/VRAM durante el scroll.
  */
 export const HabitacionesModeSwitch = memo(function HabitacionesModeSwitch({
   activeTab,
   onChange,
 }: HabitacionesModeSwitchProps) {
-  const reducedMotion = useReducedMotion();
+  const reducedMotion = useReducedMotion() ?? false;
+  const resourcePolicy = useResourcePolicy();
+  const disableMotion = reducedMotion || resourcePolicy.animation === 'none';
 
   const handleSelect = useCallback(
     async (tab: HabitacionesTabKey) => {
@@ -44,8 +52,9 @@ export const HabitacionesModeSwitch = memo(function HabitacionesModeSwitch({
   return (
     <div
       role="tablist"
-      aria-label="Cambiar entre lista y registro de habitaciones"
-      className="border-line bg-panel inline-flex items-center gap-1 rounded-full border p-1 shadow-lg ring-1 ring-black/5 dark:ring-white/10"
+      aria-orientation="vertical"
+      aria-label="Opciones rápidas de habitaciones y pisos"
+      className="border-line bg-panel inline-flex flex-col items-center gap-1 rounded-full border p-1 shadow-lg ring-1 ring-black/5 dark:ring-white/10"
     >
       {TABS.map(({ key, label, icon }) => {
         const isActive = activeTab === key;
@@ -59,13 +68,11 @@ export const HabitacionesModeSwitch = memo(function HabitacionesModeSwitch({
             title={label}
             onClick={() => void handleSelect(key)}
             className={`focus-visible:ring-primary/40 relative grid size-8 cursor-pointer place-items-center rounded-full transition-colors focus-visible:ring-2 focus-visible:outline-none ${
-              isActive
-                ? 'text-white'
-                : 'text-ink-muted hover:text-ink'
+              isActive ? 'text-white' : 'text-ink-muted hover:text-ink'
             }`}
           >
             {isActive &&
-              (reducedMotion ? (
+              (disableMotion ? (
                 <span className="bg-primary absolute inset-0 rounded-full shadow-xs" />
               ) : (
                 <motion.span

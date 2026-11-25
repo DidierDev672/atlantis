@@ -1,4 +1,13 @@
-import { Suspense, lazy, memo, useCallback, useMemo, useState } from 'react';
+import {
+  Suspense,
+  lazy,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { motion } from 'motion/react';
 import { fadeIn } from '../../../../design-tokens/motion';
 import { useHabitacionesPisos } from '../../application/use-habitaciones-pisos';
@@ -27,6 +36,7 @@ export interface HabitacionesPisosListProps {
   viewMode?: HabitacionesViewMode;
   onViewModeChange?: (mode: HabitacionesViewMode) => void;
   onSelectHabitacion?: (room: RoomRow) => void;
+  refreshVersion?: number;
 }
 
 export const HabitacionesPisosList = memo(function HabitacionesPisosList({
@@ -34,6 +44,7 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
   viewMode: propViewMode,
   onViewModeChange,
   onSelectHabitacion,
+  refreshVersion = 0,
 }: HabitacionesPisosListProps) {
   const [internalViewMode, setInternalViewMode] =
     useState<HabitacionesViewMode>('cards');
@@ -86,6 +97,20 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
     recheckAll,
     isVerifying,
   } = useVerificarHabitacionesTarifas({ rooms: expandedRoomRefs });
+
+  const lastRefreshVersionRef = useRef(refreshVersion);
+
+  useEffect(() => {
+    if (refreshVersion <= 0 || refreshVersion === lastRefreshVersionRef.current) {
+      return;
+    }
+    lastRefreshVersionRef.current = refreshVersion;
+    void Promise.resolve()
+      .then(() => reload())
+      .catch((err) => {
+        console.error('Error al refrescar pisos tras registro:', err);
+      });
+  }, [refreshVersion, reload]);
 
   const handleReloadAll = useCallback(async () => {
     try {

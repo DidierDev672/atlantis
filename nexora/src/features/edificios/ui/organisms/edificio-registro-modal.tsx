@@ -1,32 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback } from 'react'
 import { motion } from 'motion/react'
 import { fadeUp } from '../../../../design-tokens/motion'
-import { api } from '../../../../lib/api'
-import { RegistrarEdificio } from '../../application/registrar-edificio'
-import type { EdificioInput } from '../../domain/edificio'
-import { EdificioApiError } from '../../domain/edificio-error'
-import { ApiEdificioRepository } from '../../infrastructure/api-edificio-repository'
+import { useEdificioRegistro } from '../../application/use-edificio-registro'
 import { Button } from '../atoms/button'
 import { Loader } from '../atoms/loader'
 import { Modal } from '../atoms/modal'
-import { edificioErrorCopy } from '../lib/error-copy'
-import { EdificioForm, type Option } from '../molecules/edificio-form'
-
-const edificioRepository = new ApiEdificioRepository()
-
-function mapIdNameOptions(items: unknown[]): Option[] {
-  return items
-    .map((raw) => raw as { id?: unknown; name?: unknown })
-    .filter((item) => item.id != null && typeof item.name === 'string')
-    .map((item) => ({ value: String(item.id), label: String(item.name) }))
-}
-
-function mapSubSedeOptions(items: unknown[]): Option[] {
-  return items
-    .map((raw) => raw as { id?: unknown; name?: unknown })
-    .filter((item) => typeof item.name === 'string')
-    .map((item) => ({ value: String(item.id ?? item.name), label: String(item.name) }))
-}
+import { EdificioForm } from '../molecules/edificio-form'
 
 export interface EdificioRegistroModalProps {
   open: boolean
@@ -34,85 +13,35 @@ export interface EdificioRegistroModalProps {
   onSuccess?: () => void
 }
 
-export function EdificioRegistroModal({ open, onClose, onSuccess }: EdificioRegistroModalProps) {
-  const [sedes, setSedes] = useState<Option[]>([])
-  const [sedesLoading, setSedesLoading] = useState(false)
-  const [sedesError, setSedesError] = useState<string | null>(null)
-  const [subSedes, setSubSedes] = useState<Option[]>([])
-  const [subSedesLoading, setSubSedesLoading] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<{ nombre: string; numPisos: string } | null>(null)
-  const submittingRef = useRef(false)
+export const EdificioRegistroModal = memo(function EdificioRegistroModal({
+  open,
+  onClose,
+  onSuccess,
+}: EdificioRegistroModalProps) {
+  const {
+    sedes,
+    sedesLoading,
+    sedesError,
+    subSedes,
+    subSedesLoading,
+    submitting,
+    submitError,
+    success,
+    fetchSedes,
+    handleSedeChange,
+    handleSubmit,
+    resetForm,
+  } = useEdificioRegistro({ open, onSuccess })
 
-  const fetchSedes = useCallback(async () => {
-    setSedesLoading(true)
-    setSedesError(null)
+  const handleClose = useCallback(() => {
     try {
-      const response = await api.get<unknown>('/headquarters')
-      setSedes(Array.isArray(response.data) ? mapIdNameOptions(response.data) : [])
-    } catch {
-      setSedesError(
-        'No pudimos cargar las sedes, pero el formulario sigue listo. Revisa tu conexión e inténtalo de nuevo.',
-      )
-    } finally {
-      setSedesLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!open) return
-    void (async () => {
-      await fetchSedes()
-    })()
-  }, [open, fetchSedes])
-
-  const handleSedeChange = useCallback(async (sedeId: string) => {
-    setSubSedes([])
-    if (!sedeId) {
-      setSubSedesLoading(false)
-      return
-    }
-    setSubSedesLoading(true)
-    try {
-      const response = await api.get<unknown>(`/sub-headquarters/by-headquarter/${sedeId}`)
-      setSubSedes(Array.isArray(response.data) ? mapSubSedeOptions(response.data) : [])
-    } catch {
-      setSubSedes([])
-    } finally {
-      setSubSedesLoading(false)
-    }
-  }, [])
-
-  const handleSubmit = async (values: EdificioInput) => {
-    if (submittingRef.current) return
-    submittingRef.current = true
-    setSubmitting(true)
-    setSubmitError(null)
-    try {
-      await RegistrarEdificio(edificioRepository)(values)
-      setSuccess({ nombre: values.nombre.trim(), numPisos: values.numPisos.trim() })
-      onSuccess?.()
+      if (submitting) return
+      resetForm()
+      onClose()
     } catch (error) {
-      const status = error instanceof EdificioApiError ? error.status : 0
-      setSubmitError(edificioErrorCopy(status))
-    } finally {
-      setSubmitting(false)
-      submittingRef.current = false
+      console.error('Error al cerrar modal de edificio:', error)
     }
-  }
-
-  const resetForm = () => {
-    setSuccess(null)
-    setSubmitError(null)
-    void fetchSedes()
-  }
-
-  const handleClose = () => {
-    if (submitting) return
-    resetForm()
-    onClose()
-  }
+  }, [onClose, resetForm, submitting])
 
   return (
     <>
@@ -123,7 +52,11 @@ export function EdificioRegistroModal({ open, onClose, onSuccess }: EdificioRegi
         className="max-w-xl"
       >
         {success ? (
-          <SuccessState success={success} onReset={resetForm} onClose={handleClose} />
+          <SuccessState
+            success={success}
+            onReset={resetForm}
+            onClose={handleClose}
+          />
         ) : (
           <>
             {sedesError && (
@@ -155,7 +88,7 @@ export function EdificioRegistroModal({ open, onClose, onSuccess }: EdificioRegi
               submitting={submitting}
               submitError={submitError}
               onSedeChange={(sedeId) => void handleSedeChange(sedeId)}
-              onSubmit={handleSubmit}
+              onSubmit={(values) => void handleSubmit(values)}
             />
           </>
         )}
@@ -167,13 +100,13 @@ export function EdificioRegistroModal({ open, onClose, onSuccess }: EdificioRegi
         size={40}
         label={success?.nombre ? `Creando ${success.nombre}…` : 'Creando edificio…'}
       >
-        <span className="max-w-xs text-center text-xs leading-relaxed text-ink-soft">
+        <span className="text-ink-soft max-w-xs text-center text-xs leading-relaxed">
           Un momento: le estamos dando forma y pisos a tu nuevo edificio.
         </span>
       </Loader>
     </>
   )
-}
+})
 
 function SuccessState({
   success,
@@ -208,10 +141,12 @@ function SuccessState({
         </svg>
       </span>
       <div className="space-y-1">
-        <h3 className="text-xl font-bold text-ink">¡«{success.nombre}» ya tiene {pisos} {pisos === 1 ? 'piso' : 'pisos'}!</h3>
-        <p className="text-sm leading-relaxed text-ink-muted">
-          Quedó ubicado dentro de tu sede, listo para que empieces a mover tus habitaciones hacia
-          él y mantener todo en su lugar.
+        <h3 className="text-ink text-xl font-bold">
+          ¡«{success.nombre}» ya tiene {pisos} {pisos === 1 ? 'piso' : 'pisos'}!
+        </h3>
+        <p className="text-ink-muted text-sm leading-relaxed">
+          Quedó ubicado dentro de tu sede, listo para que empieces a mover tus
+          habitaciones hacia él y mantener todo en su lugar.
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">
