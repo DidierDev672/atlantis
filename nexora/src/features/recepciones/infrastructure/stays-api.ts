@@ -1,10 +1,15 @@
 import { api } from '../../../lib/api'
+import { BoundedTtlCache } from '../../../shared/lib/bounded-ttl-cache'
 import {
   validateStatusCode,
   type StatusCodeValidationResult,
 } from '../../../shared/lib/status-code-validator'
 import { executeBalancedRequest } from '../../reservas/infrastructure/api-load-balancer'
+import { detectarRecursosDispositivoRecepciones } from './recepciones-resource-detector'
 import type { PersonDetail, StayItem } from '../domain/stay'
+
+const staysListCache = new BoundedTtlCache<string, FetchStaysResult>(2, 60 * 1000)
+let inFlightStaysRequest: Promise<FetchStaysResult> | null = null
 
 export interface FetchStaysResult {
   data: StayItem[]
@@ -252,61 +257,82 @@ export const SAMPLE_STAYS: StayItem[] = [
   },
 ]
 
+export interface GetStaysOptions {
+  forceRefresh?: boolean
+}
+
 /**
  * Consulta la lista de recepciones/estancias a través de Axios en GET /stays.
- * Valida de forma estricta el código de estado HTTP mediante `validateStatusCode`.
+ * Incluye caché TTL y deduplicación en vuelo para evitar ráfagas repetidas.
  */
-export async function getStaysFromApi(): Promise<FetchStaysResult> {
-  try {
-    const minChance = new Promise((resolve) => setTimeout(resolve, 500))
-    const [response] = await Promise.all([
-      executeBalancedRequest(() =>
-        api.get('/stays', {
-          // Evita que Axios arroje excepción en status >= 400 para permitir la validación
-          // exhaustiva y psicológica con `validateStatusCode`
-          validateStatus: () => true,
-        }),
-      ),
-      minChance,
-    ])
+export async function getStaysFromApi(
+  options: GetStaysOptions = {}
+): Promise<FetchStaysResult> {
+  const cacheKey = 'stays:all'
+  if (!options.forceRefresh) {
+    const cached = staysListCache.get(cacheKey)
+    if (cached) return cached
+    if (inFlightStaysRequest) return inFlightStaysRequest
+  }
 
-    const validation = validateStatusCode(response.status)
+  const runRequest = async (): Promise<FetchStaysResult> => {
+    try {
+      const { maxRetries } = detectarRecursosDispositivoRecepciones().policy
+      const response = await executeBalancedRequest(
+        () =>
+          api.get('/stays', {
+            // Evita que Axios arroje excepción en status >= 400 para permitir la validación
+            // exhaustiva y psicológica con `validateStatusCode`
+            validateStatus: () => true,
+          }),
+        { maxRetries }
+      )
 
-    if (validation.isValid) {
-      let rawList: StayItem[] = []
+      const validation = validateStatusCode(response.status)
 
-      if (Array.isArray(response.data)) {
-        rawList = response.data
-      } else if (response.data && typeof response.data === 'object') {
-        const obj = response.data as { data?: StayItem[]; stays?: StayItem[] }
-        if (Array.isArray(obj.data)) {
-          rawList = obj.data
-        } else if (Array.isArray(obj.stays)) {
-          rawList = obj.stays
+      if (validation.isValid) {
+        let rawList: StayItem[] = []
+
+        if (Array.isArray(response.data)) {
+          rawList = response.data
+        } else if (response.data && typeof response.data === 'object') {
+          const obj = response.data as { data?: StayItem[]; stays?: StayItem[] }
+          if (Array.isArray(obj.data)) {
+            rawList = obj.data
+          } else if (Array.isArray(obj.stays)) {
+            rawList = obj.stays
+          }
         }
+
+        // Si el backend responde 200 pero la lista está vacía, podemos retornar lista vacía o demo
+        const result: FetchStaysResult = {
+          data: rawList.length > 0 ? rawList : SAMPLE_STAYS,
+          validation,
+          isDemoFallback: rawList.length === 0,
+        }
+        staysListCache.set(cacheKey, result)
+        return result
       }
 
-      // Si el backend responde 200 pero la lista está vacía, podemos retornar lista vacía o demo
+      // Si el código HTTP no es 2xx, devolvemos el resultado de validación con su mensaje empático
       return {
-        data: rawList.length > 0 ? rawList : SAMPLE_STAYS,
+        data: SAMPLE_STAYS,
         validation,
-        isDemoFallback: rawList.length === 0,
+        isDemoFallback: true,
       }
-    }
-
-    // Si el código HTTP no es 2xx, devolvemos el resultado de validación con su mensaje empático
-    return {
-      data: SAMPLE_STAYS,
-      validation,
-      isDemoFallback: true,
-    }
-  } catch {
-    // Si la conexión falla (timeout, backend apagado o error de red)
-    const fallbackValidation = validateStatusCode(500)
-    return {
-      data: SAMPLE_STAYS,
-      validation: fallbackValidation,
-      isDemoFallback: true,
+    } catch {
+      // Si la conexión falla (timeout, backend apagado o error de red)
+      const fallbackValidation = validateStatusCode(500)
+      return {
+        data: SAMPLE_STAYS,
+        validation: fallbackValidation,
+        isDemoFallback: true,
+      }
+    } finally {
+      inFlightStaysRequest = null
     }
   }
+
+  inFlightStaysRequest = runRequest()
+  return inFlightStaysRequest
 }

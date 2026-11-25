@@ -10,6 +10,9 @@ interface EarthCloudLayerProps {
  * que flotan sobre los continentes con una velocidad orbital diferenciada.
  */
 export function EarthCloudLayer({ animated = true }: EarthCloudLayerProps) {
+  const blurFilter = animated ? 'blur(2px)' : undefined
+  const southBlurFilter = animated ? 'blur(2.5px)' : undefined
+
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden">
       <motion.div
@@ -21,11 +24,15 @@ export function EarthCloudLayer({ animated = true }: EarthCloudLayerProps) {
               }
             : { x: '0%' }
         }
-        transition={{
-          duration: 24,
-          repeat: Infinity,
-          ease: 'linear',
-        }}
+        transition={
+          animated
+            ? {
+                duration: 24,
+                repeat: Infinity,
+                ease: 'linear',
+              }
+            : { duration: 0 }
+        }
       >
         <svg
           className="absolute inset-0 w-full h-full opacity-65"
@@ -40,7 +47,7 @@ export function EarthCloudLayer({ animated = true }: EarthCloudLayerProps) {
             stroke={EARTH_PALETTE.cloudIce}
             strokeWidth="8"
             strokeLinecap="round"
-            filter="blur(2px)"
+            filter={blurFilter}
           />
           <path
             d="M 30,50 Q 90,65 150,45 T 270,60"
@@ -51,7 +58,7 @@ export function EarthCloudLayer({ animated = true }: EarthCloudLayerProps) {
           />
 
           {/* Ciclón espiral tropical */}
-          <circle cx="160" cy="85" r="12" fill={EARTH_PALETTE.cloudIce} opacity="0.6" filter="blur(2px)" />
+          <circle cx="160" cy="85" r="12" fill={EARTH_PALETTE.cloudIce} opacity="0.6" filter={blurFilter} />
           <path
             d="M 148,85 Q 160,70 172,85 T 160,98"
             fill="none"
@@ -66,7 +73,7 @@ export function EarthCloudLayer({ animated = true }: EarthCloudLayerProps) {
             stroke={EARTH_PALETTE.cloudIce}
             strokeWidth="9"
             strokeLinecap="round"
-            filter="blur(2.5px)"
+            filter={southBlurFilter}
           />
         </svg>
       </motion.div>

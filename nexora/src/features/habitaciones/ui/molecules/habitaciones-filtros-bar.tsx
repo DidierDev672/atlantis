@@ -132,7 +132,7 @@ export const HabitacionesFiltrosBar = memo(function HabitacionesFiltrosBar({
               <div className="border-line border-l pl-2">
                 <Suspense
                   fallback={
-                    <div className="bg-line/40 h-[42px] w-[112px] animate-pulse rounded-xl" />
+                    <div className="bg-line/40 h-[42px] w-[76px] animate-pulse rounded-xl" />
                   }
                 >
                   <LazyViewModeToggle

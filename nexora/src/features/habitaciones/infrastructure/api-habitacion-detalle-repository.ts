@@ -1,6 +1,7 @@
 import { isAxiosError } from 'axios'
 import { api } from '../../../lib/api'
 import { validateStatusCode } from '../../../shared/lib/status-code-validator'
+import { executeBalancedRequest } from '../../reservas/infrastructure/api-load-balancer'
 import { HabitacionApiError } from '../domain/habitacion-error'
 import type { HabitacionDetalleInput } from '../domain/habitacion-detalle'
 import { HABITACION_ESTADO_STATUS } from '../domain/habitacion-detalle'
@@ -68,9 +69,13 @@ export class ApiHabitacionDetalleRepository implements HabitacionDetalleReposito
         created_by: createdBy,
       }
 
-      const response = await api.post('/room', payload, {
-        validateStatus: () => true,
-      })
+      const response = await executeBalancedRequest(
+        () =>
+          api.post('/room', payload, {
+            validateStatus: () => true,
+          }),
+        { maxRetries: 2 }
+      )
 
       const validation = validateStatusCode(response.status)
       if (!validation.isValid) {

@@ -1,668 +1,258 @@
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
-import { motion } from 'motion/react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
-import { faPenToSquare } from '@fortawesome/free-solid-svg-icons'
-import { fadeUp } from '../../../../design-tokens/motion'
-import { api } from '../../../../lib/api'
-import { validateStatusCode } from '../../../../shared/lib/status-code-validator'
+import { memo } from 'react'
 import { Input } from '../../../../shared/ui/Input'
-import { RecursosDropdown, type DropdownOption } from '../../../recursos/ui/molecules/recursos-dropdown'
+import { RecursosDropdown } from '../../../recursos/ui/molecules/recursos-dropdown'
 import {
-  HABITACION_ESTADOS,
-  HABITACION_ESTADO_LABELS,
-  NUMERO_MAX,
-  validateHabitacionDetalleInput,
-  type HabitacionDetalleInput,
-  type HabitacionDetalleValidationErrors,
-  type HabitacionEstado,
-} from '../../domain/habitacion-detalle'
+  HABITACION_ESTADO_OPTIONS,
+  useHabitacionDetalleForm,
+  type EdificioOption,
+  type Option,
+  type TarifaOption,
+} from '../../application/use-habitacion-detalle-form'
+import type { HabitacionDetalleInput } from '../../domain/habitacion-detalle'
 import type { HabitacionDetalleRepository } from '../../domain/habitacion-detalle-repository'
-import { ApiHabitacionDetalleRepository } from '../../infrastructure/api-habitacion-detalle-repository'
-import { ObtenerSiguienteNumeroHabitacion } from '../../application/obtener-siguiente-numero-habitacion'
-import { Button } from '../atoms/button'
-import { FadeIn } from '../atoms/fade-in'
-import { cn } from '../lib/cn'
+import { SubmitError } from '../atoms/habitacion-form-feedback'
+import { HabitacionFormActions } from './habitacion-form-actions'
+import { HabitacionNumeroField } from './habitacion-numero-field'
+import { HabitacionTarifaField } from './habitacion-tarifa-field'
 
-export interface Option {
-  value: string
-  label: string
-}
-
-export interface EdificioOption {
-  value: string
-  label: string
-  floorNumber?: number
-}
-
-export interface TarifaOption {
-  value: string
-  label: string
-  price: number
-  modality?: string
-}
+export type { EdificioOption, Option, TarifaOption }
 
 export interface HabitacionDetalleFormProps {
   roomTypes: ReadonlyArray<Option>
   roomTypesLoading: boolean
   edificios: ReadonlyArray<EdificioOption>
   edificiosLoading: boolean
+  rates?: ReadonlyArray<TarifaOption>
+  ratesLoading?: boolean
+  ratesError?: boolean
+  selectedTarifaId?: string
+  onTarifaChange?: (tarifaId: string) => void
+  selectedTarifa?: TarifaOption | null
   submitting: boolean
   submitError: string | null
+  submitErrorStatus?: number | null
   onSubmit: (values: HabitacionDetalleInput) => void
-  selectedTarifa?: TarifaOption | null
+  onCreateTipo?: () => void
+  onCreateEdificio?: () => void
+  onClear?: () => void
   repository?: HabitacionDetalleRepository
 }
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    maximumFractionDigits: 0,
-  }).format(amount)
-}
-
-type FieldKey = keyof HabitacionDetalleValidationErrors
-
-const estadoOptions: ReadonlyArray<Option> = HABITACION_ESTADOS.map((value) => ({
-  value,
-  label: HABITACION_ESTADO_LABELS[value],
-}))
-
-const ANIMATION = {
-  duration: 0.45,
-  step: 0.07,
-  start: 0,
-} as const
-
-const defaultHabitacionDetalleRepository = new ApiHabitacionDetalleRepository()
-
-export function HabitacionDetalleForm({
+export const HabitacionDetalleForm = memo(function HabitacionDetalleForm({
   roomTypes,
   roomTypesLoading,
   edificios,
   edificiosLoading,
+  rates = [],
+  ratesLoading = false,
+  ratesError = false,
+  selectedTarifaId = '',
+  onTarifaChange,
+  selectedTarifa = null,
   submitting,
   submitError,
+  submitErrorStatus,
   onSubmit,
-  selectedTarifa,
+  onCreateTipo,
+  onCreateEdificio,
+  onClear,
   repository,
 }: HabitacionDetalleFormProps) {
-  const [numero, setNumero] = useState('')
-  const [autoNextNumber, setAutoNextNumber] = useState('')
-  const [isManualNumber, setIsManualNumber] = useState(false)
-  const [loadingNextNumber, setLoadingNextNumber] = useState(true)
-  const [nextNumberError, setNextNumberError] = useState<string | null>(null)
-  const [piso, setPiso] = useState('')
-  const [tipoHabitacion, setTipoHabitacion] = useState('')
-  const [edificioId, setEdificioId] = useState('')
-  const [precio, setPrecio] = useState('')
-  const [estado, setEstado] = useState<HabitacionEstado>('disponible')
-  const [errors, setErrors] = useState<HabitacionDetalleValidationErrors>({})
-  const [fetchedFloors, setFetchedFloors] = useState<Record<string, number>>({})
+  const resolvedTarifa =
+    selectedTarifa ??
+    rates.find((rate) => rate.value === selectedTarifaId) ??
+    null
 
-  const effectiveRepository = useMemo(
-    () => repository ?? defaultHabitacionDetalleRepository,
-    [repository]
-  )
-
-  const applyNextNumberResult = useCallback(
-    (result: Awaited<ReturnType<ReturnType<typeof ObtenerSiguienteNumeroHabitacion>>>) => {
-      if (!result.validation.isValid) {
-        const errorMsg =
-          result.validation.message ??
-          `No se pudo obtener el número automático (código ${result.validation.status}).`
-        setNextNumberError(errorMsg)
-        setIsManualNumber(true)
-        return
-      }
-
-      if (result.nextNumber) {
-        setAutoNextNumber(result.nextNumber)
-        setNumero(result.nextNumber)
-        setErrors((prev) => {
-          if (!prev.numero) return prev
-          const next = { ...prev }
-          delete next.numero
-          return next
-        })
-      }
-    },
-    []
-  )
-
-  const fetchNextNumber = useCallback(async () => {
-    setLoadingNextNumber(true)
-    setNextNumberError(null)
-
-    try {
-      const getNext = ObtenerSiguienteNumeroHabitacion(effectiveRepository)
-      const result = await getNext()
-      applyNextNumberResult(result)
-    } catch {
-      const validation = validateStatusCode(0)
-      setNextNumberError(validation.message ?? 'No se pudo consultar el próximo número.')
-      setIsManualNumber(true)
-    } finally {
-      setLoadingNextNumber(false)
-    }
-  }, [applyNextNumberResult, effectiveRepository])
-
-  useEffect(() => {
-    let active = true
-
-    async function loadNextNumberOnMount() {
-      try {
-        const getNext = ObtenerSiguienteNumeroHabitacion(effectiveRepository)
-        const result = await getNext()
-        if (!active) return
-        applyNextNumberResult(result)
-      } catch {
-        if (!active) return
-        const validation = validateStatusCode(0)
-        setNextNumberError(validation.message ?? 'No se pudo consultar el próximo número.')
-        setIsManualNumber(true)
-      } finally {
-        if (active) {
-          setLoadingNextNumber(false)
-        }
-      }
-    }
-
-    void loadNextNumberOnMount()
-    return () => {
-      active = false
-    }
-  }, [applyNextNumberResult, effectiveRepository])
-
-  const handleToggleManualNumber = () => {
-    setIsManualNumber((prev) => {
-      const next = !prev
-      if (next) {
-        setTimeout(() => {
-          const el = document.getElementById('habitacion-numero-input') as HTMLInputElement | null
-          if (el) {
-            el.focus()
-            el.select()
-          }
-        }, 50)
-      } else {
-        if (autoNextNumber) {
-          setNumero(autoNextNumber)
-          setErrors((prev) => {
-            if (!prev.numero) return prev
-            const n = { ...prev }
-            delete n.numero
-            return n
-          })
-        } else {
-          void fetchNextNumber()
-        }
-      }
-      return next
-    })
-  }
-
-  const selectedEdificio = useMemo(
-    () => edificios.find((e) => e.value === edificioId),
-    [edificios, edificioId]
-  )
-
-  const loadingFloors = Boolean(
-    edificioId &&
-      !(selectedEdificio?.floorNumber != null && selectedEdificio.floorNumber > 0) &&
-      fetchedFloors[edificioId] == null
-  )
-
-  // Consulta complementaria a /building/{id} si el listado general no aportó floorNumber
-  useEffect(() => {
-    if (!edificioId) return
-    if (selectedEdificio?.floorNumber != null && selectedEdificio.floorNumber > 0) return
-    if (fetchedFloors[edificioId] != null) return
-
-    let isMounted = true
-
-    api
-      .get<unknown>(`/building/${encodeURIComponent(edificioId)}`)
-      .then((res) => {
-        if (!isMounted) return
-        const rawData = res.data
-        let item: Record<string, unknown> | null = null
-        if (Array.isArray(rawData)) {
-          item = (rawData[0] as Record<string, unknown>) ?? null
-        } else if (rawData && typeof rawData === 'object') {
-          const wrapper = rawData as { data?: unknown }
-          if (Array.isArray(wrapper.data)) {
-            item = (wrapper.data[0] as Record<string, unknown>) ?? null
-          } else if (wrapper.data && typeof wrapper.data === 'object') {
-            item = wrapper.data as Record<string, unknown>
-          } else {
-            item = rawData as Record<string, unknown>
-          }
-        }
-
-        const rawFloor = item?.floor_number ?? item?.floorNumber
-        const fNum =
-          typeof rawFloor === 'number'
-            ? rawFloor
-            : typeof rawFloor === 'string'
-              ? parseInt(rawFloor, 10)
-              : undefined
-
-        const validFloors = fNum != null && !isNaN(fNum) && fNum > 0 ? fNum : 5
-        setFetchedFloors((prev) => ({ ...prev, [edificioId]: validFloors }))
-      })
-      .catch(() => {
-        // Fallback seguro para no bloquear la selección del piso
-        if (isMounted) {
-          setFetchedFloors((prev) => ({ ...prev, [edificioId]: 5 }))
-        }
-      })
-
-    return () => {
-      isMounted = false
-    }
-  }, [edificioId, selectedEdificio, fetchedFloors])
-
-  const totalPisos = selectedEdificio?.floorNumber ?? fetchedFloors[edificioId] ?? 0
-
-  const effectivePiso = useMemo(() => {
-    if (!edificioId || !piso) return ''
-    if (totalPisos > 0) {
-      const currentPiso = Number(piso)
-      if (isNaN(currentPiso) || currentPiso < 1 || currentPiso > totalPisos) {
-        return ''
-      }
-    }
-    return piso
-  }, [edificioId, piso, totalPisos])
-
-  // Opciones de pisos derivadas del número de pisos registrado para el edificio
-  const pisoOptions = useMemo<DropdownOption[]>(() => {
-    if (!edificioId || totalPisos <= 0) return []
-    return Array.from({ length: totalPisos }, (_, index) => {
-      const floorNumber = index + 1
-      return {
-        value: String(floorNumber),
-        label: `Piso ${floorNumber}`,
-      }
-    })
-  }, [edificioId, totalPisos])
-
-  const numericPrecio = precio.trim() ? Number(precio.trim().replace(',', '.')) : 0
-  const hasValidNumericPrecio = !isNaN(numericPrecio) && numericPrecio > 0
-  const isOverTariff = Boolean(
-    selectedTarifa &&
-    selectedTarifa.price > 0 &&
-    hasValidNumericPrecio &&
-    numericPrecio > selectedTarifa.price
-  )
-
-  const clearError = (field: FieldKey) => {
-    setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev))
-  }
-
-  // Actualiza el campo y limpia su error para que la validación se reevalúe al enviar.
-  const handleInputChange = <T extends string>(
-    field: FieldKey,
-    setter: Dispatch<SetStateAction<T>>,
-    value: T,
-  ) => {
-    setter(value)
-    clearError(field)
-  }
-
-  const handleEdificioChange = (newEdificioId: string) => {
-    setEdificioId(newEdificioId)
-    clearError('edificioId')
-    clearError('piso')
-    const matched = edificios.find((e) => e.value === newEdificioId)
-    const availableFloors = matched?.floorNumber ?? fetchedFloors[newEdificioId] ?? 0
-    if (piso && availableFloors > 0 && Number(piso) > availableFloors) {
-      setPiso('')
-    } else if (!newEdificioId) {
-      setPiso('')
-    }
-  }
-
-  const handlePrecioChange = (val: string) => {
-    setPrecio(val)
-    clearError('precio')
-    if (selectedTarifa && selectedTarifa.price > 0 && val.trim()) {
-      const num = Number(val.trim().replace(',', '.'))
-      if (!isNaN(num) && num > selectedTarifa.price) {
-        setErrors((prev) => ({
-          ...prev,
-          precio: `El precio a validar (${formatCurrency(num)}) no puede ser superior a la tarifa seleccionada (${formatCurrency(selectedTarifa.price)}).`,
-        }))
-      }
-    }
-  }
-
-  const tariffOverPriceError = useMemo(() => {
-    if (selectedTarifa && selectedTarifa.price > 0 && precio.trim()) {
-      const num = Number(precio.trim().replace(',', '.'))
-      if (!isNaN(num) && num > selectedTarifa.price) {
-        return `El precio a validar (${formatCurrency(num)}) no puede ser superior a la tarifa seleccionada (${formatCurrency(selectedTarifa.price)}).`
-      }
-    }
-    return undefined
-  }, [selectedTarifa, precio])
-
-  const displayedPrecioError = errors.precio ?? tariffOverPriceError
-
-  const handleEstadoChange = (val: string) => {
-    setEstado(val as HabitacionEstado)
-    clearError('estado')
-  }
-
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const values: HabitacionDetalleInput = {
-      numero,
-      piso: effectivePiso,
-      tipoHabitacion,
-      edificioId,
-      precio,
-      estado,
-    }
-    const nextErrors = validateHabitacionDetalleInput(
-      values,
-      selectedTarifa?.price,
-      totalPisos > 0 ? totalPisos : null
-    )
-    setErrors(nextErrors)
-    if (Object.keys(nextErrors).length === 0) {
-      onSubmit(values)
-    }
-  }
+  const form = useHabitacionDetalleForm({
+    edificios,
+    selectedTarifa: resolvedTarifa,
+    onTarifaChange,
+    onSubmit,
+    onClear,
+    repository,
+  })
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4" noValidate>
-      <div className="grid gap-4 sm:grid-cols-2 relative z-30 has-[[aria-expanded='true']]:z-50">
-        <FadeIn duration={ANIMATION.duration} delay={ANIMATION.start}>
-          <div className="flex items-start gap-2">
-            <div className="flex-1 min-w-0">
-              <Input
-                id="habitacion-numero-input"
-                label="Número"
-                placeholder={loadingNextNumber ? 'Consultando número…' : 'Ej. 101-1'}
-                autoComplete="off"
-                maxLength={NUMERO_MAX}
-                autoFocus={isManualNumber}
-                required
-                isDisabled={!isManualNumber}
-                disabled={!isManualNumber}
-                value={numero}
-                onChange={(event) => handleInputChange('numero', setNumero, event.target.value)}
-                error={errors.numero}
-                hint={
-                  nextNumberError
-                    ? nextNumberError
-                    : isManualNumber
-                    ? 'Modo manual activo: ingresa el número que prefieras.'
-                    : 'Número sugerido automáticamente por el sistema. Usa el botón de editar manual para cambiarlo.'
-                }
-                icon={<NumberIcon />}
-              />
-            </div>
-
-            <div className="pt-[26px]">
-              <button
-                type="button"
-                onClick={handleToggleManualNumber}
-                disabled={loadingNextNumber}
-                title="Numero manual"
-                aria-label="Numero manual"
-                className={cn(
-                  'flex size-[42px] shrink-0 items-center justify-center rounded-xl border text-sm transition-all cursor-pointer shadow-2xs',
-                  isManualNumber
-                    ? 'border-primary/60 bg-primary/10 text-primary hover:bg-primary/20 hover:scale-105 active:scale-95'
-                    : 'border-line bg-panel text-ink-muted hover:border-ink-soft hover:text-ink hover:scale-105 active:scale-95',
-                  'disabled:cursor-not-allowed disabled:opacity-50'
-                )}
-              >
-                <FontAwesomeIcon icon={faPenToSquare} className="size-4" />
-              </button>
-            </div>
+    <form onSubmit={form.handleSubmit} className="space-y-4" noValidate>
+      {/* 1. Ubicación física: Edificio (izq.) + Piso (der.) */}
+      <section
+        aria-label="Ubicación de la habitación"
+        className="border-line/65 bg-canvas/35 relative z-40 space-y-3 rounded-2xl border p-3.5 has-[[aria-expanded='true']]:z-50 sm:p-4"
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="relative z-40 has-[[aria-expanded='true']]:z-50">
+            <RecursosDropdown
+              label="Edificio"
+              placeholder={
+                edificiosLoading
+                  ? 'Cargando edificios…'
+                  : 'Elige un edificio…'
+              }
+              searchPlaceholder="Buscar edificio…"
+              searchable
+              options={edificios}
+              value={form.edificioId}
+              onChange={form.handleEdificioChange}
+              error={form.errors.edificioId}
+              required
+              disabled={edificiosLoading}
+              isLoading={edificiosLoading}
+              direction="auto"
+              emptyLabel="Aún no hay edificios registrados."
+            />
           </div>
-        </FadeIn>
 
-        <FadeIn duration={ANIMATION.duration} delay={ANIMATION.step} className="relative z-30 has-[[aria-expanded='true']]:z-50">
-          <RecursosDropdown
-            label="Edificio"
-            placeholder={edificiosLoading ? 'Cargando edificios…' : 'Elige un edificio…'}
-            options={edificios}
-            value={edificioId}
-            onChange={handleEdificioChange}
-            error={errors.edificioId}
-            required
-            disabled={edificiosLoading}
-            isLoading={edificiosLoading}
-            direction="auto"
-            emptyLabel="Aún no hay edificios registrados."
-          />
-        </FadeIn>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 relative z-20 has-[[aria-expanded='true']]:z-50">
-        <FadeIn duration={ANIMATION.duration} delay={0.14} className="relative z-20 has-[[aria-expanded='true']]:z-50">
-          <div className="space-y-1">
+          <div className="relative z-40 space-y-1 has-[[aria-expanded='true']]:z-50">
             <RecursosDropdown
               label="Piso"
               placeholder={
-                !edificioId
+                !form.edificioId
                   ? 'Primero elige un edificio…'
-                  : loadingFloors
+                  : form.loadingFloors
                     ? 'Consultando pisos…'
                     : 'Elige un piso…'
               }
-              options={pisoOptions}
-              value={effectivePiso}
-              onChange={(val) => handleInputChange('piso', setPiso, val)}
-              error={errors.piso}
-              disabled={!edificioId || loadingFloors}
+              searchPlaceholder="Buscar piso (ej. 1, 2)…"
+              searchable
+              options={form.pisoOptions}
+              value={form.effectivePiso}
+              onChange={form.handlePisoChange}
+              error={form.errors.piso}
+              disabled={!form.edificioId || form.loadingFloors}
+              isLoading={form.loadingFloors}
               required
               direction="auto"
-              searchable={pisoOptions.length > 7}
               emptyLabel={
-                !edificioId
-                  ? 'Primero elige un edificio para ver sus pisos disponibles.'
-                  : loadingFloors
+                !form.edificioId
+                  ? 'Primero elige un edificio para ver sus pisos.'
+                  : form.loadingFloors
                     ? 'Consultando pisos del edificio…'
                     : 'Este edificio no tiene pisos registrados.'
               }
             />
-            {selectedEdificio && totalPisos > 0 && (
-              <p className="text-[11px] text-ink-muted">
-                {selectedEdificio.label}: {totalPisos} {totalPisos === 1 ? 'piso disponible' : 'pisos disponibles'}.
+            {form.selectedEdificio && form.totalPisos > 0 ? (
+              <p className="text-ink-muted text-[11px]">
+                {form.selectedEdificio.label}: {form.totalPisos}{' '}
+                {form.totalPisos === 1
+                  ? 'piso disponible'
+                  : 'pisos disponibles'}
+                .
               </p>
-            )}
+            ) : null}
           </div>
-        </FadeIn>
+        </div>
+      </section>
 
-        <FadeIn duration={ANIMATION.duration} delay={0.21} className="relative z-20 has-[[aria-expanded='true']]:z-50">
-          <RecursosDropdown
-            label="Tipo de habitación"
-            placeholder={roomTypesLoading ? 'Cargando tipos…' : 'Elige un tipo…'}
-            options={roomTypes}
-            value={tipoHabitacion}
-            onChange={(val) =>
-              handleInputChange('tipoHabitacion', setTipoHabitacion, val)
-            }
-            error={errors.tipoHabitacion}
-            required
-            disabled={roomTypesLoading}
-            isLoading={roomTypesLoading}
-            direction="auto"
-            emptyLabel="Aún no hay tipos de habitación registrados."
-          />
-        </FadeIn>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 relative z-10 has-[[aria-expanded='true']]:z-50">
-        <FadeIn duration={ANIMATION.duration} delay={0.28} className="relative z-10 has-[[aria-expanded='true']]:z-50">
-          <RecursosDropdown
-            label="Estado"
-            options={estadoOptions}
-            value={estado}
-            onChange={handleEstadoChange}
-            error={errors.estado}
-            required
-            direction="auto"
-            searchable={false}
-          />
-        </FadeIn>
-
-        <FadeIn duration={ANIMATION.duration} delay={0.35}>
-          <div className="space-y-2.5">
-            <Input
-              label="Precio a validar"
-              type="number"
-              inputMode="decimal"
-              min={0}
-              step="0.01"
-              placeholder={
-                selectedTarifa && selectedTarifa.price > 0
-                  ? `Tope máx: ${selectedTarifa.price}`
-                  : 'Ej. 150000'
-              }
-              value={precio}
-              onChange={(event) => handlePrecioChange(event.target.value)}
-              error={displayedPrecioError}
-              hint="Opcional: precio por noche que el sistema validará contra el tipo seleccionado."
-              icon={<span className="text-sm font-semibold">$</span>}
-            />
-
-            {/* GUÍA VISUAL PARA EL RECEPCIONISTA */}
-            {selectedTarifa ? (
-              <motion.div
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-                className={`rounded-2xl border p-3.5 text-xs space-y-2.5 transition-all shadow-2xs ${
-                  isOverTariff
-                    ? 'border-danger/40 bg-danger/10 text-danger'
-                    : hasValidNumericPrecio
-                      ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-900 dark:text-emerald-200'
-                      : 'border-primary/25 bg-primary/5 text-ink'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-1.5 font-bold">
-                    <span className="text-base">🏷️</span>
-                    <span>Guía para recepcionista — Tarifa «{selectedTarifa.label}»</span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handlePrecioChange(String(selectedTarifa.price))}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-panel px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10 transition shadow-2xs cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                    title="Asignar el precio base de la tarifa al campo"
-                  >
-                    <span>Asignar precio base</span>
-                    <span className="font-extrabold">({formatCurrency(selectedTarifa.price)})</span>
-                  </button>
-                </div>
-
-                <div className="flex items-center justify-between text-[11px] border-t border-line/60 pt-2">
-                  <span className="text-ink-muted">Precio tope de referencia visual:</span>
-                  <span className="font-extrabold text-sm text-ink tracking-tight">
-                    {formatCurrency(selectedTarifa.price)}
-                  </span>
-                </div>
-
-                {isOverTariff ? (
-                  <div className="flex items-start gap-1.5 text-[11px] font-semibold text-danger">
-                    <span className="shrink-0 text-sm">⚠️</span>
-                    <span>
-                      ¡Alerta de validación! Has ingresado {formatCurrency(numericPrecio)}, superando la tarifa máxima de {formatCurrency(selectedTarifa.price)}. El precio a validar no puede ser superior.
-                    </span>
-                  </div>
-                ) : hasValidNumericPrecio ? (
-                  <div className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
-                    <span className="shrink-0 font-bold">✓</span>
-                    <span>
-                      Precio correcto: Se encuentra dentro del margen permitido ({formatCurrency(numericPrecio)} de {formatCurrency(selectedTarifa.price)} máx.).
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5 text-[11px] text-ink-muted">
-                    <span className="shrink-0">💡</span>
-                    <span>
-                      Toma como referencia los {formatCurrency(selectedTarifa.price)} de la tarifa. Cualquier precio a validar que registres debe ser menor o igual a este monto.
-                    </span>
-                  </div>
-                )}
-              </motion.div>
-            ) : (
-              <div className="rounded-xl border border-dashed border-line/80 bg-canvas/40 px-3 py-2 text-[11px] text-ink-muted flex items-center gap-2">
-                <span className="text-sm">ℹ️</span>
-                <span>
-                  <strong>Guía para recepción:</strong> Selecciona una tarifa en el selector superior para tener su precio como referencia visual y validar que el valor ingresado no la supere.
-                </span>
-              </div>
-            )}
-          </div>
-        </FadeIn>
-      </div>
-
-      <FadeIn
-        duration={ANIMATION.duration}
-        delay={0.42}
-        className="flex items-center justify-end border-t border-line pt-4"
+      {/* 2. Identidad: Número de habitación (izq.) + Tipo de habitación (der.) */}
+      <section
+        aria-label="Identificación de la habitación"
+        className="border-line/65 bg-canvas/35 relative z-30 space-y-3 rounded-2xl border p-3.5 has-[[aria-expanded='true']]:z-50 sm:p-4"
       >
-        <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
-          {submitting ? <SubmitContent label="Registrando…" /> : 'Registrar habitación'}
-        </Button>
-      </FadeIn>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <HabitacionNumeroField
+            numero={form.numero}
+            isManualNumber={form.isManualNumber}
+            loadingNextNumber={form.loadingNextNumber}
+            nextNumberError={form.nextNumberError}
+            error={form.errors.numero}
+            containerRef={form.numeroContainerRef}
+            onChange={form.handleNumeroChange}
+            onToggleManual={form.handleToggleManualNumber}
+          />
 
-      {submitError ? <SubmitError message={submitError} /> : null}
+          <div className="relative z-30 has-[[aria-expanded='true']]:z-50">
+            <RecursosDropdown
+              label="Tipo de habitación"
+              placeholder={
+                roomTypesLoading ? 'Cargando tipos…' : 'Elige un tipo…'
+              }
+              searchPlaceholder="Buscar tipo de habitación…"
+              searchable
+              options={roomTypes}
+              value={form.tipoHabitacion}
+              onChange={form.handleTipoHabitacionChange}
+              error={form.errors.tipoHabitacion}
+              required
+              disabled={roomTypesLoading}
+              isLoading={roomTypesLoading}
+              direction="auto"
+              emptyLabel="Aún no hay tipos de habitación registrados."
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* 3. Operación y valor: Estado inicial (izq.) + Precio por noche o día (der.) */}
+      <section
+        aria-label="Estado y precio"
+        className="border-line/65 bg-canvas/35 relative z-20 space-y-3 rounded-2xl border p-3.5 has-[[aria-expanded='true']]:z-50 sm:p-4"
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="relative z-20 has-[[aria-expanded='true']]:z-50">
+            <RecursosDropdown
+              label="Estado inicial"
+              options={HABITACION_ESTADO_OPTIONS}
+              value={form.estado}
+              onChange={form.handleEstadoChange}
+              error={form.errors.estado}
+              required
+              direction="auto"
+              searchable={false}
+            />
+          </div>
+
+          <Input
+            label="Precio por noche o día"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            placeholder={
+              resolvedTarifa && resolvedTarifa.price > 0
+                ? `Máx. ${Math.trunc(resolvedTarifa.price)}`
+                : 'Ej. 150000'
+            }
+            value={form.precio}
+            onChange={(event) => form.handlePrecioChange(event.target.value)}
+            onKeyDown={form.handlePrecioKeyDown}
+            error={form.displayedPrecioError}
+            hint="Opcional · Solo valores numéricos enteros."
+            icon={<span className="text-sm font-semibold">$</span>}
+          />
+        </div>
+      </section>
+
+      {/* 4. Tarifa asociada */}
+      <section
+        aria-label="Tarifa de la habitación"
+        className="border-line/65 bg-canvas/35 relative z-10 rounded-2xl border p-3.5 has-[[aria-expanded='true']]:z-50 sm:p-4"
+      >
+        <HabitacionTarifaField
+          rates={rates}
+          ratesLoading={ratesLoading}
+          ratesError={ratesError}
+          selectedTarifaId={selectedTarifaId}
+          selectedTarifa={resolvedTarifa}
+          numericPrecio={form.numericPrecio}
+          hasValidNumericPrecio={form.hasValidNumericPrecio}
+          isOverTariff={form.isOverTariff}
+          onTarifaChange={(val) => onTarifaChange?.(val)}
+          onApplyBasePrice={form.handleApplyTarifaPrice}
+        />
+      </section>
+
+      {/* 5. Acciones del formulario (solo iconos + tooltips) */}
+      <HabitacionFormActions
+        submitting={submitting}
+        onClear={form.handleReset}
+        onCreateTipo={onCreateTipo}
+        onCreateEdificio={onCreateEdificio}
+      />
+
+      {submitError ? (
+        <SubmitError message={submitError} status={submitErrorStatus} />
+      ) : null}
     </form>
   )
-}
+})
 
-function SubmitContent({ label }: { label: string }) {
-  return (
-    <>
-      <span
-        className="inline-block size-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
-        aria-hidden="true"
-      />
-      {label}
-    </>
-  )
-}
-
-function SubmitError({ message }: { message: string }) {
-  return (
-    <motion.p
-      variants={fadeUp}
-      initial="hidden"
-      animate="visible"
-      role="alert"
-      className="rounded-xl border border-danger/25 bg-danger/10 px-4 py-3 text-sm font-medium text-danger"
-    >
-      {message}
-    </motion.p>
-  )
-}
-
-function NumberIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-4"
-      aria-hidden="true"
-    >
-      <path d="M4 9h16" />
-      <path d="M4 15h16" />
-      <path d="M10 3 8 21" />
-      <path d="M16 3l-2 18" />
-    </svg>
-  )
-}
+export default HabitacionDetalleForm

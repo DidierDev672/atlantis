@@ -17,7 +17,6 @@ export interface HabitacionFloorCardsProps {
   onOpenTarifas?: (row: RoomRow, hasTariff: boolean, rateId: string | null) => void;
   onOpenRoomDetail: (row: RoomRow) => void;
   onSelectHabitacion?: (row: RoomRow) => void;
-  onOpenOperativaDrawer?: (row: RoomRow) => void;
   onOpenAssignGuestDrawer?: (row: RoomRow) => void;
   onQuickMarkAvailable?: (row: RoomRow) => Promise<void> | void;
 }
@@ -28,7 +27,6 @@ export const HabitacionFloorCards = memo(function HabitacionFloorCards({
   onRetryBed,
   onOpenRoomDetail,
   onSelectHabitacion,
-  onOpenOperativaDrawer,
   onOpenAssignGuestDrawer,
   onQuickMarkAvailable,
 }: HabitacionFloorCardsProps) {
@@ -49,7 +47,6 @@ export const HabitacionFloorCards = memo(function HabitacionFloorCards({
           onRetryBed={onRetryBed}
           onOpenRoomDetail={onOpenRoomDetail}
           onSelectHabitacion={onSelectHabitacion}
-          onOpenOperativaDrawer={onOpenOperativaDrawer}
           onOpenAssignGuestDrawer={onOpenAssignGuestDrawer}
           onQuickMarkAvailable={onQuickMarkAvailable}
         />

@@ -4,13 +4,6 @@ import { fetchBuildingsCatalogCached } from './habitaciones-catalogs-cache';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-export interface CachedMenuCatalogItem {
-  id: string;
-  name: string;
-  price: number;
-  taxPercentage: number;
-}
-
 export interface CachedHeadquarterData {
   id: string;
   name: string;
@@ -67,12 +60,6 @@ const buildingDetailInFlight = new Map<
   string,
   Promise<CachedBuildingFullData | null>
 >();
-
-let menuState: {
-  data: CachedMenuCatalogItem[] | null;
-  expiresAt: number;
-  inFlight: Promise<CachedMenuCatalogItem[]> | null;
-} = { data: null, expiresAt: 0, inFlight: null };
 
 export async function fetchHeadquarterByIdCached(
   id: string,
@@ -294,43 +281,5 @@ export async function fetchRoomExtraDetailsCached(
   })();
 
   roomDetailInFlight.set(cleanId, promise);
-  return promise;
-}
-
-export async function fetchAvailableItemMenuCached(
-  forceRefresh = false
-): Promise<CachedMenuCatalogItem[]> {
-  const now = Date.now();
-  if (!forceRefresh && menuState.data && now < menuState.expiresAt) {
-    return menuState.data;
-  }
-  if (!forceRefresh && menuState.inFlight) {
-    return menuState.inFlight;
-  }
-
-  const promise = (async () => {
-    try {
-      const res = await api.get<unknown>('/item-menu?available=true', {
-        validateStatus: (s) => s >= 200 && s < 300,
-      });
-      const list = Array.isArray(res.data) ? res.data : [];
-      const mapped = (list as Record<string, unknown>[]).map((it) => ({
-        id: String(it.id ?? ''),
-        name: String(it.name ?? 'Producto'),
-        price: Number(it.price ?? 0),
-        taxPercentage: Number(it.tax_percentage ?? 0),
-      }));
-      menuState = {
-        data: mapped,
-        expiresAt: Date.now() + CACHE_TTL_MS,
-        inFlight: null,
-      };
-      return mapped;
-    } finally {
-      menuState.inFlight = null;
-    }
-  })();
-
-  menuState.inFlight = promise;
   return promise;
 }

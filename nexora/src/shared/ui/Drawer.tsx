@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faXmark } from '@fortawesome/free-solid-svg-icons'
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core'
+import { useDeviceResourceProfile } from '../lib/use-device-resource-profile'
 
 export type DrawerPosition = 'right' | 'left' | 'top' | 'bottom'
 export type DrawerSize = 'sm' | 'md' | 'lg' | 'xl' | 'full'
@@ -86,6 +87,9 @@ export function Drawer({
   const titleId = `${drawerId}-title`
   const descriptionId = `${drawerId}-description`
   const drawerRef = useRef<HTMLDivElement>(null)
+  const {
+    policy: { enableBackdropBlur },
+  } = useDeviceResourceProfile()
 
   // 1. Cierre accesible con la tecla Escape
   useEffect(() => {
@@ -169,7 +173,9 @@ export function Drawer({
             onClick={() => {
               if (closeOnBackdropClick) onClose()
             }}
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+            className={`fixed inset-0 bg-black/60 transition-opacity ${
+              enableBackdropBlur ? 'backdrop-blur-xs' : ''
+            }`}
             aria-hidden="true"
           />
 

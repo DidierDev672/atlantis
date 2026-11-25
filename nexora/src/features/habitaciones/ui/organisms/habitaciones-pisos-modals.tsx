@@ -17,10 +17,6 @@ const LazyHabitacionDetalleModal = lazy(() =>
   }))
 );
 
-const LazyHabitacionOperativaDrawer = lazy(
-  () => import('./habitacion-operativa-drawer')
-);
-
 const LazyAsignarHuespedDrawer = lazy(
   () => import('./asignar-huesped-drawer')
 );
@@ -43,8 +39,6 @@ export interface HabitacionesPisosModalsProps {
   selectedBuilding: SelectedBuildingState | null;
   selectedRoomForTarifas: SelectedTarifasState | null;
   selectedRoomForDetail: RoomRow | null;
-  activeDrawerRoom: RoomRow | null;
-  drawerNightlyRate: number;
   assignGuestDrawerRoom: RoomRow | null;
   hasTariff: (roomId: string) => boolean;
   getRateId: (roomId: string) => string | null;
@@ -53,11 +47,8 @@ export interface HabitacionesPisosModalsProps {
   onCloseBuilding: () => void;
   onCloseTarifas: () => void;
   onCloseDetail: () => void;
-  onCloseOperativaDrawer: () => void;
   onCloseAssignGuestDrawer: () => void;
   onAssignGuestSuccess: () => Promise<void> | void;
-  onAssignGuestFromOperativa: (room: RoomRow) => void;
-  onChangeDrawerStatus: (room: RoomRow, newStatus: string) => Promise<void>;
   onTariffApplied: (
     roomId: string,
     rateId?: string,
@@ -66,15 +57,12 @@ export interface HabitacionesPisosModalsProps {
   ) => void;
   onSelectTarifas: (next: SelectedTarifasState) => void;
   onSelectBuilding: (next: SelectedBuildingState) => void;
-  onOpenFullDetailFromDrawer: (room: RoomRow) => void;
 }
 
 export const HabitacionesPisosModals = memo(function HabitacionesPisosModals({
   selectedBuilding,
   selectedRoomForTarifas,
   selectedRoomForDetail,
-  activeDrawerRoom,
-  drawerNightlyRate,
   assignGuestDrawerRoom,
   hasTariff,
   getRateId,
@@ -83,37 +71,14 @@ export const HabitacionesPisosModals = memo(function HabitacionesPisosModals({
   onCloseBuilding,
   onCloseTarifas,
   onCloseDetail,
-  onCloseOperativaDrawer,
   onCloseAssignGuestDrawer,
   onAssignGuestSuccess,
-  onAssignGuestFromOperativa,
-  onChangeDrawerStatus,
   onTariffApplied,
   onSelectTarifas,
   onSelectBuilding,
-  onOpenFullDetailFromDrawer,
 }: HabitacionesPisosModalsProps) {
   return (
     <Suspense fallback={null}>
-      <LazyHabitacionOperativaDrawer
-        room={activeDrawerRoom}
-        nightlyRate={drawerNightlyRate}
-        onClose={onCloseOperativaDrawer}
-        onAssignGuest={onAssignGuestFromOperativa}
-        onChangeStatus={onChangeDrawerStatus}
-        onOpenTarifas={(room) => {
-          onCloseOperativaDrawer();
-          onSelectTarifas({
-            id: room.id,
-            number: room.number,
-            floor: room.floor,
-            hasTariff: hasTariff(room.id),
-            rateId: getRateId(room.id),
-          });
-        }}
-        onOpenFullDetail={onOpenFullDetailFromDrawer}
-      />
-
       <LazyAsignarHuespedDrawer
         room={assignGuestDrawerRoom}
         onClose={onCloseAssignGuestDrawer}

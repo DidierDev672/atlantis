@@ -6,13 +6,12 @@ import {
   InfiniteScrollEnd,
 } from '../../../../shared/ui/InfiniteScroll'
 import { Loading } from '../../../../shared/loading'
+import { useRecepcionesResourceBudget } from '../../application/use-recepciones-resource-budget'
 import type {
   SalidaFilterOption,
   SalidaHuespedItem,
 } from '../../domain/salida-huesped'
 import { SalidaHuespedCard } from '../molecules/salida-huesped-card'
-
-const PAGE_SIZE = 9
 
 export interface SalidasListContainerProps {
   guests: SalidaHuespedItem[]
@@ -21,6 +20,7 @@ export interface SalidasListContainerProps {
   onResetFilters: () => void
   isServiceRequestsLoading?: boolean
   onViewAccount?: (guest: SalidaHuespedItem) => void
+  onLoadMorePersonIds?: (personIds: string[]) => void
 }
 
 export function SalidasListContainer({
@@ -30,14 +30,18 @@ export function SalidasListContainer({
   onResetFilters,
   isServiceRequestsLoading = false,
   onViewAccount,
+  onLoadMorePersonIds,
 }: SalidasListContainerProps) {
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const {
+    policy: { salidasPageSize },
+  } = useRecepcionesResourceBudget()
+  const [visibleCount, setVisibleCount] = useState(salidasPageSize)
   const [loadingMore, setLoadingMore] = useState(false)
   const [prevGuests, setPrevGuests] = useState(guests)
 
   if (prevGuests !== guests) {
     setPrevGuests(guests)
-    setVisibleCount(PAGE_SIZE)
+    setVisibleCount(salidasPageSize)
   }
 
   const visibleGuests = guests.slice(0, visibleCount)
@@ -47,12 +51,19 @@ export function SalidasListContainer({
     if (!hasMore || loadingMore) return
     setLoadingMore(true)
     try {
-      await new Promise((resolve) => setTimeout(resolve, 250))
-      setVisibleCount((prev) => Math.min(prev + PAGE_SIZE, guests.length))
+      const nextCount = Math.min(visibleCount + salidasPageSize, guests.length)
+      const nextSliceIds = guests
+        .slice(visibleCount, nextCount)
+        .map((g) => g.personId)
+        .filter(Boolean)
+      setVisibleCount(nextCount)
+      if (nextSliceIds.length > 0 && onLoadMorePersonIds) {
+        onLoadMorePersonIds(nextSliceIds)
+      }
     } finally {
       setLoadingMore(false)
     }
-  }, [hasMore, loadingMore, guests.length])
+  }, [hasMore, loadingMore, visibleCount, salidasPageSize, guests, onLoadMorePersonIds])
 
   const hasActiveFilters =
     searchQuery.trim().length > 0 || departureFilter !== 'todos'

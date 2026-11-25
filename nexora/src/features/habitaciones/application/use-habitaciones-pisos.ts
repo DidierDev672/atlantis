@@ -17,7 +17,6 @@ import {
   fetchFloorEnrichmentBatch,
   preloadBuildingsMap,
 } from './enrich-floor-rooms';
-import { invalidateOperativaStayCache } from './operativa-stay-cache';
 
 const repository = new ApiHabitacionListaRepository();
 
@@ -382,7 +381,6 @@ export function useHabitacionesPisos() {
   const markRoomOccupiedLocal = useCallback((roomId: string) => {
     const cleanId = String(roomId).trim();
     if (!cleanId) return;
-    invalidateOperativaStayCache(cleanId);
     setRows((prev) =>
       prev.map((r) =>
         r.id === cleanId

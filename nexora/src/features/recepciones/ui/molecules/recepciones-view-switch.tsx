@@ -1,104 +1,95 @@
-import { motion } from 'motion/react'
-import type { RecepcionesViewMode } from '../../domain/stay'
+import { memo, useCallback } from 'react';
+import { motion } from 'motion/react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+  faTableCellsLarge,
+  faTableList,
+} from '@fortawesome/free-solid-svg-icons';
+import type { RecepcionesViewMode } from '../../domain/stay';
 
 export interface RecepcionesViewSwitchProps {
-  viewMode: RecepcionesViewMode
-  onChange: (mode: RecepcionesViewMode) => void
-  className?: string
+  viewMode: RecepcionesViewMode;
+  onChange: (mode: RecepcionesViewMode) => void;
+  className?: string;
 }
 
+const VIEW_MODES: ReadonlyArray<{
+  mode: RecepcionesViewMode;
+  label: string;
+  title: string;
+  icon: typeof faTableCellsLarge;
+}> = [
+  {
+    mode: 'card',
+    label: 'Visualizar en tarjetas',
+    title: 'Tarjetas',
+    icon: faTableCellsLarge,
+  },
+  {
+    mode: 'table',
+    label: 'Visualizar en tabla',
+    title: 'Tabla',
+    icon: faTableList,
+  },
+];
+
 /**
- * Switch con microinteracción animada para alternar entre vista de Cards y vista de Tabla.
- * Diseñado con accesibilidad ARIA (role="radiogroup") y layout animation de Motion.
+ * Switch icon-only con microinteracción animada para alternar entre vista de Tarjetas y Tabla.
  */
-export function RecepcionesViewSwitch({
+export const RecepcionesViewSwitch = memo(function RecepcionesViewSwitch({
   viewMode,
   onChange,
   className = '',
 }: RecepcionesViewSwitchProps) {
+  const handleSelect = useCallback(
+    (mode: RecepcionesViewMode) => {
+      try {
+        onChange(mode);
+      } catch (err) {
+        console.error('Error al alternar vista de recepciones:', err);
+      }
+    },
+    [onChange]
+  );
+
   return (
     <div
       role="radiogroup"
       aria-label="Modo de visualización de recepciones"
-      className={`inline-flex items-center rounded-xl border border-line bg-canvas/80 p-1 shadow-xs backdrop-blur-xs ${className}`}
+      className={`border-line bg-canvas/90 inline-flex items-center gap-1 rounded-xl border p-1 shadow-xs ${className}`}
     >
-      {/* Opción Tarjetas / Card (Por defecto) */}
-      <button
-        type="button"
-        role="radio"
-        aria-checked={viewMode === 'card'}
-        aria-label="Visualizar en tarjetas"
-        title="Visualización en tarjetas"
-        onClick={() => onChange('card')}
-        className={`relative flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-          viewMode === 'card' ? 'text-primary' : 'text-ink-muted hover:text-ink'
-        }`}
-      >
-        {viewMode === 'card' && (
-          <motion.div
-            layoutId="activeRecepcionesViewSwitchIndicator"
-            transition={{ type: 'spring', stiffness: 500, damping: 32 }}
-            className="absolute inset-0 rounded-lg bg-panel shadow-xs"
-          />
-        )}
-        <span className="relative z-10 flex items-center gap-1.5">
-          <svg
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="size-4 shrink-0"
-            aria-hidden="true"
+      {VIEW_MODES.map(({ mode, label, title, icon }) => {
+        const isActive = viewMode === mode;
+        return (
+          <button
+            key={mode}
+            type="button"
+            role="radio"
+            aria-checked={isActive}
+            aria-label={label}
+            title={title}
+            onClick={() => handleSelect(mode)}
+            className={`focus-visible:ring-primary/40 relative grid size-8 cursor-pointer place-items-center rounded-lg transition focus-visible:ring-2 focus-visible:outline-none ${
+              isActive ? 'text-primary' : 'text-ink-muted hover:text-ink'
+            }`}
           >
-            <rect x="3" y="3" width="5.8" height="5.8" rx="1.5" />
-            <rect x="11.2" y="3" width="5.8" height="5.8" rx="1.5" />
-            <rect x="3" y="11.2" width="5.8" height="5.8" rx="1.5" />
-            <rect x="11.2" y="11.2" width="5.8" height="5.8" rx="1.5" />
-          </svg>
-          <span>Tarjetas</span>
-        </span>
-      </button>
-
-      {/* Opción Tabla / Table */}
-      <button
-        type="button"
-        role="radio"
-        aria-checked={viewMode === 'table'}
-        aria-label="Visualizar en tabla"
-        title="Visualización en tabla"
-        onClick={() => onChange('table')}
-        className={`relative flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
-          viewMode === 'table' ? 'text-primary' : 'text-ink-muted hover:text-ink'
-        }`}
-      >
-        {viewMode === 'table' && (
-          <motion.div
-            layoutId="activeRecepcionesViewSwitchIndicator"
-            transition={{ type: 'spring', stiffness: 500, damping: 32 }}
-            className="absolute inset-0 rounded-lg bg-panel shadow-xs"
-          />
-        )}
-        <span className="relative z-10 flex items-center gap-1.5">
-          <svg
-            viewBox="0 0 20 20"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="size-4 shrink-0"
-            aria-hidden="true"
-          >
-            <rect x="2.5" y="3.5" width="15" height="13" rx="2" />
-            <line x1="2.5" y1="8" x2="17.5" y2="8" />
-            <line x1="2.5" y1="12.5" x2="17.5" y2="12.5" />
-            <line x1="7.5" y1="8" x2="7.5" y2="16.5" />
-          </svg>
-          <span>Tabla</span>
-        </span>
-      </button>
+            {isActive && (
+              <motion.div
+                layoutId="activeRecepcionesViewSwitchIndicator"
+                transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                className="bg-panel absolute inset-0 rounded-lg shadow-xs"
+              />
+            )}
+            <FontAwesomeIcon
+              icon={icon}
+              className="relative z-10 size-3.5"
+              aria-hidden="true"
+            />
+          </button>
+        );
+      })}
     </div>
-  )
-}
+  );
+});
+
+export default RecepcionesViewSwitch;

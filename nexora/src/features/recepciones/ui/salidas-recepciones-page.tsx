@@ -1,20 +1,29 @@
-import { useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
 import { Loading, useDelayVisibility } from '../../../shared/loading';
 import { StatusCodeAlert } from '../../../shared/lib/status-code-validator';
 import { useSalidasRecepciones } from '../application/use-salidas-recepciones';
 import type { SalidaHuespedItem } from '../domain/salida-huesped';
+import type { StayItem } from '../domain/stay';
 import { SalidasToolbar } from './molecules/salidas-toolbar';
 import { SalidasListContainer } from './organisms/salidas-list-container';
 import { CuentaHuespedDrawer } from './organisms/cuenta-huesped-drawer';
 
+export interface SalidasRecepcionesPageProps {
+  initialStays?: StayItem[];
+  refreshToken?: number;
+}
+
 /**
  * Página de salidas de recepciones.
- * Consume GET /persons con Axios, balanceo de cargas (`api-load-balancer.ts`)
- * y validación empática de status codes (`status-code-validator.ts`).
+ * Reutiliza estancias precargadas de RecepcionesPage, cachea colecciones
+ * y resuelve service-request bajo demanda para el rango visible.
  */
-export function SalidasRecepcionesPage() {
+export const SalidasRecepcionesPage = memo(function SalidasRecepcionesPage({
+  initialStays,
+  refreshToken,
+}: SalidasRecepcionesPageProps) {
   const {
     guests,
     filteredGuests,
@@ -27,7 +36,8 @@ export function SalidasRecepcionesPage() {
     departureFilter,
     setDepartureFilter,
     reload,
-  } = useSalidasRecepciones();
+    ensureServiceRequestsForPersonIds,
+  } = useSalidasRecepciones({ initialStays, refreshToken });
 
   const [selectedAccountGuestKey, setSelectedAccountGuestKey] = useState<
     string | null
@@ -50,6 +60,16 @@ export function SalidasRecepcionesPage() {
     setSearchQuery('');
     setDepartureFilter('todos');
   };
+
+  const handleViewAccount = useCallback(
+    (guest: SalidaHuespedItem) => {
+      setSelectedAccountGuestKey(guest.internalKey);
+      if (guest.personId) {
+        void ensureServiceRequestsForPersonIds([guest.personId]);
+      }
+    },
+    [ensureServiceRequestsForPersonIds]
+  );
 
   return (
     <div className="bg-canvas text-ink min-h-screen px-4 py-6 sm:px-6 lg:px-8">
@@ -140,8 +160,9 @@ export function SalidasRecepcionesPage() {
                 departureFilter={departureFilter}
                 onResetFilters={handleResetFilters}
                 isServiceRequestsLoading={isVisibleServiceLoading}
-                onViewAccount={(guest: SalidaHuespedItem) =>
-                  setSelectedAccountGuestKey(guest.internalKey)
+                onViewAccount={handleViewAccount}
+                onLoadMorePersonIds={(ids) =>
+                  void ensureServiceRequestsForPersonIds(ids)
                 }
               />
 
@@ -167,4 +188,4 @@ export function SalidasRecepcionesPage() {
       />
     </div>
   );
-}
+});

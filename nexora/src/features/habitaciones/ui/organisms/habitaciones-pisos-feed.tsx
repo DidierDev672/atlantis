@@ -41,7 +41,6 @@ export interface HabitacionesPisosFeedProps {
   ) => void;
   onOpenRoomDetail: (row: RoomRow) => void;
   onSelectHabitacion: (row: RoomRow) => void;
-  onOpenOperativaDrawer: (row: RoomRow) => void;
   onOpenAssignGuestDrawer: (row: RoomRow) => void;
   onQuickMarkAvailable: (row: RoomRow) => Promise<void> | void;
 }
@@ -75,7 +74,6 @@ export const HabitacionesPisosFeed = memo(function HabitacionesPisosFeed({
   onOpenTarifas,
   onOpenRoomDetail,
   onSelectHabitacion,
-  onOpenOperativaDrawer,
   onOpenAssignGuestDrawer,
   onQuickMarkAvailable,
 }: HabitacionesPisosFeedProps) {
@@ -131,7 +129,6 @@ export const HabitacionesPisosFeed = memo(function HabitacionesPisosFeed({
           onOpenTarifas={onOpenTarifas}
           onOpenRoomDetail={onOpenRoomDetail}
           onSelectHabitacion={onSelectHabitacion}
-          onOpenOperativaDrawer={onOpenOperativaDrawer}
           onOpenAssignGuestDrawer={onOpenAssignGuestDrawer}
           onQuickMarkAvailable={onQuickMarkAvailable}
         />

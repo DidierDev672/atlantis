@@ -26,7 +26,7 @@ export function AcidCloudLayer({
   return (
     <motion.div
       aria-hidden="true"
-      className="absolute left-0 will-change-transform"
+      className={animated ? 'absolute left-0 will-change-transform' : 'absolute left-0'}
       style={{
         top: `${layer.top}%`,
         height: `${layer.height}%`,
@@ -34,11 +34,15 @@ export function AcidCloudLayer({
         opacity: layer.opacity,
       }}
       animate={animated ? { x: ['0%', '-50%'] } : { x: '0%' }}
-      transition={{
-        duration: layer.duration,
-        repeat: Infinity,
-        ease: 'linear',
-      }}
+      transition={
+        animated
+          ? {
+              duration: layer.duration,
+              repeat: Infinity,
+              ease: 'linear',
+            }
+          : { duration: 0 }
+      }
     >
       {[0, 50].flatMap((offset) =>
         layer.blobs.map((blob, i) => (
@@ -51,7 +55,7 @@ export function AcidCloudLayer({
               top: `${blob.y}%`,
               height: `${blob.h}%`,
               background: blob.color,
-              filter: `blur(${blurPx}px)`,
+              filter: animated ? `blur(${blurPx}px)` : undefined,
             }}
           />
         ))

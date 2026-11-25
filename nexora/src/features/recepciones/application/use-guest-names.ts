@@ -1,84 +1,102 @@
-import { useEffect, useState } from 'react'
-import { fetchPersonById, SAMPLE_PERSONS } from '../infrastructure/stays-api'
+import { useEffect, useState } from 'react';
+import { detectarRecursosDispositivoRecepciones } from '../infrastructure/recepciones-resource-detector';
+import { catalogApi } from '../../../shared/catalog';
+import { SAMPLE_PERSONS } from '../infrastructure/stays-api';
 
-/**
- * Caché en memoria para evitar peticiones redundantes a GET /person/{id}.
- * Se inicializa con los nombres de muestra conocidos para resolución inmediata.
- */
-const globalGuestNameCache: Record<string, string> = {
-  ...Object.fromEntries(
-    Object.entries(SAMPLE_PERSONS).map(([id, person]) => [id, person.name])
-  ),
+function getCachedGuestName(id: string): string | undefined {
+  const catalogHit = catalogApi.getCachedPerson(id);
+  if (catalogHit?.name) return catalogHit.name;
+  const sample = SAMPLE_PERSONS[id];
+  if (sample?.name) {
+    catalogApi.primePerson({ ...sample, id });
+    return sample.name;
+  }
+  return undefined;
+}
+
+async function resolveGuestNameDeduped(id: string): Promise<string | null> {
+  const cached = getCachedGuestName(id);
+  if (cached !== undefined) return cached;
+
+  try {
+    const res = await catalogApi.getPerson(id);
+    return res.data?.name || null;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Hook para resolver y almacenar en caché los nombres de los huéspedes a partir de sus IDs.
- * Consume GET /person/{id} de forma asíncrona cuando un ID no se encuentra en caché.
+ * Hook compartido para resolver nombres de huéspedes sobre `catalogApi`
+ * (caché única LRU+TTL + deduplicación en vuelo + lotes acotados),
+ * evitando duplicar GET /person/{id} con modales y acordeones.
  */
 export function useGuestNames(personIds: string[]): Record<string, string> {
   const [names, setNames] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {}
+    const initial: Record<string, string> = {};
     for (const id of personIds) {
-      if (globalGuestNameCache[id]) {
-        initial[id] = globalGuestNameCache[id]
-      }
+      const hit = getCachedGuestName(id);
+      if (hit) initial[id] = hit;
     }
-    return initial
-  })
+    return initial;
+  });
 
-  const idsKey = personIds.join(',')
+  const idsKey = personIds.join(',');
 
   useEffect(() => {
-    let isMounted = true
+    let isMounted = true;
+    const uniqueIds = Array.from(
+      new Set(personIds.map((id) => id.trim()).filter(Boolean))
+    );
+    const missingIds = uniqueIds.filter(
+      (id) => getCachedGuestName(id) === undefined
+    );
 
-    // Identificar IDs faltantes en caché
-    const missingIds = personIds.filter((id) => !globalGuestNameCache[id])
+    const syncFromCache = () => {
+      if (!isMounted) return;
+      setNames((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const id of uniqueIds) {
+          const val = getCachedGuestName(id);
+          if (val && next[id] !== val) {
+            next[id] = val;
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    };
 
     if (missingIds.length === 0) {
-      setNames((prev) => {
-        let changed = false
-        const next = { ...prev }
-        for (const id of personIds) {
-          if (next[id] !== globalGuestNameCache[id]) {
-            next[id] = globalGuestNameCache[id]
-            changed = true
-          }
-        }
-        return changed ? next : prev
-      })
-      return
+      void Promise.resolve().then(syncFromCache);
+      return () => {
+        isMounted = false;
+      };
     }
 
-    // Consultar asíncronamente GET /person/{id} para los IDs desconocidos
-    void Promise.all(
-      missingIds.map(async (id) => {
-        try {
-          const res = await fetchPersonById(id)
-          if (res.data?.name) {
-            globalGuestNameCache[id] = res.data.name
-          }
-        } catch {
-          // Ignorar fallo puntual
+    const loadBatched = async () => {
+      try {
+        const batchSize =
+          detectarRecursosDispositivoRecepciones().policy.batchConcurrency;
+        for (let i = 0; i < missingIds.length; i += batchSize) {
+          if (!isMounted) return;
+          const chunk = missingIds.slice(i, i + batchSize);
+          await Promise.allSettled(chunk.map(resolveGuestNameDeduped));
         }
-      })
-    ).then(() => {
-      if (isMounted) {
-        setNames((prev) => {
-          const next = { ...prev }
-          for (const id of personIds) {
-            if (globalGuestNameCache[id]) {
-              next[id] = globalGuestNameCache[id]
-            }
-          }
-          return next
-        })
+        syncFromCache();
+      } catch (err) {
+        console.error('Error al resolver nombres de huéspedes:', err);
       }
-    })
+    };
+
+    void loadBatched();
 
     return () => {
-      isMounted = false
-    }
-  }, [idsKey])
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey]);
 
-  return names
+  return names;
 }
