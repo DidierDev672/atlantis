@@ -110,3 +110,14 @@ body {
     animation: none;
   }
 }
+
+/*
+ * Ancho 40vw garantizado para drawers (tablets, iPad Mini 768x1024,
+ * iPad Pro 13 1032x1376 y escritorio) con sintaxis clásica min-width.
+ */
+@media (min-width: 600px) {
+  .drawer-tablet-40 {
+    width: 40vw !important;
+    max-width: 40vw !important;
+  }
+}

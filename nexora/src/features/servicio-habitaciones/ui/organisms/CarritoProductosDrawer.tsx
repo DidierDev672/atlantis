@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Suspense, memo, useCallback, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCartShopping, faPaperPlane } from '@fortawesome/free-solid-svg-icons'
@@ -6,16 +6,26 @@ import {
   obtenerProductoKey,
   useCarritoStore,
 } from '../../application/carrito-store'
+import { lazyWithFallback } from '../../application/lazy-with-fallback'
 import { formatearMonedaCOP } from '../../domain/item-menu'
 import { CarritoModalItemRow } from '../molecules/CarritoModalItemRow'
-import {
-  ModalConfirmarPedidoCocina,
-  type DatosOrdenCocina,
+import type {
+  DatosOrdenCocina,
+  ModalConfirmarPedidoCocinaProps,
 } from '../molecules/ModalConfirmarPedidoCocina'
 import { CarritoSupermercadoAnimado } from '../atoms/CarritoSupermercadoAnimado'
 import { BasuraAbiertaAnimada } from '../atoms/BasuraAbiertaAnimada'
 import { LazyAnimatedWrapper } from '../../../../shared/ui'
 import { Drawer } from '../../../../shared/ui/Drawer'
+
+const LazyModalConfirmarPedidoCocina =
+  lazyWithFallback<ModalConfirmarPedidoCocinaProps>(
+    () =>
+      import('../molecules/ModalConfirmarPedidoCocina').then(
+        (m) => m.ModalConfirmarPedidoCocina
+      ),
+    'ModalConfirmarPedidoCocina'
+  )
 
 export interface CarritoProductosDrawerProps {
   isOpen: boolean
@@ -26,8 +36,10 @@ export interface CarritoProductosDrawerProps {
 /**
  * Organismo: Drawer (Menú lateral / Panel deslizante) accesible y suave
  * para consultar los productos del carrito de Room Service y enviar a cocina.
+ * Optimizado con `React.memo`, cálculo agregado único (`useMemo`) y carga
+ * perezosa (`React.lazy` + `async/await`) de `ModalConfirmarPedidoCocina`.
  */
-export function CarritoProductosDrawer({
+export const CarritoProductosDrawer = memo(function CarritoProductosDrawer({
   isOpen,
   onClose,
   onPedidoConfirmado,
@@ -39,27 +51,59 @@ export function CarritoProductosDrawer({
   const vaciarCarrito = useCarritoStore((s) => s.vaciarCarrito)
   const [isModalConfirmarOpen, setIsModalConfirmarOpen] = useState(false)
 
-  const totalArticulos = items.reduce((acc, curr) => acc + curr.cantidad, 0)
-  const subtotalNeto = items.reduce(
-    (acc, curr) => acc + curr.producto.price * curr.cantidad,
-    0
+  const { totalArticulos, subtotalNeto, totalImpuestos, totalGeneral } = useMemo(
+    () =>
+      items.reduce(
+        (acc, curr) => {
+          const subtotalItem = curr.producto.price * curr.cantidad
+          const impuestoItem =
+            subtotalItem * ((curr.producto.tax_percentage ?? 0) / 100)
+          acc.totalArticulos += curr.cantidad
+          acc.subtotalNeto += subtotalItem
+          acc.totalImpuestos += impuestoItem
+          acc.totalGeneral = acc.subtotalNeto + acc.totalImpuestos
+          return acc
+        },
+        {
+          totalArticulos: 0,
+          subtotalNeto: 0,
+          totalImpuestos: 0,
+          totalGeneral: 0,
+        }
+      ),
+    [items]
   )
-  const totalImpuestos = items.reduce((acc, curr) => {
-    const rate = (curr.producto.tax_percentage ?? 0) / 100
-    return acc + curr.producto.price * curr.cantidad * rate
-  }, 0)
-  const totalGeneral = subtotalNeto + totalImpuestos
 
-  const handleConfirmarOrden = (datos: DatosOrdenCocina) => {
+  const handleAbrirModalConfirmar = useCallback(() => {
+    try {
+      setIsModalConfirmarOpen(true)
+    } catch (error) {
+      console.error('Error al abrir modal de confirmación de pedido:', error)
+    }
+  }, [])
+
+  const handleCerrarModalConfirmar = useCallback(() => {
     setIsModalConfirmarOpen(false)
-    vaciarCarrito()
-    onPedidoConfirmado?.(datos)
-  }
+  }, [])
+
+  const handleConfirmarOrden = useCallback(
+    (datos: DatosOrdenCocina) => {
+      try {
+        setIsModalConfirmarOpen(false)
+        vaciarCarrito()
+        onClose()
+        onPedidoConfirmado?.(datos)
+      } catch (error) {
+        console.error('Error al completar confirmación de orden:', error)
+      }
+    },
+    [onClose, onPedidoConfirmado, vaciarCarrito]
+  )
 
   return (
     <>
       <Drawer
-        isOpen={isOpen}
+        isOpen={isOpen && !isModalConfirmarOpen}
         onClose={onClose}
         position="right"
         size="lg"
@@ -116,10 +160,7 @@ export function CarritoProductosDrawer({
               {items.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => {
-                    onClose()
-                    setIsModalConfirmarOpen(true)
-                  }}
+                  onClick={handleAbrirModalConfirmar}
                   className="bg-primary hover:bg-primary/90 inline-flex cursor-pointer items-center gap-2 rounded-2xl px-4 py-2 text-xs font-bold text-white shadow-sm transition-all"
                 >
                   <FontAwesomeIcon icon={faPaperPlane} className="size-3.5" />
@@ -166,15 +207,19 @@ export function CarritoProductosDrawer({
         </div>
       </Drawer>
 
-      <ModalConfirmarPedidoCocina
-        isOpen={isModalConfirmarOpen}
-        onClose={() => setIsModalConfirmarOpen(false)}
-        onConfirmar={handleConfirmarOrden}
-        totalArticulos={totalArticulos}
-        totalGeneral={totalGeneral}
-      />
+      {isModalConfirmarOpen && (
+        <Suspense fallback={null}>
+          <LazyModalConfirmarPedidoCocina
+            isOpen={isModalConfirmarOpen}
+            onClose={handleCerrarModalConfirmar}
+            onConfirmar={handleConfirmarOrden}
+            totalArticulos={totalArticulos}
+            totalGeneral={totalGeneral}
+          />
+        </Suspense>
+      )}
     </>
   )
-}
+})
 
 export default CarritoProductosDrawer

@@ -1,4 +1,4 @@
-import type { DragEvent } from 'react'
+import { memo, type DragEvent } from 'react'
 import { motion } from 'motion/react'
 import { fadeIn } from '../../../../design-tokens/motion'
 
@@ -15,7 +15,7 @@ export interface ImagenDropzoneProps {
 /**
  * Átomo: Zona interactiva de arrastre/selección de archivos de imagen.
  */
-export function ImagenDropzone({
+export const ImagenDropzone = memo(function ImagenDropzone({
   isDragging,
   hasError,
   isProcessing = false,
@@ -90,4 +90,4 @@ export function ImagenDropzone({
       </div>
     </motion.div>
   )
-}
+})

@@ -1,6 +1,8 @@
+import { memo, useMemo } from 'react'
 import { motion, type Variants } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faCartShopping } from '@fortawesome/free-solid-svg-icons'
+import { useDeviceResourceProfile } from '../../../../shared/lib/use-device-resource-profile'
 
 export interface CarritoSupermercadoAnimadoProps {
   className?: string
@@ -12,74 +14,84 @@ const SPEED_LINES = [
   { id: 'l3', top: 'top-7', width: 'w-2', delay: 0.24 },
 ]
 
-const cartRollVariants: Variants = {
-  rest: {
-    x: 0,
-    y: 0,
-    rotate: 0,
-    transition: { duration: 0.25, ease: 'easeOut' },
-  },
-  hover: {
-    x: [-2, 6, 4, 8, -2],
-    y: [0, -1.5, 0, -1, 0],
-    rotate: [0, -8, -4, -10, 0],
-    transition: {
-      duration: 0.85,
-      repeat: Infinity,
-      ease: 'easeInOut',
-    },
-  },
-}
-
-const speedStreakVariants: Variants = {
-  rest: {
-    opacity: 0,
-    x: 4,
-    transition: { duration: 0.15 },
-  },
-  hover: (delay: number) => ({
-    opacity: [0, 0.85, 0],
-    x: [6, -12],
-    transition: {
-      duration: 0.55,
-      repeat: Infinity,
-      delay,
-      ease: 'easeOut',
-    },
-  }),
-}
-
 /**
- * Átomo: Icono de carrito de supermercado con efecto hover de desplazamiento rápido por el pasillo.
+ * Átomo: Icono de carrito de supermercado adaptado al perfil de GPU sin `repeat: Infinity`.
  */
-export function CarritoSupermercadoAnimado({
-  className = '',
-}: CarritoSupermercadoAnimadoProps) {
-  return (
-    <motion.div
-      initial="rest"
-      animate="rest"
-      whileHover="hover"
-      aria-hidden="true"
-      className={`bg-primary/10 text-primary relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-2xl transition-colors duration-200 hover:bg-primary/15 ${className}`}
-    >
-      {/* Líneas de velocidad que aparecen únicamente en hover */}
-      {SPEED_LINES.map((line) => (
-        <motion.span
-          key={line.id}
-          custom={line.delay}
-          variants={speedStreakVariants}
-          className={`bg-primary/50 pointer-events-none absolute left-1.5 h-0.5 rounded-full ${line.top} ${line.width}`}
-        />
-      ))}
+export const CarritoSupermercadoAnimado = memo(
+  function CarritoSupermercadoAnimado({
+    className = '',
+  }: CarritoSupermercadoAnimadoProps) {
+    const {
+      policy: { enableAnimations, tier },
+    } = useDeviceResourceProfile()
 
-      {/* Carrito FontAwesome rodando hacia adelante en hover */}
+    const hoverRepeat = enableAnimations && tier === 'full' ? 1 : 0
+
+    const { cartRollVariants, speedStreakVariants } = useMemo<{
+      cartRollVariants: Variants
+      speedStreakVariants: Variants
+    }>(
+      () => ({
+        cartRollVariants: {
+          rest: { x: 0, y: 0, rotate: 0, transition: { duration: 0.25, ease: 'easeOut' } },
+          hover:
+            enableAnimations && tier !== 'ultra-light'
+              ? {
+                  x: [-2, 6, 4, 8, 0],
+                  y: [0, -1.5, 0, -1, 0],
+                  rotate: [0, -8, -4, -10, 0],
+                  transition: {
+                    duration: 0.8,
+                    repeat: hoverRepeat,
+                    ease: 'easeInOut',
+                  },
+                }
+              : { x: 0, y: 0, rotate: 0 },
+        },
+        speedStreakVariants: {
+          rest: { opacity: 0, x: 4, transition: { duration: 0.15 } },
+          hover: (delay: number) =>
+            enableAnimations && tier !== 'ultra-light'
+              ? {
+                  opacity: [0, 0.85, 0],
+                  x: [6, -12],
+                  transition: {
+                    duration: 0.5,
+                    repeat: hoverRepeat,
+                    delay,
+                    ease: 'easeOut',
+                  },
+                }
+              : { opacity: 0 },
+        },
+      }),
+      [enableAnimations, hoverRepeat, tier],
+    )
+
+    return (
       <motion.div
-        variants={cartRollVariants}
-        className="relative z-10 flex items-center justify-center"
+        initial="rest"
+        animate="rest"
+        whileHover={enableAnimations ? 'hover' : undefined}
+        aria-hidden="true"
+        className={`bg-primary/10 text-primary relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-2xl transition-colors duration-200 hover:bg-primary/15 ${className}`}
       >
-        <FontAwesomeIcon icon={faCartShopping} className="size-4" />
+        {SPEED_LINES.map((line) => (
+          <motion.span
+            key={line.id}
+            custom={line.delay}
+            variants={speedStreakVariants}
+            className={`bg-primary/50 pointer-events-none absolute left-1.5 h-0.5 rounded-full ${line.top} ${line.width}`}
+          />
+        ))}
+
+        <motion.div
+          variants={cartRollVariants}
+          className="relative z-10 flex items-center justify-center"
+        >
+          <FontAwesomeIcon icon={faCartShopping} className="size-4" />
+        </motion.div>
       </motion.div>
-    </motion.div>
-  )
-}
+    )
+  },
+)

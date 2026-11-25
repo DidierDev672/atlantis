@@ -1,5 +1,4 @@
-import { useId } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
+import { Suspense, memo, useId } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faCheckCircle,
@@ -8,7 +7,7 @@ import {
 } from '@fortawesome/free-solid-svg-icons'
 import { Drawer } from '../../../../shared/ui/Drawer'
 import { StatusCodeAlert } from '../../../../shared/lib/status-code-validator'
-import { Rocket } from '../../../../shared/rocket/organisms/Rocket'
+import { lazyWithFallback } from '../../application/lazy-with-fallback'
 import { useEditarProducto } from '../../application/use-editar-producto'
 import {
   formatearMonedaCOP,
@@ -16,6 +15,16 @@ import {
 } from '../../domain/item-menu'
 import { IconoEscribirAnimado } from '../atoms/IconoEscribirAnimado'
 import { EditarProductoFormFields } from '../molecules/EditarProductoFormFields'
+import type { ServicioHabitacionRocketOverlayProps } from '../molecules/ServicioHabitacionRocketOverlay'
+
+const LazyServicioHabitacionRocketOverlay =
+  lazyWithFallback<ServicioHabitacionRocketOverlayProps>(
+    () =>
+      import('../molecules/ServicioHabitacionRocketOverlay').then(
+        (m) => m.ServicioHabitacionRocketOverlay
+      ),
+    'ServicioHabitacionRocketOverlay en EditarProductoDrawer'
+  )
 
 export interface EditarProductoDrawerProps {
   producto: ItemMenuProducto | null
@@ -86,45 +95,16 @@ function EditarProductoDrawerInner({
       }
     >
       <div className="relative">
-        <AnimatePresence>
-          {form.saving && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.25 }}
-              className="fixed inset-0 z-70 flex flex-col items-center justify-center bg-black/75 p-4 text-center backdrop-blur-md select-none"
-            >
-              <motion.div
-                initial={{ scale: 0.92, y: 16 }}
-                animate={{ scale: 1, y: 0 }}
-                exit={{ scale: 0.92, y: 16 }}
-                transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-                className="flex flex-col items-center"
-              >
-                <div className="bg-panel/90 relative rounded-3xl border border-white/20 p-3 shadow-2xl backdrop-blur-xl">
-                  <Rocket
-                    launch={true}
-                    autoLaunch={true}
-                    interactive={false}
-                    size="md"
-                    showStars={true}
-                    showPad={true}
-                  />
-                </div>
-
-                <div className="mt-5 max-w-sm space-y-1.5">
-                  <h3 className="font-serif text-lg font-bold tracking-wide text-white">
-                    Actualizando producto en el catálogo
-                  </h3>
-                  <p className="text-xs leading-relaxed text-white/80">
-                    Construyendo payload y enviando cambios con balanceo de carga…
-                  </p>
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {form.saving && (
+          <Suspense fallback={null}>
+            <LazyServicioHabitacionRocketOverlay
+              visible={form.saving}
+              zIndexClass="z-70"
+              title="Actualizando producto en el catálogo"
+              description="Construyendo payload y enviando cambios con balanceo de carga…"
+            />
+          </Suspense>
+        )}
 
         <form
           id={formId}
@@ -216,7 +196,7 @@ function EditarProductoDrawerInner({
  * Organismo: Drawer lateral para modificar las características de un producto
  * sin salir del catálogo de Room Service.
  */
-export function EditarProductoDrawer({
+export const EditarProductoDrawer = memo(function EditarProductoDrawer({
   producto,
   onClose,
   onProductoActualizado,
@@ -231,4 +211,4 @@ export function EditarProductoDrawer({
       onProductoActualizado={onProductoActualizado}
     />
   )
-}
+})

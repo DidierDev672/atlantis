@@ -117,12 +117,10 @@ const AgregarProductoDrawerInner = memo(function AgregarProductoDrawerInner({
   }, [onClose, saving])
 
   const handleGuardarSubmit = useCallback(
-    async (e: FormEvent<HTMLFormElement>) => {
-      try {
-        await handleSubmit(e)
-      } catch (error) {
+    (e: FormEvent<HTMLFormElement>) => {
+      void handleSubmit(e).catch((error) => {
         setFeedback(buildUnexpectedSubmitErrorFeedback(error))
-      }
+      })
     },
     [handleSubmit, setFeedback],
   )
@@ -189,12 +187,13 @@ const AgregarProductoDrawerInner = memo(function AgregarProductoDrawerInner({
       closeOnBackdropClick={!saving}
       closeOnEscape={!saving}
       position="right"
-      size="lg"
+      size="full"
+      className="drawer-tablet-40 sm:w-[40vw] sm:max-w-[40vw] md:w-[40vw] md:max-w-[40vw] lg:w-[40vw] lg:max-w-[40vw]"
       iconElement={<PlatoAlimentosAnimado />}
       title="Agregar Producto o Platillo"
       description={headerDescription}
       footer={
-        <div className="flex flex-col-reverse items-center justify-end gap-2.5 sm:flex-row">
+        <div className="flex flex-col-reverse flex-wrap items-center justify-end gap-2.5 sm:flex-row">
           <button
             type="button"
             onClick={handleSafeClose}
@@ -227,7 +226,7 @@ const AgregarProductoDrawerInner = memo(function AgregarProductoDrawerInner({
 
         <form
           id={formId}
-          onSubmit={(e) => void handleGuardarSubmit(e)}
+          onSubmit={handleGuardarSubmit}
           className="space-y-5"
           noValidate
         >

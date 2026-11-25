@@ -1,6 +1,7 @@
 import {
   Suspense,
   lazy,
+  memo,
   useCallback,
   useEffect,
   useRef,
@@ -32,24 +33,39 @@ const LazySharedLoading = lazy<ComponentType<LoadingProps>>(async () => {
   }
 });
 
-const LazyItemMenuProductoModalDetalle = lazy(async () => {
+type ItemMenuProductoModalDetalleProps = ComponentProps<
+  typeof import('../molecules/ItemMenuProductoModalDetalle')['ItemMenuProductoModalDetalle']
+>;
+
+const LazyItemMenuProductoModalDetalle = lazy<
+  ComponentType<ItemMenuProductoModalDetalleProps>
+>(async () => {
   try {
-    return await import('../molecules/ItemMenuProductoModalDetalle');
+    const mod = await import('../molecules/ItemMenuProductoModalDetalle');
+    return { default: mod.ItemMenuProductoModalDetalle };
   } catch (error) {
     console.error('Error cargando modal de detalle de producto:', error);
-    return { default: () => null };
+    const Fallback: ComponentType<ItemMenuProductoModalDetalleProps> = () => null;
+    return { default: Fallback };
   }
 });
 
-const LazyEditarProductoDrawer = lazy(async () => {
-  try {
-    const mod = await import('./EditarProductoDrawer');
-    return { default: mod.EditarProductoDrawer };
-  } catch (error) {
-    console.error('Error cargando drawer de edición de producto:', error);
-    return { default: () => null };
+type EditarProductoDrawerProps = ComponentProps<
+  typeof import('./EditarProductoDrawer')['EditarProductoDrawer']
+>;
+
+const LazyEditarProductoDrawer = lazy<ComponentType<EditarProductoDrawerProps>>(
+  async () => {
+    try {
+      const mod = await import('./EditarProductoDrawer');
+      return { default: mod.EditarProductoDrawer };
+    } catch (error) {
+      console.error('Error cargando drawer de edición de producto:', error);
+      const Fallback: ComponentType<EditarProductoDrawerProps> = () => null;
+      return { default: Fallback };
+    }
   }
-});
+);
 
 type AgregarProductoDrawerProps = ComponentProps<
   typeof import('./AgregarProductoDrawer')['AgregarProductoDrawer']
@@ -81,7 +97,7 @@ export interface ItemMenuProductosMasonryProps {
  * Sin `backdrop-blur` en refresco manual, con virtualización compartida
  * y carga perezosa para loader inicial, modal y drawer.
  */
-export function ItemMenuProductosMasonry({
+export const ItemMenuProductosMasonry = memo(function ItemMenuProductosMasonry({
   onAgregarNuevo,
   refreshVersion = 0,
   canEditCatalog = true,
@@ -183,7 +199,7 @@ export function ItemMenuProductosMasonry({
         onCategoriasChange={handleCategoriasChange}
         onOrdenesChange={handleOrdenesChange}
         onRefrescar={handleRefrescar}
-        onAgregarNuevo={canEditCatalog ? handleAbrirAgregarProducto : undefined}
+        onAgregarNuevo={handleAbrirAgregarProducto}
       />
 
       <StatusCodeAlert
@@ -252,7 +268,7 @@ export function ItemMenuProductosMasonry({
           {productosFiltrados.length === 0 ? (
             <ItemMenuProductosEmptyState
               totalProductos={productos.length}
-              onAgregarNuevo={canEditCatalog ? handleAbrirAgregarProducto : undefined}
+              onAgregarNuevo={handleAbrirAgregarProducto}
             />
           ) : (
             <ProductosCatalogoGrid
@@ -306,4 +322,4 @@ export function ItemMenuProductosMasonry({
       />
     </div>
   );
-}
+});

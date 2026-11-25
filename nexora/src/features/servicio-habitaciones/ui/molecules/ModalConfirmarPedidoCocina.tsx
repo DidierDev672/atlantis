@@ -1,4 +1,4 @@
-import { useState, useEffect, useId, useCallback } from 'react'
+import { Suspense, memo, useState, useEffect, useId, useCallback } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
@@ -11,7 +11,7 @@ import {
 import { fadeUp } from '../../../../design-tokens/motion'
 import { Input, Textarea } from '../../../../shared/ui'
 import { Loading } from '../../../../shared/loading'
-import { Rocket } from '../../../../shared/rocket/organisms/Rocket'
+import { useDeviceResourceProfile } from '../../../../shared/lib/use-device-resource-profile'
 import { api } from '../../../../lib/api'
 import { validateStatusCode } from '../../../../shared/lib/status-code-validator'
 import { executeBalancedRequest } from '../../../reservas/infrastructure/api-load-balancer'
@@ -20,6 +20,7 @@ import {
   type DropdownOption,
 } from '../../../recursos/ui/molecules/recursos-dropdown'
 import { useCarritoStore } from '../../application/carrito-store'
+import { lazyWithFallback } from '../../application/lazy-with-fallback'
 import { readAuthTokenEmail } from '../../../../shared/auth-storage'
 import { formatearMonedaCOP } from '../../domain/item-menu'
 import {
@@ -30,6 +31,16 @@ import {
 import { type RawStayApi } from './ModalSeleccionarRecepcion'
 import { obtenerPersonsCatalogoShared } from '../../infrastructure/api-estadias-recepcion-repository'
 import { MartilloJuezAnimado } from '../atoms/MartilloJuezAnimado'
+import type { ServicioHabitacionRocketOverlayProps } from './ServicioHabitacionRocketOverlay'
+
+const LazyServicioHabitacionRocketOverlay =
+  lazyWithFallback<ServicioHabitacionRocketOverlayProps>(
+    () =>
+      import('./ServicioHabitacionRocketOverlay').then(
+        (m) => m.ServicioHabitacionRocketOverlay
+      ),
+    'ServicioHabitacionRocketOverlay en ModalConfirmarPedidoCocina'
+  )
 
 /**
  * Extrae el email del creador desde localStorage bajo el JSON auth_token (campo Email o email)
@@ -208,15 +219,19 @@ export interface RecepcionMetadata {
   person_id: string
 }
 
-export function ModalConfirmarPedidoCocina({
-  isOpen,
-  onClose,
-  onConfirmar,
-  totalArticulos,
-  totalGeneral,
-  recepcionInicial,
-}: ModalConfirmarPedidoCocinaProps) {
-  const horarioEntregaId = useId()
+export const ModalConfirmarPedidoCocina = memo(
+  function ModalConfirmarPedidoCocina({
+    isOpen,
+    onClose,
+    onConfirmar,
+    totalArticulos,
+    totalGeneral,
+    recepcionInicial,
+  }: ModalConfirmarPedidoCocinaProps) {
+    const horarioEntregaId = useId()
+    const {
+      policy: { enableBackdropBlur },
+    } = useDeviceResourceProfile()
 
   // Estados del Formulario
   const [numeroOrden, setNumeroOrden] = useState(generarNumeroOrdenAleatorio)
@@ -483,50 +498,20 @@ export function ModalConfirmarPedidoCocina({
 
   return (
     <>
-      {/* Animación Rocket a pantalla completa sobre el modal mientras se envía POST /service-request */}
-      <AnimatePresence>
-        {isSubmitting && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="fixed inset-0 z-60 flex flex-col items-center justify-center bg-black/75 p-4 backdrop-blur-md select-none text-center"
-          >
-            <motion.div
-              initial={{ scale: 0.9, y: 16 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.9, y: 16 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-              className="flex flex-col items-center"
-            >
-              <div className="relative rounded-3xl border border-white/20 bg-panel/90 p-3 shadow-2xl backdrop-blur-xl">
-                <Rocket
-                  launch={true}
-                  autoLaunch={true}
-                  interactive={false}
-                  size="md"
-                  showStars={true}
-                  showPad={true}
-                />
-              </div>
-
-              <div className="mt-5 space-y-1.5 max-w-sm">
-                <h3 className="font-serif text-lg font-bold text-white tracking-wide">
-                  Enviando Pedido
-                </h3>
-                <p className="text-xs text-white/80 leading-relaxed">
-                  Confirmando y enviando tu pedido a cocina, por favor espera un momento…
-                </p>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {isSubmitting && (
+        <Suspense fallback={null}>
+          <LazyServicioHabitacionRocketOverlay
+            visible={isSubmitting}
+            zIndexClass="z-60"
+            title="Enviando Pedido"
+            description="Confirmando y enviando tu pedido a cocina, por favor espera un momento…"
+          />
+        </Suspense>
+      )}
 
       <AnimatePresence>
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto">
-          {/* Backdrop desenfocado */}
+          {/* Backdrop adaptado al perfil de GPU */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -534,7 +519,9 @@ export function ModalConfirmarPedidoCocina({
             onClick={() => {
               if (!isSubmitting) onClose()
             }}
-            className="fixed inset-0 bg-ink/60 backdrop-blur-xs transition-opacity"
+            className={`fixed inset-0 bg-ink/60 transition-opacity ${
+              enableBackdropBlur ? 'backdrop-blur-xs' : ''
+            }`}
             aria-hidden="true"
           />
 
@@ -748,7 +735,7 @@ export function ModalConfirmarPedidoCocina({
           </form>
         </motion.div>
       </div>
-    </AnimatePresence>
+      </AnimatePresence>
     </>
   )
-}
+})

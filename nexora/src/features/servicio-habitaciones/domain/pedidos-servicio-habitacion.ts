@@ -251,7 +251,7 @@ export function calcularPrioridadComanda(orden: ServiceRequestOrder): PrioridadI
       bgHeaderClase: 'bg-red-600 dark:bg-red-700',
       textHeaderClase: 'text-white',
       badgeClase:
-        'bg-red-600 text-white font-mono font-black animate-pulse shadow-sm',
+        'bg-red-600 text-white font-mono font-black shadow-sm ring-1 ring-red-400/50',
       icon: faFire,
     }
   }
