@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useState } from 'react'
 import { motion } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
@@ -8,7 +8,6 @@ import {
   faCopy,
   faIdCard,
 } from '@fortawesome/free-solid-svg-icons'
-import { Tooltip } from '../../../../shared/ui/Tooltip'
 import { PrintingReceiptIcon } from '../atoms/printing-receipt-icon'
 import {
   getGuestInitials,
@@ -26,6 +25,7 @@ export interface SalidaHuespedCardProps {
   guest: SalidaHuespedItem
   isServiceRequestsLoading?: boolean
   onViewAccount?: (guest: SalidaHuespedItem) => void
+  onCollectPayment?: (guest: SalidaHuespedItem) => void
 }
 
 /**
@@ -33,10 +33,11 @@ export interface SalidaHuespedCardProps {
  * Implementa exactamente la animación Fade In de `prompt/prompt-fade-in-elementos.md`
  * y muestra únicamente información legible (sin IDs internos).
  */
-export function SalidaHuespedCard({
+export const SalidaHuespedCard = memo(function SalidaHuespedCard({
   guest,
   isServiceRequestsLoading = false,
   onViewAccount,
+  onCollectPayment,
 }: SalidaHuespedCardProps) {
   const [copiedDoc, setCopiedDoc] = useState(false)
   const [isReceiptHover, setIsReceiptHover] = useState(false)
@@ -155,21 +156,18 @@ export function SalidaHuespedCard({
 
       {/* Acciones de cuenta y cobro */}
       <div className="border-line/60 grid grid-cols-2 gap-2.5 border-t pt-3.5">
-        <Tooltip content="Disponible próximamente" className="w-full">
-          <button
-            type="button"
-            disabled
-            aria-disabled="true"
-            className="border-line bg-canvas text-ink-muted inline-flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold opacity-65"
-          >
-            <FontAwesomeIcon
-              icon={faCashRegister}
-              className="size-3.5"
-              aria-hidden="true"
-            />
-            <span>Cobrar</span>
-          </button>
-        </Tooltip>
+        <button
+          type="button"
+          onClick={() => onCollectPayment?.(guest)}
+          className="border-primary/30 bg-primary/10 text-primary hover:bg-primary hover:text-white inline-flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition"
+        >
+          <FontAwesomeIcon
+            icon={faCashRegister}
+            className="size-3.5"
+            aria-hidden="true"
+          />
+          <span>Cobrar</span>
+        </button>
 
         <button
           type="button"
@@ -186,4 +184,4 @@ export function SalidaHuespedCard({
       </div>
     </motion.article>
   )
-}
+})

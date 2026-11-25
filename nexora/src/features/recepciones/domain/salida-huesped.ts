@@ -23,6 +23,16 @@ export interface PersonApiDto {
   checkout_date?: string
 }
 
+export interface GuestServiceRequestOrderSummary {
+  id: string
+  orderNumber?: string
+  subtotal: number
+  taxes: number
+  total: number
+  status?: string
+  createdAt?: string
+}
+
 export interface GuestServiceRequestProduct {
   /** Clave interna de renderizado React; nunca se muestra en la UI */
   internalKey: string
@@ -60,7 +70,10 @@ export interface SalidaHuespedItem {
   receptionsTotal: number
   reservesTotal: number
   serviceRequestsTotal: number
+  deliveredServiceOrdersCount?: number
+  deliveredServiceRequestsTotal?: number
   serviceRequestProducts: GuestServiceRequestProduct[]
+  serviceRequestOrders?: GuestServiceRequestOrderSummary[]
   checkInDateRaw?: string | null
   checkInDateFormatted?: string
   checkInTimeFormatted?: string
@@ -70,10 +83,15 @@ export interface SalidaHuespedItem {
   departureWindow: DepartureWindow
   departureLabel: string
   roomId?: string
+  primaryRoomId?: string
   roomNumber?: string
   roomFloor?: string
   roomStatus?: string
   stayId?: string
+  primaryStayId?: string
+  primaryReserveId?: string
+  securityDeposit?: number
+  depositPaymentMethod?: string
   stayStatus?: string
   isTodayActivity?: boolean
 }

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { memo, useCallback, useState } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faDoorOpen, faFilterCircleXmark } from '@fortawesome/free-solid-svg-icons'
 import {
@@ -20,16 +20,18 @@ export interface SalidasListContainerProps {
   onResetFilters: () => void
   isServiceRequestsLoading?: boolean
   onViewAccount?: (guest: SalidaHuespedItem) => void
+  onCollectPayment?: (guest: SalidaHuespedItem) => void
   onLoadMorePersonIds?: (personIds: string[]) => void
 }
 
-export function SalidasListContainer({
+export const SalidasListContainer = memo(function SalidasListContainer({
   guests,
   searchQuery,
   departureFilter,
   onResetFilters,
   isServiceRequestsLoading = false,
   onViewAccount,
+  onCollectPayment,
   onLoadMorePersonIds,
 }: SalidasListContainerProps) {
   const {
@@ -60,6 +62,8 @@ export function SalidasListContainer({
       if (nextSliceIds.length > 0 && onLoadMorePersonIds) {
         onLoadMorePersonIds(nextSliceIds)
       }
+    } catch (err) {
+      console.warn('[SalidasListContainer] Error al paginar salidas:', err)
     } finally {
       setLoadingMore(false)
     }
@@ -131,9 +135,10 @@ export function SalidasListContainer({
             guest={guest}
             isServiceRequestsLoading={isServiceRequestsLoading}
             onViewAccount={onViewAccount}
+            onCollectPayment={onCollectPayment}
           />
         ))}
       </div>
     </InfiniteScroll>
   )
-}
+})

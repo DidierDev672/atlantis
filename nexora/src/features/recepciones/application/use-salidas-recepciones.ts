@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { StatusCodeValidationResult } from '../../../shared/lib/status-code-validator';
+import {
+  validateStatusCode,
+  type StatusCodeValidationResult,
+} from '../../../shared/lib/status-code-validator';
 import { useRecepcionesResourceBudget } from './use-recepciones-resource-budget';
 import {
   type SalidaFilterOption,
@@ -99,7 +102,10 @@ export function useSalidasRecepciones(
               ...guest,
               serviceRequestCount: summary.count,
               serviceRequestsTotal: summary.totalAmount,
+              deliveredServiceOrdersCount: summary.deliveredCount,
+              deliveredServiceRequestsTotal: summary.deliveredTotalAmount,
               serviceRequestProducts: summary.products,
+              serviceRequestOrders: summary.orders,
             };
           })
         );
@@ -139,6 +145,12 @@ export function useSalidasRecepciones(
         loadedGuests = result.guests;
         setGuests(result.guests);
         setValidationResult(result.validation);
+      } catch (err) {
+        console.error('[useSalidasRecepciones] Error al cargar salidas:', err);
+        if (requestSeqRef.current === seq) {
+          setGuests([]);
+          setValidationResult(validateStatusCode(500));
+        }
       } finally {
         if (requestSeqRef.current === seq) {
           setLoading(false);
@@ -151,24 +163,36 @@ export function useSalidasRecepciones(
         loadedGuests.length > 0 &&
         initialServicePrefetchLimit > 0
       ) {
-        const initialBatchIds = loadedGuests
-          .slice(0, initialServicePrefetchLimit)
-          .map((g) => g.personId)
-          .filter(Boolean);
-        await syncServiceRequestCounts(initialBatchIds, seq, forceRefresh);
+        try {
+          const initialBatchIds = loadedGuests
+            .slice(0, initialServicePrefetchLimit)
+            .map((g) => g.personId)
+            .filter(Boolean);
+          await syncServiceRequestCounts(initialBatchIds, seq, forceRefresh);
+        } catch (err) {
+          console.warn(
+            '[useSalidasRecepciones] Error al precargar solicitudes de servicio:',
+            err
+          );
+        }
       }
     },
     [initialServicePrefetchLimit, syncServiceRequestCounts]
   );
 
   const reload = useCallback(async () => {
-    const seq = ++requestSeqRef.current;
-    syncedPersonIdsRef.current.clear();
-    clearServiceRequestsCache();
-    setLoading(true);
-    setLoadingServiceRequests(false);
-    setServiceRequestValidation(null);
-    await loadAndSyncGuests(seq, true);
+    try {
+      const seq = ++requestSeqRef.current;
+      syncedPersonIdsRef.current.clear();
+      clearServiceRequestsCache();
+      setLoading(true);
+      setLoadingServiceRequests(false);
+      setServiceRequestValidation(null);
+      await loadAndSyncGuests(seq, true);
+    } catch (err) {
+      console.error('[useSalidasRecepciones] Error en reload:', err);
+      setLoading(false);
+    }
   }, [loadAndSyncGuests]);
 
   const prevRefreshTokenRef = useRef(options.refreshToken ?? 0);
@@ -225,7 +249,7 @@ export function useSalidasRecepciones(
     });
   }, [guests, departureFilter, searchQuery]);
 
-  // Cargar bajo demanda los primeros huéspedes filtrados si la política de hardware/red permite prefetch
+  // Cargar bajo demanda los primeros huéspedes filtrados con debounce al escribir en búsqueda
   useEffect(() => {
     if (filteredGuests.length === 0 || initialServicePrefetchLimit <= 0) return;
     const visibleSliceIds = filteredGuests
@@ -233,16 +257,30 @@ export function useSalidasRecepciones(
       .map((g) => g.personId)
       .filter(Boolean);
     if (visibleSliceIds.length === 0) return;
+
     let cancelled = false;
-    void Promise.resolve().then(() => {
+    const delayMs = searchQuery.trim().length > 0 ? 280 : 0;
+    const timer = window.setTimeout(() => {
       if (!cancelled) {
-        void ensureServiceRequestsForPersonIds(visibleSliceIds);
+        void ensureServiceRequestsForPersonIds(visibleSliceIds).catch((err) => {
+          console.warn(
+            '[useSalidasRecepciones] Error en prefetch filtrado de servicios:',
+            err
+          );
+        });
       }
-    });
+    }, delayMs);
+
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [ensureServiceRequestsForPersonIds, filteredGuests, initialServicePrefetchLimit]);
+  }, [
+    ensureServiceRequestsForPersonIds,
+    filteredGuests,
+    initialServicePrefetchLimit,
+    searchQuery,
+  ]);
 
   const counts = useMemo(() => {
     let hoy = 0;

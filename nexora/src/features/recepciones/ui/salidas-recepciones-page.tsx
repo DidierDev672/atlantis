@@ -1,4 +1,4 @@
-import { memo, useCallback, useState } from 'react';
+import { Suspense, lazy, memo, useCallback, useMemo, useState } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
 import { Loading, useDelayVisibility } from '../../../shared/loading';
@@ -8,21 +8,32 @@ import type { SalidaHuespedItem } from '../domain/salida-huesped';
 import type { StayItem } from '../domain/stay';
 import { SalidasToolbar } from './molecules/salidas-toolbar';
 import { SalidasListContainer } from './organisms/salidas-list-container';
-import { CuentaHuespedDrawer } from './organisms/cuenta-huesped-drawer';
+
+const LazyCuentaHuespedDrawer = lazy(() =>
+  import('./organisms/cuenta-huesped-drawer').then((m) => ({
+    default: m.CuentaHuespedDrawer,
+  }))
+);
+
+const LazyCobroSalidaDrawer = lazy(
+  () => import('./organisms/cobro-salida-drawer')
+);
 
 export interface SalidasRecepcionesPageProps {
   initialStays?: StayItem[];
   refreshToken?: number;
+  embedded?: boolean;
 }
 
 /**
  * Página de salidas de recepciones.
- * Reutiliza estancias precargadas de RecepcionesPage, cachea colecciones
- * y resuelve service-request bajo demanda para el rango visible.
+ * Reutiliza estancias precargadas de RecepcionesPage, carga CuentaHuespedDrawer
+ * y CobroSalidaDrawer con React.lazy y soporta modo embebido (`embedded`).
  */
 export const SalidasRecepcionesPage = memo(function SalidasRecepcionesPage({
   initialStays,
   refreshToken,
+  embedded = false,
 }: SalidasRecepcionesPageProps) {
   const {
     guests,
@@ -42,9 +53,19 @@ export const SalidasRecepcionesPage = memo(function SalidasRecepcionesPage({
   const [selectedAccountGuestKey, setSelectedAccountGuestKey] = useState<
     string | null
   >(null);
+  const [selectedCollectGuestKey, setSelectedCollectGuestKey] = useState<
+    string | null
+  >(null);
 
-  const selectedAccountGuest =
-    guests.find((g) => g.internalKey === selectedAccountGuestKey) ?? null;
+  const selectedAccountGuest = useMemo(
+    () => guests.find((g) => g.internalKey === selectedAccountGuestKey) ?? null,
+    [guests, selectedAccountGuestKey]
+  );
+
+  const selectedCollectGuest = useMemo(
+    () => guests.find((g) => g.internalKey === selectedCollectGuestKey) ?? null,
+    [guests, selectedCollectGuestKey]
+  );
 
   const isVisibleLoading = useDelayVisibility(loading, {
     delay: 0,
@@ -56,24 +77,88 @@ export const SalidasRecepcionesPage = memo(function SalidasRecepcionesPage({
     minDuration: 400,
   });
 
-  const handleResetFilters = () => {
-    setSearchQuery('');
-    setDepartureFilter('todos');
-  };
+  const handleResetFilters = useCallback(() => {
+    try {
+      setSearchQuery('');
+      setDepartureFilter('todos');
+    } catch (err) {
+      console.error('Error al restablecer filtros de salidas:', err);
+    }
+  }, [setDepartureFilter, setSearchQuery]);
 
-  const handleViewAccount = useCallback(
-    (guest: SalidaHuespedItem) => {
-      setSelectedAccountGuestKey(guest.internalKey);
-      if (guest.personId) {
-        void ensureServiceRequestsForPersonIds([guest.personId]);
+  const handleReload = useCallback(() => {
+    try {
+      void reload();
+    } catch (err) {
+      console.error('Error al recargar salidas:', err);
+    }
+  }, [reload]);
+
+  const handleLoadMorePersonIds = useCallback(
+    (personIds: string[]) => {
+      try {
+        void ensureServiceRequestsForPersonIds(personIds);
+      } catch (err) {
+        console.warn('Error al cargar servicios de más huéspedes:', err);
       }
     },
     [ensureServiceRequestsForPersonIds]
   );
 
+  const handleViewAccount = useCallback(
+    (guest: SalidaHuespedItem) => {
+      try {
+        setSelectedAccountGuestKey(guest.internalKey);
+        if (guest.personId) {
+          void ensureServiceRequestsForPersonIds([guest.personId]);
+        }
+      } catch (err) {
+        console.error('Error al abrir cuenta del huésped:', err);
+      }
+    },
+    [ensureServiceRequestsForPersonIds]
+  );
+
+  const handleCloseDrawer = useCallback(() => {
+    try {
+      setSelectedAccountGuestKey(null);
+    } catch (err) {
+      console.error('Error al cerrar detalle de cuenta:', err);
+    }
+  }, []);
+
+  const handleCollectPayment = useCallback(
+    (guest: SalidaHuespedItem) => {
+      try {
+        setSelectedCollectGuestKey(guest.internalKey);
+        if (guest.personId) {
+          void ensureServiceRequestsForPersonIds([guest.personId]);
+        }
+      } catch (err) {
+        console.error('Error al abrir drawer de cobro:', err);
+      }
+    },
+    [ensureServiceRequestsForPersonIds]
+  );
+
+  const handleCloseCobroDrawer = useCallback(() => {
+    try {
+      setSelectedCollectGuestKey(null);
+    } catch (err) {
+      console.error('Error al cerrar drawer de cobro:', err);
+    }
+  }, []);
+
+  const outerClassName = embedded
+    ? 'text-ink w-full'
+    : 'bg-canvas text-ink min-h-screen px-4 py-6 sm:px-6 lg:px-8';
+  const containerClassName = embedded
+    ? 'w-full space-y-6'
+    : 'mx-auto w-full max-w-7xl space-y-6';
+
   return (
-    <div className="bg-canvas text-ink min-h-screen px-4 py-6 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-7xl space-y-6">
+    <div className={outerClassName}>
+      <div className={containerClassName}>
         {validationResult && !validationResult.isValid && (
           <StatusCodeAlert
             validation={validationResult}
@@ -81,7 +166,7 @@ export const SalidasRecepcionesPage = memo(function SalidasRecepcionesPage({
             actions={
               <button
                 type="button"
-                onClick={() => void reload()}
+                onClick={handleReload}
                 className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-semibold underline hover:opacity-80"
               >
                 <FontAwesomeIcon
@@ -102,7 +187,7 @@ export const SalidasRecepcionesPage = memo(function SalidasRecepcionesPage({
             actions={
               <button
                 type="button"
-                onClick={() => void reload()}
+                onClick={handleReload}
                 className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-semibold underline hover:opacity-80"
               >
                 <FontAwesomeIcon
@@ -121,7 +206,7 @@ export const SalidasRecepcionesPage = memo(function SalidasRecepcionesPage({
           onSearchChange={setSearchQuery}
           departureFilter={departureFilter}
           onDepartureFilterChange={setDepartureFilter}
-          onReload={() => void reload()}
+          onReload={handleReload}
           isLoading={isVisibleLoading || isVisibleServiceLoading}
           filteredCount={filteredGuests.length}
           totalCount={guests.length}
@@ -161,9 +246,8 @@ export const SalidasRecepcionesPage = memo(function SalidasRecepcionesPage({
                 onResetFilters={handleResetFilters}
                 isServiceRequestsLoading={isVisibleServiceLoading}
                 onViewAccount={handleViewAccount}
-                onLoadMorePersonIds={(ids) =>
-                  void ensureServiceRequestsForPersonIds(ids)
-                }
+                onCollectPayment={handleCollectPayment}
+                onLoadMorePersonIds={handleLoadMorePersonIds}
               />
 
               {isVisibleLoading && guests.length > 0 && (
@@ -181,11 +265,28 @@ export const SalidasRecepcionesPage = memo(function SalidasRecepcionesPage({
         </div>
       </div>
 
-      <CuentaHuespedDrawer
-        guest={selectedAccountGuest}
-        isOpen={Boolean(selectedAccountGuest)}
-        onClose={() => setSelectedAccountGuestKey(null)}
-      />
+      {selectedAccountGuest && (
+        <Suspense fallback={null}>
+          <LazyCuentaHuespedDrawer
+            guest={selectedAccountGuest}
+            isOpen
+            onClose={handleCloseDrawer}
+          />
+        </Suspense>
+      )}
+
+      {selectedCollectGuest && (
+        <Suspense fallback={null}>
+          <LazyCobroSalidaDrawer
+            key={selectedCollectGuest.internalKey}
+            guest={selectedCollectGuest}
+            isOpen
+            onClose={handleCloseCobroDrawer}
+          />
+        </Suspense>
+      )}
     </div>
   );
 });
+
+export default SalidasRecepcionesPage;

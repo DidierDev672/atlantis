@@ -151,7 +151,10 @@ export async function submitCobroSalidaPago(
     const { maxRetries } = detectarRecursosDispositivoRecepciones().policy
     const safeRetries = Math.min(1, maxRetries)
     const cleanRoomId =
-      params.roomId?.trim() || params.guest.primaryRoomId?.trim() || ''
+      params.roomId?.trim() ||
+      params.guest.primaryRoomId?.trim() ||
+      params.guest.roomId?.trim() ||
+      ''
 
     const resolveKeysAndPostFolio = async (
       stayRes: { status: number; data: unknown } | null
@@ -170,7 +173,11 @@ export async function submitCobroSalidaPago(
         }
       }
 
-      const stayId = stayDto?.id?.trim() || params.guest.primaryStayId?.trim() || ''
+      const stayId =
+        stayDto?.id?.trim() ||
+        params.guest.primaryStayId?.trim() ||
+        params.guest.stayId?.trim() ||
+        ''
       const reserveId =
         stayDto?.reservation_id?.trim() ||
         params.guest.primaryReserveId?.trim() ||
