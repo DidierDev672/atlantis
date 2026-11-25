@@ -134,11 +134,11 @@ const HabitacionesPageContent = memo(function HabitacionesPageContent() {
 
   return (
     <MotionConfig reducedMotion={allowAnimations ? 'user' : 'always'}>
-      <div className="bg-canvas min-h-screen w-full px-3 py-5 pb-20 sm:px-5 lg:px-6">
+      <div className="bg-canvas min-h-screen w-full px-3 py-5 pr-16 sm:px-5 sm:pr-20 lg:px-6 lg:pr-20">
         <div className="w-full space-y-6">
           <HabitacionesErrorBoundary onReset={handleBoundaryReset}>
             <div className="space-y-3.5">
-              <div className="fixed right-5 bottom-5 z-30">
+              <div className="fixed top-1/2 right-5 z-30 -translate-y-1/2">
                 <Suspense
                   fallback={
                     <div
