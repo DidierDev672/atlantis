@@ -9,6 +9,7 @@ import { executeBalancedRequest } from '../../reservas/infrastructure/api-load-b
 import { detectarRecursosDispositivoRecepciones } from './recepciones-resource-detector'
 import {
   formatServiceOrderStatus,
+  type GuestServiceRequestOrderSummary,
   type GuestServiceRequestProduct,
 } from '../domain/salida-huesped'
 
@@ -47,13 +48,17 @@ export interface ServiceRequestItemDto {
   subtotal?: number
   taxes?: number
   total?: number
+  created_at?: string
   items?: ServiceRequestOrderLineDto[]
 }
 
 export interface GuestServiceRequestsSummary {
   count: number
   totalAmount: number
+  deliveredCount: number
+  deliveredTotalAmount: number
   products: GuestServiceRequestProduct[]
+  orders: GuestServiceRequestOrderSummary[]
 }
 
 export interface FetchGuestServiceRequestsResult
@@ -84,13 +89,26 @@ function extractServiceRequestList(payload: unknown): ServiceRequestItemDto[] {
   return []
 }
 
+function isDeliveredOrderStatus(status?: string | null): boolean {
+  const norm = (status ?? '').trim().toLowerCase()
+  return (
+    norm === 'delivered' ||
+    norm === 'completed' ||
+    norm === 'entregado' ||
+    norm === 'entregada'
+  )
+}
+
 function buildGuestServiceSummary(
   items: ReadonlyArray<ServiceRequestItemDto>,
   personId: string
 ): GuestServiceRequestsSummary {
   const seenKeys = new Set<string>()
   const products: GuestServiceRequestProduct[] = []
+  const orders: GuestServiceRequestOrderSummary[] = []
   let totalAmount = 0
+  let deliveredCount = 0
+  let deliveredTotalAmount = 0
 
   items.forEach((order, orderIndex) => {
     const itemPersonId = order.person_id?.trim()
@@ -137,13 +155,39 @@ function buildGuestServiceSummary(
       typeof order.total === 'number' && Number.isFinite(order.total)
         ? order.total
         : computedOrderLinesTotal
+    const orderTaxes =
+      typeof order.taxes === 'number' && Number.isFinite(order.taxes)
+        ? order.taxes
+        : 0
+    const orderSubtotal =
+      typeof order.subtotal === 'number' && Number.isFinite(order.subtotal)
+        ? order.subtotal
+        : Math.max(0, orderTotal - orderTaxes)
+
     totalAmount += orderTotal
+    orders.push({
+      id: order.id?.trim() || uniqueKey,
+      orderNumber: order.order_number?.trim(),
+      subtotal: orderSubtotal,
+      taxes: orderTaxes,
+      total: orderTotal,
+      status: order.status,
+      createdAt: order.created_at,
+    })
+
+    if (isDeliveredOrderStatus(order.status)) {
+      deliveredCount += 1
+      deliveredTotalAmount += orderTotal
+    }
   })
 
   return {
     count: seenKeys.size,
     totalAmount,
+    deliveredCount,
+    deliveredTotalAmount,
     products,
+    orders,
   }
 }
 
@@ -161,7 +205,10 @@ export async function fetchServiceRequestsByPersonId(
     return {
       count: 0,
       totalAmount: 0,
+      deliveredCount: 0,
+      deliveredTotalAmount: 0,
       products: [],
+      orders: [],
       validation: validateStatusCode(200),
     }
   }
@@ -202,7 +249,10 @@ export async function fetchServiceRequestsByPersonId(
         const emptyOk: FetchGuestServiceRequestsResult = {
           count: 0,
           totalAmount: 0,
+          deliveredCount: 0,
+          deliveredTotalAmount: 0,
           products: [],
+          orders: [],
           validation: validateStatusCode(200),
         }
         serviceRequestsCache.set(targetId, emptyOk)
@@ -212,7 +262,10 @@ export async function fetchServiceRequestsByPersonId(
       return {
         count: 0,
         totalAmount: 0,
+        deliveredCount: 0,
+        deliveredTotalAmount: 0,
         products: [],
+        orders: [],
         validation,
       }
     } catch (error) {
@@ -222,7 +275,10 @@ export async function fetchServiceRequestsByPersonId(
       return {
         count: 0,
         totalAmount: 0,
+        deliveredCount: 0,
+        deliveredTotalAmount: 0,
         products: [],
+        orders: [],
         validation: validateStatusCode(status),
       }
     } finally {
@@ -259,7 +315,10 @@ export async function fetchServiceRequestCountsByPersonIds(
         summariesByPersonId.set(pid, {
           count: cached.count,
           totalAmount: cached.totalAmount,
+          deliveredCount: cached.deliveredCount,
+          deliveredTotalAmount: cached.deliveredTotalAmount,
           products: cached.products,
+          orders: cached.orders,
         })
         continue
       }
@@ -286,7 +345,10 @@ export async function fetchServiceRequestCountsByPersonIds(
       summariesByPersonId.set(pid, {
         count: res.count,
         totalAmount: res.totalAmount,
+        deliveredCount: res.deliveredCount,
+        deliveredTotalAmount: res.deliveredTotalAmount,
         products: res.products,
+        orders: res.orders,
       })
       if (!res.validation.isValid && !firstErrorValidation) {
         firstErrorValidation = res.validation

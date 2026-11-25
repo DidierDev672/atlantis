@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { memo, useCallback, useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import { faPenToSquare } from '@fortawesome/free-solid-svg-icons'
+import { useDeviceResourceProfile } from '../../../../shared/lib/use-device-resource-profile'
 
 export interface IconoEscribirAnimadoProps {
   className?: string
@@ -9,28 +10,52 @@ export interface IconoEscribirAnimadoProps {
 
 /**
  * Átomo: Ícono animado de edición para cabeceras.
- * Al hacer hover simula el trazo de escritura (oscilación del lápiz y línea
- * de tinta trazándose de izquierda a derecha), respetando `prefers-reduced-motion`.
+ * Adaptado a `useDeviceResourceProfile` y `prefers-reduced-motion`, sin bucles
+ * `repeat: Infinity` en hover.
  */
-export function IconoEscribirAnimado({
+export const IconoEscribirAnimado = memo(function IconoEscribirAnimado({
   className = '',
 }: IconoEscribirAnimadoProps) {
   const [isWriting, setIsWriting] = useState(false)
+  const {
+    policy: { enableAnimations, tier },
+  } = useDeviceResourceProfile()
   const reducedMotion = useReducedMotion() ?? false
+  const canAnimate = enableAnimations && !reducedMotion && tier !== 'ultra-light'
+  const hoverRepeat = tier === 'full' ? 1 : 0
+
+  const handleMouseEnter = useCallback(() => {
+    if (canAnimate) setIsWriting(true)
+  }, [canAnimate])
+
+  const handleMouseLeave = useCallback(() => {
+    setIsWriting(false)
+  }, [])
+
+  if (!canAnimate) {
+    return (
+      <div
+        aria-hidden="true"
+        className={`bg-primary/10 text-primary relative grid size-10 shrink-0 place-items-center overflow-hidden rounded-2xl ${className}`}
+      >
+        <FontAwesomeIcon icon={faPenToSquare} className="size-4" aria-hidden="true" />
+      </div>
+    )
+  }
 
   return (
     <motion.div
-      onMouseEnter={() => setIsWriting(true)}
-      onMouseLeave={() => setIsWriting(false)}
-      whileHover={reducedMotion ? undefined : { scale: 1.06 }}
-      whileTap={reducedMotion ? undefined : { scale: 0.94 }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      whileHover={{ scale: 1.06 }}
+      whileTap={{ scale: 0.94 }}
       aria-hidden="true"
       className={`bg-primary/10 text-primary hover:bg-primary/20 relative grid size-10 shrink-0 cursor-pointer place-items-center overflow-hidden rounded-2xl transition-colors duration-200 ${className}`}
     >
       <motion.span
         className="relative z-10 inline-flex items-center justify-center"
         animate={
-          isWriting && !reducedMotion
+          isWriting
             ? {
                 x: [-1.5, 1.5, -0.5, 2, 0],
                 y: [0.5, -1, 0.5, -0.5, 0],
@@ -39,11 +64,11 @@ export function IconoEscribirAnimado({
             : { x: 0, y: 0, rotate: 0 }
         }
         transition={
-          isWriting && !reducedMotion
+          isWriting
             ? {
-                duration: 0.75,
-                repeat: Infinity,
-                repeatDelay: 0.2,
+                duration: 0.7,
+                repeat: hoverRepeat,
+                repeatDelay: 0.15,
                 ease: 'easeInOut',
               }
             : { duration: 0.2, ease: 'easeOut' }
@@ -61,7 +86,7 @@ export function IconoEscribirAnimado({
         className="bg-primary/80 pointer-events-none absolute right-2.5 bottom-1.5 left-2.5 h-0.5 origin-left rounded-full"
         initial={false}
         animate={
-          isWriting && !reducedMotion
+          isWriting
             ? {
                 scaleX: [0, 0.6, 1, 1],
                 opacity: [0, 1, 1, 0.25],
@@ -72,11 +97,11 @@ export function IconoEscribirAnimado({
               }
         }
         transition={
-          isWriting && !reducedMotion
+          isWriting
             ? {
-                duration: 0.75,
-                repeat: Infinity,
-                repeatDelay: 0.2,
+                duration: 0.7,
+                repeat: hoverRepeat,
+                repeatDelay: 0.15,
                 ease: 'easeInOut',
               }
             : { duration: 0.18, ease: 'easeOut' }
@@ -84,4 +109,4 @@ export function IconoEscribirAnimado({
       />
     </motion.div>
   )
-}
+})

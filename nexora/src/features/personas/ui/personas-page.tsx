@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
@@ -28,6 +28,7 @@ import {
 import { performGuestCheckout } from '../../recepciones/infrastructure/salidas-api'
 import { CuentaHuespedDrawer } from '../../recepciones/ui/organisms/cuenta-huesped-drawer'
 import { RegistroPersonaPanel } from './organisms/registro-persona-panel'
+import { PersonaRegistroMobileCard } from './molecules/persona-registro-mobile-card'
 import {
   FacturacionElectronicaEmpresaModal,
   loadAllDatosEmpresaFacturacion,
@@ -64,6 +65,31 @@ export function PersonasPage() {
   >(() => loadAllDatosEmpresaFacturacion())
   const [checkedOutKeys, setCheckedOutKeys] = useState<Set<string>>(() => new Set())
   const [feedbackBanner, setFeedbackBanner] = useState<string | null>(null)
+  const [isDesktopTable, setIsDesktopTable] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return true
+    }
+    return window.matchMedia('(min-width: 1280px)').matches
+  })
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return
+    }
+    const mq = window.matchMedia('(min-width: 1280px)')
+    const syncViewport = () => setIsDesktopTable(mq.matches)
+    syncViewport()
+    mq.addEventListener('change', syncViewport)
+    return () => mq.removeEventListener('change', syncViewport)
+  }, [])
+
+  const handleOpenInvoiceModal = useCallback((guest: SalidaHuespedItem) => {
+    setInvoiceModalGuest(guest)
+  }, [])
+
+  const handleSelectAccountGuest = useCallback((internalKey: string) => {
+    setSelectedAccountGuestKey(internalKey)
+  }, [])
 
   const selectedAccountGuest =
     guests.find((g) => g.internalKey === selectedAccountGuestKey) ?? null
@@ -521,6 +547,32 @@ export function PersonasPage() {
                     Ver todos los registros
                   </button>
                 </div>
+              ) : !isDesktopTable ? (
+                <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+                  {visibleRows.map((guest) => {
+                    const isCheckedOut = checkedOutKeys.has(guest.internalKey)
+                    const lodgingDebt = isCheckedOut
+                      ? 0
+                      : guest.receptionsTotal + guest.reservesTotal
+                    const storeDebt = isCheckedOut ? 0 : guest.serviceRequestsTotal
+                    const grandTotal = lodgingDebt + storeDebt
+                    const companyData = companiesByPerson[guest.internalKey]
+
+                    return (
+                      <PersonaRegistroMobileCard
+                        key={guest.internalKey}
+                        guest={guest}
+                        isCheckedOut={isCheckedOut}
+                        lodgingDebt={lodgingDebt}
+                        storeDebt={storeDebt}
+                        grandTotal={grandTotal}
+                        companyData={companyData}
+                        onOpenInvoiceModal={handleOpenInvoiceModal}
+                        onSelectAccount={handleSelectAccountGuest}
+                      />
+                    )
+                  })}
+                </div>
               ) : (
                 <div className="border-line bg-panel overflow-hidden rounded-2xl border shadow-xs">
                   <div className="overflow-x-auto">
@@ -560,12 +612,14 @@ export function PersonasPage() {
                                   </span>
                                   <div className="min-w-0">
                                     <p className="text-ink font-bold">{guest.name}</p>
-                                    <p className="text-ink-muted text-[11px]">
-                                      {guest.documentTypeLabel}:{' '}
-                                      <span className="text-ink font-medium">
+                                    {guest.documentNumber && (
+                                      <p
+                                        title={guest.documentTypeLabel || undefined}
+                                        className="text-ink-muted text-[11px] font-medium"
+                                      >
                                         {guest.documentNumber}
-                                      </span>
-                                    </p>
+                                      </p>
+                                    )}
                                     {guest.phoneNumber && (
                                       <p className="text-ink-muted mt-0.5 inline-flex items-center gap-1 text-[11px]">
                                         <FontAwesomeIcon
@@ -601,9 +655,14 @@ export function PersonasPage() {
                               <td className="px-3.5 py-3.5 align-middle">
                                 {guest.roomNumber && !isCheckedOut ? (
                                   <div className="space-y-1">
-                                    <span className="bg-primary/10 text-primary border-primary/25 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold">
+                                    <span
+                                      title={`Habitación ${guest.roomNumber.replace(/^Hab\.?\s*/i, '')}`}
+                                      className="bg-primary/10 text-primary border-primary/25 inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-bold tabular-nums"
+                                    >
                                       <FontAwesomeIcon icon={faBed} className="size-3" />
-                                      <span>{guest.roomNumber}</span>
+                                      <span>
+                                        {guest.roomNumber.replace(/^Hab\.?\s*/i, '')}
+                                      </span>
                                     </span>
                                     {guest.roomFloor && (
                                       <span className="text-ink-muted block text-[11px]">
@@ -708,19 +767,24 @@ export function PersonasPage() {
                                 </span>
                               </td>
 
-                              {/* 8. Acciones: Check-out / Cuenta + Facturación Electrónica (Empresa) */}
+                              {/* 8. Acciones: solo iconos accesibles para operación ágil en recepción */}
                               <td className="px-4 py-3.5 text-right align-middle">
-                                <div className="flex items-center justify-end gap-1.5">
+                                <div className="flex items-center justify-end gap-2">
                                   {/* Botón: Datos de Empresa para Facturación Electrónica */}
                                   <button
                                     type="button"
                                     onClick={() => setInvoiceModalGuest(guest)}
+                                    aria-label={
+                                      companyData
+                                        ? `Factura electrónica configurada (${companyData.razonSocial})`
+                                        : 'Factura electrónica'
+                                    }
                                     title={
                                       companyData
-                                        ? `Editar empresa para factura electrónica (${companyData.razonSocial})`
-                                        : 'Registrar datos de empresa para Facturación Electrónica'
+                                        ? `Factura electrónica: ${companyData.razonSocial} (editar)`
+                                        : 'Factura electrónica'
                                     }
-                                    className={`inline-flex cursor-pointer items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                                    className={`relative inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-xl border transition focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none active:scale-95 ${
                                       companyData
                                         ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300'
                                         : 'border-line bg-canvas text-ink hover:border-primary/40 hover:text-primary'
@@ -728,11 +792,15 @@ export function PersonasPage() {
                                   >
                                     <FontAwesomeIcon
                                       icon={faFileInvoiceDollar}
-                                      className="size-3.5"
+                                      className="size-4"
+                                      aria-hidden="true"
                                     />
-                                    <span>
-                                      {companyData ? 'Empresa FE' : 'Factura Electrónica'}
-                                    </span>
+                                    {companyData && (
+                                      <span
+                                        aria-hidden="true"
+                                        className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-emerald-500 ring-2 ring-panel"
+                                      />
+                                    )}
                                   </button>
 
                                   {/* Botón: Ver Cuenta y hacer Check-out */}
@@ -742,13 +810,27 @@ export function PersonasPage() {
                                       setSelectedAccountGuestKey(guest.internalKey)
                                     }
                                     disabled={isCheckedOut}
-                                    title="Revisar estado de cuenta, cobros y realizar Check-out"
-                                    className="bg-primary inline-flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-[11px] font-semibold text-white shadow-2xs transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45"
+                                    aria-label={
+                                      isCheckedOut
+                                        ? 'Check-out liquidado'
+                                        : 'Check-out / Cuenta'
+                                    }
+                                    title={
+                                      isCheckedOut
+                                        ? 'Cuenta liquidada (Check-out entregado)'
+                                        : 'Check-out / Cuenta — Revisar estado de cuenta y cobrar'
+                                    }
+                                    className={`inline-flex size-9 shrink-0 items-center justify-center rounded-xl shadow-2xs transition focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none ${
+                                      isCheckedOut
+                                        ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 opacity-70 cursor-not-allowed dark:text-emerald-300'
+                                        : 'bg-primary text-white cursor-pointer hover:opacity-90 active:scale-95'
+                                    }`}
                                   >
-                                    <FontAwesomeIcon icon={faReceipt} className="size-3" />
-                                    <span>
-                                      {isCheckedOut ? 'Liquidado' : 'Check-out / Cuenta'}
-                                    </span>
+                                    <FontAwesomeIcon
+                                      icon={isCheckedOut ? faCircleCheck : faReceipt}
+                                      className="size-4"
+                                      aria-hidden="true"
+                                    />
                                   </button>
                                 </div>
                               </td>

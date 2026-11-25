@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import {
   StatusCodeAlert,
   type StatusCodeValidationResult,
@@ -24,7 +25,7 @@ export interface ProductoCategoriaFieldProps {
  * Molécula: Campo selector de categoría del menú con indicador `/shared/loading`
  * y validación empática de status codes para `GET /menu-category`.
  */
-export function ProductoCategoriaField({
+export const ProductoCategoriaField = memo(function ProductoCategoriaField({
   loadingCategorias,
   categoriaValidation,
   onDismissValidation,
@@ -86,4 +87,4 @@ export function ProductoCategoriaField({
       />
     </div>
   )
-}
+})

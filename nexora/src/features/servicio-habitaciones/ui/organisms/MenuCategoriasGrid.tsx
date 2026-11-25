@@ -258,7 +258,7 @@ export function MenuCategoriasGrid({
         onViewModeChange={handleViewModeChange}
         loading={loading}
         onRecargar={() => void handleRecargar()}
-        onNuevoRegistro={onNuevoRegistro ? handleNuevoRegistro : undefined}
+        onNuevoRegistro={handleNuevoRegistro}
       />
 
       <StatusCodeAlert
@@ -290,7 +290,7 @@ export function MenuCategoriasGrid({
         onVerDetalle={handleOpenDetalle}
         onVerProductos={handleOpenProductos}
         onAgregarProducto={onAgregarProducto ? handleAgregarProducto : undefined}
-        onNuevoRegistro={onNuevoRegistro ? handleNuevoRegistro : undefined}
+        onNuevoRegistro={handleNuevoRegistro}
         onRecargar={() => void handleRecargar()}
         onResetFiltros={handleResetFilters}
       />

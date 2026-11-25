@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { memo, useEffect } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
@@ -10,6 +10,7 @@ import {
   faIdCard,
 } from '@fortawesome/free-solid-svg-icons'
 import { fadeUp } from '../../../../design-tokens/motion'
+import { useDeviceResourceProfile } from '../../../../shared/lib/use-device-resource-profile'
 import type { StatusCodeValidationResult } from '../../../../shared/lib/status-code-validator'
 import { Loader } from '../../../tema/ui/atoms/loader'
 
@@ -27,7 +28,7 @@ export interface ModalFallaHuespedProps {
  * mediante GET /person/{id}, siguiendo las convenciones de src/agent.md y validaciones
  * de src/shared/lib/status-code-validator.ts.
  */
-export function ModalFallaHuesped({
+export const ModalFallaHuesped = memo(function ModalFallaHuesped({
   isOpen,
   onClose,
   validation,
@@ -35,6 +36,9 @@ export function ModalFallaHuesped({
   onReintentar,
   isRetrying = false,
 }: ModalFallaHuespedProps) {
+  const {
+    policy: { enableBackdropBlur, enableAnimations },
+  } = useDeviceResourceProfile()
   // Manejo de tecla Escape para accesibilidad
   useEffect(() => {
     if (!isOpen) return
@@ -90,13 +94,15 @@ export function ModalFallaHuesped({
         aria-modal="true"
         aria-labelledby="modal-falla-titulo"
       >
-        {/* Backdrop desenfocado */}
+        {/* Backdrop adaptado al perfil de GPU */}
         <motion.div
-          initial={{ opacity: 0 }}
+          initial={enableAnimations ? { opacity: 0 } : false}
           animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+          exit={enableAnimations ? { opacity: 0 } : undefined}
           onClick={isRetrying ? undefined : onClose}
-          className="fixed inset-0 bg-ink/60 backdrop-blur-xs transition-opacity cursor-pointer"
+          className={`fixed inset-0 bg-ink/60 transition-opacity cursor-pointer ${
+            enableBackdropBlur ? 'backdrop-blur-xs' : ''
+          }`}
           aria-hidden="true"
         />
 
@@ -225,4 +231,4 @@ export function ModalFallaHuesped({
       </div>
     </AnimatePresence>
   )
-}
+})

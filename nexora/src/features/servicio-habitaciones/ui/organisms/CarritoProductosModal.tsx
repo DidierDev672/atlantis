@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { memo, useEffect } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
@@ -7,6 +7,7 @@ import {
   faTrash,
   faXmark,
 } from '@fortawesome/free-solid-svg-icons'
+import { useDeviceResourceProfile } from '../../../../shared/lib/use-device-resource-profile'
 import { useCarritoStore } from '../../application/carrito-store'
 import { formatearMonedaCOP } from '../../domain/item-menu'
 import { CarritoModalItemRow } from '../molecules/CarritoModalItemRow'
@@ -21,11 +22,14 @@ export interface CarritoProductosModalProps {
  * Organismo: Modal que muestra la lista de productos agregados al carrito
  * desde el catálogo Masonry, permitiendo ajustar cantidades, vaciar o continuar al pedido.
  */
-export function CarritoProductosModal({
+export const CarritoProductosModal = memo(function CarritoProductosModal({
   isOpen,
   onClose,
   onIrACarrito,
 }: CarritoProductosModalProps) {
+  const {
+    policy: { enableBackdropBlur, enableAnimations },
+  } = useDeviceResourceProfile()
   const items = useCarritoStore((s) => s.items)
   const incrementarCantidad = useCarritoStore((s) => s.incrementarCantidad)
   const decrementarCantidad = useCarritoStore((s) => s.decrementarCantidad)
@@ -62,17 +66,23 @@ export function CarritoProductosModal({
           className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
         >
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={enableAnimations ? { opacity: 0 } : false}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            exit={enableAnimations ? { opacity: 0 } : undefined}
             onClick={onClose}
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs"
+            className={`fixed inset-0 bg-black/60 ${
+              enableBackdropBlur ? 'backdrop-blur-xs' : ''
+            }`}
           />
 
           <motion.div
-            initial={{ opacity: 0, scale: 0.96, y: 12 }}
+            initial={
+              enableAnimations ? { opacity: 0, scale: 0.96, y: 12 } : false
+            }
             animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 12 }}
+            exit={
+              enableAnimations ? { opacity: 0, scale: 0.96, y: 12 } : undefined
+            }
             transition={{ duration: 0.2, ease: 'easeOut' }}
             className="border-line bg-panel relative z-10 flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border shadow-2xl"
           >
@@ -194,5 +204,5 @@ export function CarritoProductosModal({
       )}
     </AnimatePresence>
   )
-}
+})
 

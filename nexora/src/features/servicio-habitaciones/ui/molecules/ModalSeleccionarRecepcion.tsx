@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { memo, useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
@@ -7,6 +7,7 @@ import {
   faXmark,
 } from '@fortawesome/free-solid-svg-icons'
 import { StatusCodeAlert } from '../../../../shared/lib/status-code-validator'
+import { useDeviceResourceProfile } from '../../../../shared/lib/use-device-resource-profile'
 import { Loading } from '../../../../shared/loading'
 import { Input } from '../../../../shared/ui/Input'
 import { HotelEdificioAnimado } from '../atoms/HotelEdificioAnimado'
@@ -34,12 +35,15 @@ interface ModalSeleccionarRecepcionProps {
  * balanceo de cargas (`api-load-balancer`), validación HTTP (`status-code-validator`)
  * e indicador `/shared/loading`.
  */
-export function ModalSeleccionarRecepcion({
+export const ModalSeleccionarRecepcion = memo(function ModalSeleccionarRecepcion({
   isOpen,
   onClose,
   onSelect,
   selectedId,
 }: ModalSeleccionarRecepcionProps) {
+  const {
+    policy: { enableBackdropBlur, enableAnimations, tier },
+  } = useDeviceResourceProfile()
   const {
     filtradas,
     loading,
@@ -69,18 +73,25 @@ export function ModalSeleccionarRecepcion({
     }
   }
 
-  // Efecto de profundidad en pantalla de fondo (#root) estilo iOS Sheet
+  // Efecto de profundidad en pantalla de fondo (#root) solo cuando el perfil de GPU permite animaciones
   useEffect(() => {
     if (!isOpen) return
-    const rootEl = document.getElementById('root')
-    if (!rootEl) return
+    const prevBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const allowRootScale = enableAnimations && tier !== 'ultra-light'
+    const rootEl = allowRootScale ? document.getElementById('root') : null
+    if (!rootEl) {
+      return () => {
+        document.body.style.overflow = prevBodyOverflow
+      }
+    }
 
     const prevTransition = rootEl.style.transition
     const prevTransform = rootEl.style.transform
     const prevBorderRadius = rootEl.style.borderRadius
     const prevTransformOrigin = rootEl.style.transformOrigin
     const prevOverflow = rootEl.style.overflow
-    const prevBodyOverflow = document.body.style.overflow
     const prevBodyBg = document.body.style.backgroundColor
 
     rootEl.style.transition =
@@ -89,7 +100,6 @@ export function ModalSeleccionarRecepcion({
     rootEl.style.transform = 'scale(0.93)'
     rootEl.style.borderRadius = '24px'
     rootEl.style.overflow = 'hidden'
-    document.body.style.overflow = 'hidden'
     document.body.style.backgroundColor = '#000000'
 
     return () => {
@@ -101,7 +111,7 @@ export function ModalSeleccionarRecepcion({
       document.body.style.overflow = prevBodyOverflow
       document.body.style.backgroundColor = prevBodyBg
     }
-  }, [isOpen])
+  }, [enableAnimations, isOpen, tier])
 
   useEffect(() => {
     if (!isOpen) return
@@ -123,12 +133,14 @@ export function ModalSeleccionarRecepcion({
         >
           <motion.div
             key="backdrop-recepciones"
-            initial={{ opacity: 0 }}
+            initial={enableAnimations ? { opacity: 0 } : false}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            exit={enableAnimations ? { opacity: 0 } : undefined}
             transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+            className={`fixed inset-0 bg-black/60 transition-opacity ${
+              enableBackdropBlur ? 'backdrop-blur-xs' : ''
+            }`}
             aria-hidden="true"
           />
 
@@ -275,7 +287,7 @@ export function ModalSeleccionarRecepcion({
               <div className="text-ink-muted text-xs">
                 {activeSelectedRecepcion ? (
                   <span className="flex items-center gap-1.5">
-                    <span className="size-2 shrink-0 animate-pulse rounded-full bg-emerald-500" />
+                    <span className="size-2 shrink-0 rounded-full bg-emerald-500" />
                     <span>Estancia seleccionada:</span>
                     <strong className="text-ink font-semibold">
                       {activeSelectedRecepcion.habitacionNombre} ·{' '}
@@ -312,4 +324,4 @@ export function ModalSeleccionarRecepcion({
       )}
     </AnimatePresence>
   )
-}
+})

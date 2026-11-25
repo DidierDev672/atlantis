@@ -1,4 +1,6 @@
 import {
+  memo,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -7,6 +9,7 @@ import {
 } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
 import { fadeIn } from '../../../../design-tokens/motion'
+import { useDeviceResourceProfile } from '../../../../shared/lib/use-device-resource-profile'
 import { revocarBlobUrlSegura } from '../../domain/item-menu'
 import { generarMiniaturaBlobUrl } from '../../infrastructure/image-thumbnail.service'
 import { ImagenDropzone } from '../atoms/ImagenDropzone'
@@ -32,12 +35,15 @@ function formatBytes(bytes: number): string {
  * Molécula: Sección de selección de imagen con generación de miniatura optimizada
  * (<=160px) para evitar decodificar bitmaps completos en RAM/VRAM.
  */
-export function SeccionCargaImagen({
+export const SeccionCargaImagen = memo(function SeccionCargaImagen({
   imageFile,
   imagePreview,
   onImageChange,
   error,
 }: SeccionCargaImagenProps) {
+  const {
+    policy: { enableAnimations },
+  } = useDeviceResourceProfile()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const lastBlobUrlRef = useRef<string | null>(null)
   const selectionRequestIdRef = useRef(0)
@@ -57,87 +63,96 @@ export function SeccionCargaImagen({
     }
   }, [])
 
-  const handleFiles = async (files: FileList | null) => {
-    setLocalError(null)
-    if (!files || files.length === 0) return
+  const handleFiles = useCallback(
+    async (files: FileList | null) => {
+      setLocalError(null)
+      if (!files || files.length === 0) return
 
-    const file = files[0]
-    if (!file.type.startsWith('image/')) {
-      setLocalError(
-        'El archivo seleccionado no es una imagen válida. Por favor elige una foto (JPG, PNG, WebP o AVIF).'
-      )
-      return
-    }
-
-    if (file.size > MAX_IMAGE_BYTES) {
-      setLocalError(
-        'La imagen seleccionada supera los 15 MB. Por favor elige una imagen de menor peso.'
-      )
-      return
-    }
-
-    const requestId = ++selectionRequestIdRef.current
-    setIsProcessing(true)
-
-    try {
-      const thumbnailBlobUrl = await generarMiniaturaBlobUrl(file, {
-        maxDimension: 160,
-        quality: 0.82,
-      })
-
-      // Si el usuario canceló, reemplazó la selección o desmontó el componente, liberar de inmediato
-      if (!isMountedRef.current || requestId !== selectionRequestIdRef.current) {
-        revocarBlobUrlSegura(thumbnailBlobUrl)
+      const file = files[0]
+      if (!file.type.startsWith('image/')) {
+        setLocalError(
+          'El archivo seleccionado no es una imagen válida. Por favor elige una foto (JPG, PNG, WebP o AVIF).'
+        )
         return
       }
 
-      if (lastBlobUrlRef.current && lastBlobUrlRef.current !== thumbnailBlobUrl) {
-        revocarBlobUrlSegura(lastBlobUrlRef.current)
-      }
-      if (imagePreview && imagePreview !== lastBlobUrlRef.current) {
-        revocarBlobUrlSegura(imagePreview)
-      }
-
-      lastBlobUrlRef.current = thumbnailBlobUrl
-      onImageChange(file, thumbnailBlobUrl)
-    } catch (err) {
-      if (!isMountedRef.current || requestId !== selectionRequestIdRef.current) {
+      if (file.size > MAX_IMAGE_BYTES) {
+        setLocalError(
+          'La imagen seleccionada supera los 15 MB. Por favor elige una imagen de menor peso.'
+        )
         return
       }
-      const fallbackMessage =
-        'No se pudo generar la vista previa optimizada en memoria. Por favor intenta con otra imagen.'
-      setLocalError(err instanceof Error && err.message ? err.message : fallbackMessage)
-    } finally {
-      if (isMountedRef.current && requestId === selectionRequestIdRef.current) {
-        setIsProcessing(false)
+
+      const requestId = ++selectionRequestIdRef.current
+      setIsProcessing(true)
+
+      try {
+        const thumbnailBlobUrl = await generarMiniaturaBlobUrl(file, {
+          maxDimension: 160,
+          quality: 0.82,
+        })
+
+        // Si el usuario canceló, reemplazó la selección o desmontó el componente, liberar de inmediato
+        if (!isMountedRef.current || requestId !== selectionRequestIdRef.current) {
+          revocarBlobUrlSegura(thumbnailBlobUrl)
+          return
+        }
+
+        if (lastBlobUrlRef.current && lastBlobUrlRef.current !== thumbnailBlobUrl) {
+          revocarBlobUrlSegura(lastBlobUrlRef.current)
+        }
+        if (imagePreview && imagePreview !== lastBlobUrlRef.current) {
+          revocarBlobUrlSegura(imagePreview)
+        }
+
+        lastBlobUrlRef.current = thumbnailBlobUrl
+        onImageChange(file, thumbnailBlobUrl)
+      } catch (err) {
+        if (!isMountedRef.current || requestId !== selectionRequestIdRef.current) {
+          return
+        }
+        const fallbackMessage =
+          'No se pudo generar la vista previa optimizada en memoria. Por favor intenta con otra imagen.'
+        setLocalError(err instanceof Error && err.message ? err.message : fallbackMessage)
+      } finally {
+        if (isMountedRef.current && requestId === selectionRequestIdRef.current) {
+          setIsProcessing(false)
+        }
       }
-    }
-  }
+    },
+    [imagePreview, onImageChange]
+  )
 
-  const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
-    void handleFiles(e.target.files)
-  }
+  const handleInputChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => {
+      void handleFiles(e.target.files)
+    },
+    [handleFiles]
+  )
 
-  const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
+  const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
     setIsDragging(true)
-  }
+  }, [])
 
-  const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
+  const handleDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.stopPropagation()
     setIsDragging(false)
-  }
+  }, [])
 
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIsDragging(false)
-    void handleFiles(e.dataTransfer.files)
-  }
+  const handleDrop = useCallback(
+    (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setIsDragging(false)
+      void handleFiles(e.dataTransfer.files)
+    },
+    [handleFiles]
+  )
 
-  const handleQuitar = () => {
+  const handleQuitar = useCallback(() => {
     selectionRequestIdRef.current += 1
     setIsProcessing(false)
     revocarBlobUrlSegura(imagePreview)
@@ -148,13 +163,14 @@ export function SeccionCargaImagen({
     }
     onImageChange(null, null)
     setLocalError(null)
-  }
+  }, [imagePreview, onImageChange])
 
-  const abrirSelector = () => {
+  const abrirSelector = useCallback(() => {
     fileInputRef.current?.click()
-  }
+  }, [])
 
   const activeError = error || localError
+  const formattedSize = imageFile ? formatBytes(imageFile.size) : ''
 
   return (
     <div className="space-y-2">
@@ -176,7 +192,7 @@ export function SeccionCargaImagen({
         aria-label="Seleccionar imagen o tomar foto desde el dispositivo"
       />
 
-      <AnimatePresence mode="wait">
+      <AnimatePresence mode="wait" initial={enableAnimations}>
         {!imagePreview ? (
           <ImagenDropzone
             key="dropzone"
@@ -193,20 +209,20 @@ export function SeccionCargaImagen({
             key="preview"
             imagePreview={imagePreview}
             imageFile={imageFile}
-            formattedSize={imageFile ? formatBytes(imageFile.size) : ''}
+            formattedSize={formattedSize}
             onCambiar={abrirSelector}
             onQuitar={handleQuitar}
           />
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
+      <AnimatePresence initial={enableAnimations}>
         {activeError && (
           <motion.p
-            variants={fadeIn}
-            initial="hidden"
+            variants={enableAnimations ? fadeIn : undefined}
+            initial={enableAnimations ? 'hidden' : false}
             animate="visible"
-            exit="exit"
+            exit={enableAnimations ? 'exit' : undefined}
             role="alert"
             className="text-xs font-medium text-danger"
           >
@@ -216,4 +232,4 @@ export function SeccionCargaImagen({
       </AnimatePresence>
     </div>
   )
-}
+})

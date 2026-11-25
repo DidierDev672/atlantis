@@ -229,15 +229,12 @@ export function useFormularioAgregarProducto({
         emailCreador: readAuthTokenEmail(),
       })
 
-      const [response] = await Promise.all([
-        executeBalancedRequest(() =>
-          api.post('/item-menu', payload, {
-            skipAuth: true,
-            validateStatus: () => true,
-          })
-        ),
-        new Promise((resolve) => setTimeout(resolve, 1800)),
-      ])
+      const response = await executeBalancedRequest(() =>
+        api.post('/item-menu', payload, {
+          skipAuth: true,
+          validateStatus: () => true,
+        })
+      )
 
       const postFeedback = buildPostFeedback(response.status, response.data)
       if (postFeedback.isValid && avisoImagenFallback) {

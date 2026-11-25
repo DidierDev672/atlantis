@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faArrowsRotate,
@@ -22,7 +23,7 @@ export interface SalidasToolbarProps {
   totalCount: number
 }
 
-export function SalidasToolbar({
+export const SalidasToolbar = memo(function SalidasToolbar({
   searchQuery,
   onSearchChange,
   departureFilter,
@@ -106,4 +107,4 @@ export function SalidasToolbar({
       </div>
     </section>
   )
-}
+})

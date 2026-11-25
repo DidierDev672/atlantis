@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faClock } from '@fortawesome/free-solid-svg-icons';
 import { Input } from '../../../../shared/ui/Input';
@@ -23,95 +24,97 @@ export interface ProductoHorarioYDietaFieldsProps {
  * Molécula: Sección de ventana horaria, preferencias dietéticas, disponibilidad
  * y descripción comercial del producto.
  */
-export function ProductoHorarioYDietaFields({
-  startTime,
-  onStartTimeChange,
-  endTime,
-  onEndTimeChange,
-  isVegetarian,
-  onIsVegetarianChange,
-  isVegan,
-  onIsVeganChange,
-  available,
-  onAvailableChange,
-  description,
-  onDescriptionChange,
-}: ProductoHorarioYDietaFieldsProps) {
-  return (
-    <>
-      {/* Horarios de Servicio ("Solo hora") */}
-      <div className="border-line bg-canvas/40 rounded-2xl border p-4">
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <span className="text-primary text-xs font-bold tracking-wider uppercase">
-              Ventana de Horario
-            </span>
-            <p className="text-ink-muted text-xs">
-              Horas del día en que cocina y bar despachan este producto.
-            </p>
+export const ProductoHorarioYDietaFields = memo(
+  function ProductoHorarioYDietaFields({
+    startTime,
+    onStartTimeChange,
+    endTime,
+    onEndTimeChange,
+    isVegetarian,
+    onIsVegetarianChange,
+    isVegan,
+    onIsVeganChange,
+    available,
+    onAvailableChange,
+    description,
+    onDescriptionChange,
+  }: ProductoHorarioYDietaFieldsProps) {
+    return (
+      <>
+        {/* Horarios de Servicio ("Solo hora") */}
+        <div className="border-line bg-canvas/40 rounded-2xl border p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <span className="text-primary text-xs font-bold tracking-wider uppercase">
+                Ventana de Horario
+              </span>
+              <p className="text-ink-muted text-xs">
+                Horas del día en que cocina y bar despachan este producto.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Input
+              label="Fecha de inicio (Solo hora)"
+              type="time"
+              value={startTime}
+              onChange={(e) => onStartTimeChange(e.target.value)}
+              icon={<FontAwesomeIcon icon={faClock} className="size-4" />}
+            />
+
+            <Input
+              label="Fecha final (Solo hora)"
+              type="time"
+              value={endTime}
+              onChange={(e) => onEndTimeChange(e.target.value)}
+              icon={<FontAwesomeIcon icon={faClock} className="size-4" />}
+            />
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Input
-            label="Fecha de inicio (Solo hora)"
-            type="time"
-            value={startTime}
-            onChange={(e) => onStartTimeChange(e.target.value)}
-            icon={<FontAwesomeIcon icon={faClock} className="size-4" />}
-          />
+        {/* Switches */}
+        <div className="space-y-3">
+          <span className="text-ink block text-sm font-semibold">
+            Preferencias dietéticas y estado en catálogo
+          </span>
 
-          <Input
-            label="Fecha final (Solo hora)"
-            type="time"
-            value={endTime}
-            onChange={(e) => onEndTimeChange(e.target.value)}
-            icon={<FontAwesomeIcon icon={faClock} className="size-4" />}
-          />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Switch
+              label="¿Es vegetariano?"
+              description=""
+              checked={isVegetarian}
+              onChange={onIsVegetarianChange}
+            />
+
+            <Switch
+              label="¿Es vegano?"
+              description=""
+              checked={isVegan}
+              onChange={onIsVeganChange}
+            />
+
+            <Switch
+              label="Disponible"
+              description=""
+              checked={available}
+              onChange={onAvailableChange}
+            />
+          </div>
         </div>
-      </div>
 
-      {/* Switches */}
-      <div className="space-y-3">
-        <span className="text-ink block text-sm font-semibold">
-          Preferencias dietéticas y estado en catálogo
-        </span>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <Switch
-            label="¿Es vegetariano?"
-            description=""
-            checked={isVegetarian}
-            onChange={onIsVegetarianChange}
-          />
-
-          <Switch
-            label="¿Es vegano?"
-            description=""
-            checked={isVegan}
-            onChange={onIsVeganChange}
-          />
-
-          <Switch
-            label="Disponible"
-            description=""
-            checked={available}
-            onChange={onAvailableChange}
-          />
-        </div>
-      </div>
-
-      {/* Descripción comercial y notas de sabor */}
-      <Textarea
-        label="Descripción comercial y notas de sabor"
-        rows={3}
-        maxLength={280}
-        showCount
-        resize="none"
-        value={description}
-        onChange={(e) => onDescriptionChange(e.target.value)}
-        placeholder="Describe los ingredientes principales, alérgenos o maridajes recomendados..."
-      />
-    </>
-  );
-}
+        {/* Descripción comercial y notas de sabor */}
+        <Textarea
+          label="Descripción comercial y notas de sabor"
+          rows={3}
+          maxLength={280}
+          showCount
+          resize="none"
+          value={description}
+          onChange={(e) => onDescriptionChange(e.target.value)}
+          placeholder="Describe los ingredientes principales, alérgenos o maridajes recomendados..."
+        />
+      </>
+    );
+  }
+);

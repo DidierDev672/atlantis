@@ -149,7 +149,7 @@ export const ProductosMasonryNavbar = memo(function ProductosMasonryNavbar({
         )}
       </div>
 
-      {/* Filtros rápidos (Todos, Disponibles) + Dropdown de ordenamiento múltiple con RecursosDropdown */}
+      {/* Filtros rápidos (Todos, Disponibles), dropdowns y acciones (Refrescar / Agregar producto) */}
       <div className="flex flex-wrap items-end gap-2">
         <div className="border-line bg-canvas flex items-center gap-1.5 rounded-2xl border p-1 text-xs">
           <button
@@ -211,35 +211,35 @@ export const ProductosMasonryNavbar = memo(function ProductosMasonryNavbar({
             className="text-xs"
           />
         </div>
-      </div>
 
-      {/* Acciones de Cabecera: Refrescar y Nuevo Producto (solo icono) */}
-      <div className="flex items-center justify-end gap-2">
-        <button
-          type="button"
-          onClick={onRefrescar}
-          disabled={loading}
-          aria-label="Refrescar catálogo de productos"
-          title="Refrescar catálogo de productos"
-          className="border-line bg-canvas text-ink-muted hover:border-primary/40 hover:text-ink inline-flex size-9 cursor-pointer items-center justify-center rounded-2xl border shadow-2xs transition-colors disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <FontAwesomeIcon
-            icon={faArrowsRotate}
-            spin={loading}
-            className="size-3.5"
-          />
-        </button>
-        {onAgregarNuevo && (
+        {/* Acciones en filtros: Refrescar y Agregar producto (icono plus) */}
+        <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={onAgregarNuevo}
-            aria-label="Nuevo producto"
-            title="Nuevo producto"
-            className="bg-primary shadow-primary/20 hover:bg-primary/90 inline-flex size-9 cursor-pointer items-center justify-center rounded-2xl text-white shadow-sm transition-all"
+            onClick={onRefrescar}
+            disabled={loading}
+            aria-label="Refrescar catálogo de productos"
+            title="Refrescar catálogo de productos"
+            className="border-line bg-canvas text-ink-muted hover:border-primary/40 hover:text-ink inline-flex size-9 cursor-pointer items-center justify-center rounded-2xl border shadow-2xs transition-colors disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <FontAwesomeIcon icon={faPlus} className="size-3.5" />
+            <FontAwesomeIcon
+              icon={faArrowsRotate}
+              spin={loading}
+              className="size-3.5"
+            />
           </button>
-        )}
+          {onAgregarNuevo && (
+            <button
+              type="button"
+              onClick={onAgregarNuevo}
+              aria-label="Agregar producto"
+              title="Agregar producto"
+              className="bg-primary shadow-primary/20 hover:bg-primary/90 inline-flex size-9 cursor-pointer items-center justify-center rounded-2xl text-white shadow-sm transition-all active:scale-95"
+            >
+              <FontAwesomeIcon icon={faPlus} className="size-3.5" />
+            </button>
+          )}
+        </div>
       </div>
     </nav>
   )

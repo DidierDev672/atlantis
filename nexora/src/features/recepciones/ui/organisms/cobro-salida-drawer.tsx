@@ -1,15 +1,23 @@
-import { Suspense, lazy, memo, useCallback, useEffect, useMemo, useState } from 'react'
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import {
+  Suspense,
+  lazy,
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faBed,
   faCashRegister,
   faCircleCheck,
   faMoon,
   faXmark,
-} from '@fortawesome/free-solid-svg-icons'
-import { StatusCodeAlert } from '../../../../shared/lib/status-code-validator'
-import { useBalancedPostLoading } from '../../../../shared/loading'
-import { Drawer } from '../../../../shared/ui/Drawer'
+} from '@fortawesome/free-solid-svg-icons';
+import { StatusCodeAlert } from '../../../../shared/lib/status-code-validator';
+import { useBalancedPostLoading } from '../../../../shared/loading';
+import { Drawer } from '../../../../shared/ui/Drawer';
 import {
   computeCobroTotals,
   computeStayDurationInfo,
@@ -19,24 +27,24 @@ import {
   type CobroPaymentMethod,
   type CobroPaymentSubmissionResult,
   type CobroRoomDetails,
-} from '../../domain/salida-cobro'
-import type { SalidaHuespedItem } from '../../domain/salida-huesped'
+} from '../../domain/salida-cobro';
+import type { SalidaHuespedItem } from '../../domain/salida-huesped';
 import {
   fetchCobroRoomDetails,
   submitCobroSalidaPago,
-} from '../../infrastructure/salida-cobro-api'
-import { CobroChargesSection } from '../molecules/cobro-charges-section'
-import { CobroPaymentForm } from '../molecules/cobro-payment-form'
+} from '../../infrastructure/salida-cobro-api';
+import { CobroChargesSection } from '../molecules/cobro-charges-section';
+import { CobroPaymentForm } from '../molecules/cobro-payment-form';
 
 const LazyCobroRocketOverlay = lazy(
   () => import('../molecules/cobro-rocket-overlay')
-)
+);
 
 export interface CobroSalidaDrawerProps {
-  guest: SalidaHuespedItem
-  isOpen: boolean
-  onClose: () => void
-  onPaymentRegistered?: (result: CobroPaymentSubmissionResult) => void
+  guest: SalidaHuespedItem;
+  isOpen: boolean;
+  onClose: () => void;
+  onPaymentRegistered?: (result: CobroPaymentSubmissionResult) => void;
 }
 
 /**
@@ -50,94 +58,95 @@ export const CobroSalidaDrawer = memo(function CobroSalidaDrawer({
   onClose,
   onPaymentRegistered,
 }: CobroSalidaDrawerProps) {
-  const defaultStatus = formatRoomStatusBadge('occupied')
+  const resolvedRoomId = guest.primaryRoomId || guest.roomId || '';
+  const defaultStatus = formatRoomStatusBadge(guest.roomStatus || 'occupied');
   const [roomDetails, setRoomDetails] = useState<CobroRoomDetails>({
-    roomId: guest.primaryRoomId || '',
-    roomNumber: guest.primaryRoomId ? '…' : 'Por asignar',
-    roomStatusRaw: 'occupied',
+    roomId: resolvedRoomId,
+    roomNumber: guest.roomNumber
+      ? guest.roomNumber.replace(/^Hab\.\s*/i, '')
+      : resolvedRoomId
+        ? '…'
+        : 'Por asignar',
+    roomStatusRaw: guest.roomStatus || 'occupied',
     roomStatusLabel: defaultStatus.label,
     roomStatusToneClass: defaultStatus.toneClass,
     nightlyRate: 0,
-  })
+  });
   const [selectedMethod, setSelectedMethod] =
-    useState<CobroPaymentMethod>('tarjeta')
-  const [customAmount, setCustomAmount] = useState<string | null>(null)
-  const [amountError, setAmountError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
+    useState<CobroPaymentMethod>('tarjeta');
+  const [customAmount, setCustomAmount] = useState<string | null>(null);
+  const [amountError, setAmountError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] =
-    useState<CobroPaymentSubmissionResult | null>(null)
+    useState<CobroPaymentSubmissionResult | null>(null);
 
   const { isBalancedVisible, stage } = useBalancedPostLoading({
     active: submitting,
     preparingDuration: 650,
     transmittingMinDuration: 600,
     confirmingDuration: 450,
-  })
+  });
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
     async function loadRoom() {
       try {
-        const resolved = await fetchCobroRoomDetails(guest.primaryRoomId)
-        if (!cancelled) setRoomDetails(resolved)
+        const resolved = await fetchCobroRoomDetails(resolvedRoomId);
+        if (!cancelled) setRoomDetails(resolved);
       } catch (err) {
-        console.warn('[CobroSalidaDrawer] Error cargando habitación:', err)
+        console.warn('[CobroSalidaDrawer] Error cargando habitación:', err);
       }
     }
-    void loadRoom()
+    void loadRoom();
     return () => {
-      cancelled = true
-    }
-  }, [guest.primaryRoomId])
+      cancelled = true;
+    };
+  }, [resolvedRoomId]);
 
   const durationInfo = useMemo(
     () => computeStayDurationInfo(guest.checkInDateRaw, guest.checkOutDateRaw),
     [guest.checkInDateRaw, guest.checkOutDateRaw]
-  )
+  );
 
   const totals = useMemo(
     () =>
-      computeCobroTotals(
-        guest,
-        durationInfo.nights,
-        roomDetails.nightlyRate
-      ),
+      computeCobroTotals(guest, durationInfo.nights, roomDetails.nightlyRate),
     [durationInfo.nights, guest, roomDetails.nightlyRate]
-  )
+  );
 
   const amountValue =
     customAmount !== null
       ? customAmount
       : totals.totalToPay > 0
         ? String(Math.round(totals.totalToPay))
-        : ''
+        : '';
 
   const handleAmountChange = useCallback((digitsOnly: string) => {
-    setCustomAmount(digitsOnly)
-    setAmountError(null)
-    setSubmitResult(null)
-  }, [])
+    setCustomAmount(digitsOnly);
+    setAmountError(null);
+    setSubmitResult(null);
+  }, []);
 
   const handleUseFullAmount = useCallback(() => {
     setCustomAmount(
       totals.totalToPay > 0 ? String(Math.round(totals.totalToPay)) : '0'
-    )
-    setAmountError(null)
-    setSubmitResult(null)
-  }, [totals.totalToPay])
+    );
+    setAmountError(null);
+    setSubmitResult(null);
+  }, [totals.totalToPay]);
 
   const handleRegisterPayment = useCallback(async () => {
     try {
-      const parsed = Number(amountValue || '0')
+      const parsed = Number(amountValue || '0');
       if (!amountValue || Number.isNaN(parsed) || parsed <= 0) {
         setAmountError(
           'Ingresa un monto numérico mayor a 0 para registrar el pago.'
-        )
-        return
+        );
+        return;
       }
-      setAmountError(null)
-      setSubmitResult(null)
-      setSubmitting(true)
+      setAmountError(null);
+      setSubmitResult(null);
+      setSubmitting(true);
       const res = await submitCobroSalidaPago({
         guest,
         roomId: roomDetails.roomId,
@@ -146,18 +155,18 @@ export const CobroSalidaDrawer = memo(function CobroSalidaDrawer({
         roomServiceAmount: totals.roomServiceAmount,
         paidAmount: parsed,
         method: selectedMethod,
-      })
-      setSubmitResult(res)
+      });
+      setSubmitResult(res);
       if (res.ok) {
-        onPaymentRegistered?.(res)
+        onPaymentRegistered?.(res);
       }
     } catch (err) {
-      console.error('[CobroSalidaDrawer] Error al registrar pago:', err)
+      console.error('[CobroSalidaDrawer] Error al registrar pago:', err);
       setAmountError(
         'No fue posible procesar el cobro. Verifica el monto e inténtalo de nuevo.'
-      )
+      );
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
   }, [
     amountValue,
@@ -168,11 +177,11 @@ export const CobroSalidaDrawer = memo(function CobroSalidaDrawer({
     selectedMethod,
     totals.accommodationAmount,
     totals.roomServiceAmount,
-  ])
+  ]);
 
-  const checkInShort = formatShortStayDate(guest.checkInDateRaw)
-  const checkOutShort = formatShortStayDate(guest.checkOutDateRaw)
-  const depositPhrase = formatDepositAppliedPhrase(guest.depositPaymentMethod)
+  const checkInShort = formatShortStayDate(guest.checkInDateRaw);
+  const checkOutShort = formatShortStayDate(guest.checkOutDateRaw);
+  const depositPhrase = formatDepositAppliedPhrase(guest.depositPaymentMethod);
 
   return (
     <>
@@ -303,7 +312,7 @@ export const CobroSalidaDrawer = memo(function CobroSalidaDrawer({
         </div>
       </Drawer>
     </>
-  )
-})
+  );
+});
 
-export default CobroSalidaDrawer
+export default CobroSalidaDrawer;

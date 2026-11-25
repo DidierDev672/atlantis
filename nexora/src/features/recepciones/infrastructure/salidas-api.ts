@@ -51,6 +51,7 @@ interface StayOrReserveLinkDto extends ReceptionRecordRef {
   persons?: Array<string | { id?: string; person_id?: string }>
   check_in_date?: string
   check_out_date?: string
+  payment_method?: string
   created_at?: string
   total_price?: number
   total?: number
@@ -83,6 +84,9 @@ interface GuestLinkMeta {
   checkOutDates: string[]
   roomId?: string
   stayId?: string
+  reserveId?: string
+  securityDeposit?: number
+  depositPaymentMethod?: string
   stayStatus?: string
 }
 
@@ -163,6 +167,9 @@ function registerGuestLink(
     checkInDate?: string
     roomId?: string
     stayId?: string
+    reserveId?: string
+    securityDeposit?: number | string
+    paymentMethod?: string
     stayStatus?: string
   },
 ): void {
@@ -189,6 +196,16 @@ function registerGuestLink(
   }
   if (extra?.stayId && source === 'recepcion') {
     current.stayId = extra.stayId
+  }
+  if (extra?.reserveId && (!current.reserveId || source === 'reserva')) {
+    current.reserveId = extra.reserveId
+  }
+  const dep = Number(extra?.securityDeposit ?? 0)
+  if (Number.isFinite(dep) && dep > 0 && !current.securityDeposit) {
+    current.securityDeposit = dep
+  }
+  if (extra?.paymentMethod?.trim() && (!current.depositPaymentMethod || source === 'recepcion')) {
+    current.depositPaymentMethod = extra.paymentMethod.trim()
   }
   if (extra?.stayStatus && (!current.stayStatus || source === 'recepcion')) {
     current.stayStatus = extra.stayStatus
@@ -322,7 +339,10 @@ function mapPersonToSalidaItem(
     receptionsTotal: linkMeta?.receptionsTotal ?? 0,
     reservesTotal: linkMeta?.reservesTotal ?? 0,
     serviceRequestsTotal: 0,
+    deliveredServiceOrdersCount: 0,
+    deliveredServiceRequestsTotal: 0,
     serviceRequestProducts: [],
+    serviceRequestOrders: [],
     checkInDateRaw,
     checkInDateFormatted: checkInFmt.dateText,
     checkInTimeFormatted: checkInFmt.timeText,
@@ -332,11 +352,16 @@ function mapPersonToSalidaItem(
     departureWindow,
     departureLabel: formatDepartureLabel(checkOutDateRaw, departureWindow),
     roomId: linkMeta?.roomId || '',
+    primaryRoomId: linkMeta?.roomId || undefined,
     roomNumber: roomInfo?.number ? `Hab. ${roomInfo.number}` : '',
     roomFloor:
       typeof roomInfo?.floor === 'number' ? `Piso ${roomInfo.floor}` : '',
     roomStatus: roomInfo?.status || '',
     stayId: linkMeta?.stayId || '',
+    primaryStayId: linkMeta?.stayId || undefined,
+    primaryReserveId: linkMeta?.reserveId || undefined,
+    securityDeposit: linkMeta?.securityDeposit ?? 0,
+    depositPaymentMethod: linkMeta?.depositPaymentMethod || undefined,
     stayStatus: linkMeta?.stayStatus || '',
     isTodayActivity,
   }
@@ -488,7 +513,6 @@ export async function fetchReceptionsByPersonId(
   }
 }
 
-<<<<<<< HEAD
 export async function fetchSalidasHuespedes(
   options: FetchSalidasOptions = {}
 ): Promise<FetchSalidasHuespedesResult> {
@@ -507,121 +531,103 @@ export async function fetchSalidasHuespedes(
         options.prefetchedStays.length > 0
       const { maxRetries } = detectarRecursosDispositivoRecepciones().policy
 
-      const [personsRes, staysRes, reservesRes] = await Promise.allSettled([
-=======
-export async function fetchSalidasHuespedes(): Promise<FetchSalidasHuespedesResult> {
-  try {
-    const [personsRes, staysRes, reservesRes, roomsRes] =
-      await Promise.allSettled([
->>>>>>> 7581654086aaca6b0b620177a60e9a72ccfce8d5
-        executeBalancedRequest(
-          () =>
-            api.get<unknown>('/persons', {
-              validateStatus: () => true,
-            }),
-<<<<<<< HEAD
-          { maxRetries }
-        ),
-        hasPrefetchedStays
-          ? Promise.resolve({
-              status: 200,
-              data: options.prefetchedStays,
-            })
-          : executeBalancedRequest(
-              () =>
-                api.get<unknown>('/stays', {
-                  validateStatus: () => true,
-                }),
-              { maxRetries }
-            ),
-=======
-          { maxRetries: 2 }
-        ),
-        executeBalancedRequest(
-          () =>
-            api.get<unknown>('/stays', {
-              validateStatus: () => true,
-            }),
-          { maxRetries: 2 }
-        ),
->>>>>>> 7581654086aaca6b0b620177a60e9a72ccfce8d5
-        executeBalancedRequest(
-          () =>
-            api.get<unknown>('/reserve', {
-              validateStatus: () => true,
-            }),
-<<<<<<< HEAD
-          { maxRetries }
-=======
-          { maxRetries: 2 }
-        ),
-        executeBalancedRequest(
-          () =>
-            api.get<unknown>('/room', {
-              validateStatus: () => true,
-            }),
-          { maxRetries: 2 }
->>>>>>> 7581654086aaca6b0b620177a60e9a72ccfce8d5
-        ),
-      ])
+      const [personsRes, staysRes, reservesRes, roomsRes] =
+        await Promise.allSettled([
+          executeBalancedRequest(
+            () =>
+              api.get<unknown>('/persons', {
+                validateStatus: () => true,
+              }),
+            { maxRetries }
+          ),
+          hasPrefetchedStays
+            ? Promise.resolve({
+                status: 200,
+                data: options.prefetchedStays,
+              })
+            : executeBalancedRequest(
+                () =>
+                  api.get<unknown>('/stays', {
+                    validateStatus: () => true,
+                  }),
+                { maxRetries }
+              ),
+          executeBalancedRequest(
+            () =>
+              api.get<unknown>('/reserve', {
+                validateStatus: () => true,
+              }),
+            { maxRetries }
+          ),
+          executeBalancedRequest(
+            () =>
+              api.get<unknown>('/room', {
+                validateStatus: () => true,
+              }),
+            { maxRetries }
+          ),
+        ])
 
-    if (personsRes.status === 'rejected') {
-      const err = personsRes.reason
-      const status = axios.isAxiosError(err) ? (err.response?.status ?? 500) : 500
-      return {
-        guests: [],
-        validation: validateStatusCode(status),
-        hasLinkData: false,
+      if (personsRes.status === 'rejected') {
+        const err = personsRes.reason
+        const status = axios.isAxiosError(err) ? (err.response?.status ?? 500) : 500
+        return {
+          guests: [],
+          validation: validateStatusCode(status),
+          hasLinkData: false,
+        }
       }
-    }
 
-    const personsResponse = personsRes.value
-    const validation = validateStatusCode(personsResponse.status)
+      const personsResponse = personsRes.value
+      const validation = validateStatusCode(personsResponse.status)
 
-    if (!validation.isValid) {
-      return {
-        guests: [],
-        validation,
-        hasLinkData: false,
+      if (!validation.isValid) {
+        return {
+          guests: [],
+          validation,
+          hasLinkData: false,
+        }
       }
-    }
 
-    const rawPersons = extractArray<PersonApiDto>(personsResponse.data, [
-      'persons',
-      'data',
-      'items',
-    ])
-
-<<<<<<< HEAD
-    // Pre-cargar personas en el catálogo compartido para evitar GET /person/{id} posteriores
-    for (const person of rawPersons) {
-      const pid = resolvePersonId(person)
-      if (pid) {
-        catalogApi.primePerson({
-          id: pid,
-          name: resolvePersonName(person),
-          document_type: person.document_type,
-          document_number: person.document_number,
-          phone_number: person.phone_number,
-          email: person.email,
-          date_of_birth: person.date_of_birth,
-          gender: person.gender,
-        })
-=======
-    const roomMap = new Map<string, RoomBasicDto>()
-    if (roomsRes.status === 'fulfilled' && validateStatusCode(roomsRes.value.status).isValid) {
-      const rooms = extractArray<RoomBasicDto>(roomsRes.value.data, [
-        'rooms',
+      const rawPersons = extractArray<PersonApiDto>(personsResponse.data, [
+        'persons',
         'data',
         'items',
       ])
-      for (const room of rooms) {
-        if (room.id?.trim()) {
-          roomMap.set(room.id.trim(), room)
+
+      // Pre-cargar personas en el catálogo compartido para evitar GET /person/{id} posteriores
+      for (const person of rawPersons) {
+        const pid = resolvePersonId(person)
+        if (pid) {
+          catalogApi.primePerson({
+            id: pid,
+            name: resolvePersonName(person),
+            document_type: person.document_type,
+            document_number: person.document_number,
+            phone_number: person.phone_number,
+            email: person.email,
+            date_of_birth: person.date_of_birth,
+            gender: person.gender,
+          })
         }
->>>>>>> 7581654086aaca6b0b620177a60e9a72ccfce8d5
       }
-    }
+
+      const roomMap = new Map<string, RoomBasicDto>()
+      if (
+        roomsRes.status === 'fulfilled' &&
+        validateStatusCode(roomsRes.value.status).isValid
+      ) {
+        const rooms = extractArray<RoomBasicDto>(roomsRes.value.data, [
+          'rooms',
+          'data',
+          'items',
+        ])
+        for (const room of rooms) {
+          if (room.id?.trim()) {
+            roomMap.set(room.id.trim(), room)
+          }
+        }
+      }
 
     const linkMap = new Map<string, GuestLinkMeta>()
     const reservePersonIdsMap = new Map<string, string[]>()
@@ -655,6 +661,9 @@ export async function fetchSalidasHuespedes(): Promise<FetchSalidasHuespedesResu
               {
                 checkInDate: reserve.check_in_date || reserve.created_at,
                 roomId: reserve.room_id,
+                reserveId: reserve.id,
+                securityDeposit: reserve.security_deposit,
+                paymentMethod: reserve.payment_method,
                 stayStatus: reserve.status,
               },
             )
@@ -705,6 +714,9 @@ export async function fetchSalidasHuespedes(): Promise<FetchSalidasHuespedesResu
                 checkInDate: stay.check_in_date || stay.created_at,
                 roomId: stay.room_id,
                 stayId: stay.id,
+                reserveId: stay.reservation_id,
+                securityDeposit: stay.security_deposit,
+                paymentMethod: stay.payment_method,
                 stayStatus: stay.status,
               },
             )

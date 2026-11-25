@@ -171,6 +171,7 @@ export const RecepcionesPage = memo(function RecepcionesPage() {
                 }
               >
                 <LazySalidasRecepcionesPage
+                  embedded
                   initialStays={staysList.stays}
                   refreshToken={salidasRefreshToken}
                 />
