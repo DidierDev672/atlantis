@@ -94,59 +94,59 @@ export function resolveRoleRedirect(roleName: string): RoleRedirectDecision {
       }
 
     // =========================================================================
-    // 2. DEMÁS ROLES (Estructurados para futuras indicaciones del usuario)
-    // Avanzan a la página que normalmente se utiliza al iniciar sesión ('home')
+    // 2. ROLES ADMINISTRATIVOS Y DE SOPORTE / GERENCIA (Acceso Total)
+    // Avanzan directamente al panel general ('home') con acceso completo a todas las rutas.
     // =========================================================================
     case 'gerente_sede':
       return {
         roleName: 'gerente_sede',
-        targetNavId: 'sedes',
-        pageTitle: 'Gestión de Sedes y Sub-sedes',
-        description: 'Administra una sede y sus sub-sedes',
+        targetNavId: 'home',
+        pageTitle: 'Panel de Gerencia y Administración',
+        description: 'Gerente de sede con acceso total a los módulos del hotel',
         isReception: false,
         status: 'general_pending_future',
-        hasRoleIssue: true,
-        issueMessage:
-          'El rol de Gerente de Sede aún no cuenta con una vista especializada activada. Avanzarás al panel principal del hotel.',
+        hasRoleIssue: false,
+        issueMessage: null,
       }
 
     case 'manager':
+    case 'gerente':
       return {
         roleName: 'manager',
         targetNavId: 'home',
-        pageTitle: 'Supervisión Operativa',
-        description: 'Supervisor o gerente operativo de sede',
+        pageTitle: 'Supervisión Operativa y Gerencia',
+        description: 'Supervisor o gerente operativo del hotel con acceso completo',
         isReception: false,
         status: 'general_pending_future',
-        hasRoleIssue: true,
-        issueMessage:
-          'El rol de Manager aún no cuenta con una vista especializada activada. Avanzarás al panel principal del hotel.',
+        hasRoleIssue: false,
+        issueMessage: null,
       }
 
     case 'admin':
+    case 'administrador':
       return {
         roleName: 'admin',
         targetNavId: 'home',
         pageTitle: 'Panel de Administración',
-        description: 'Administrador / Dueño del Hotel con control de infraestructura y personal',
+        description: 'Administrador de sistemas, soporte técnico o gerente del hotel con acceso a todas las rutas',
         isReception: false,
         status: 'general_pending_future',
-        hasRoleIssue: true,
-        issueMessage:
-          'El rol de Administrador aún no cuenta con una vista especializada asignada. Avanzarás a la página que normalmente se utiliza al iniciar sesión.',
+        hasRoleIssue: false,
+        issueMessage: null,
       }
 
     case 'super_admin':
+    case 'superadmin':
+    case 'soporte':
       return {
         roleName: 'super_admin',
         targetNavId: 'home',
         pageTitle: 'Panel de Control Total',
-        description: 'Control total del sistema',
+        description: 'Soporte técnico y administración integral del sistema con acceso a todas las rutas',
         isReception: false,
         status: 'general_pending_future',
-        hasRoleIssue: true,
-        issueMessage:
-          'El rol de Super Admin aún no cuenta con una vista especializada asignada. Avanzarás a la página que normalmente se utiliza al iniciar sesión.',
+        hasRoleIssue: false,
+        issueMessage: null,
       }
 
     case 'housekeeping':

@@ -87,9 +87,8 @@ export function Header({
   }
 
   return (
-    <motion.header
-      style={{ contain: 'layout style paint' }}
-      className="sticky top-0 z-30 border-b border-line bg-canvas"
+    <header
+      className="sticky top-0 z-40 border-b border-line bg-canvas/95 backdrop-blur-xs"
     >
       <div className="flex h-16 items-center gap-3 px-4 sm:px-6 lg:px-8">
         <motion.button
@@ -170,6 +169,6 @@ export function Header({
           <UserMenu onNavigate={onNavigate} onLogout={onLogout} />
         </div>
       </div>
-    </motion.header>
+    </header>
   )
 }

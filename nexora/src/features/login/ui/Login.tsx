@@ -101,13 +101,22 @@ export function Login({ onSuccess, onContinue }: LoginProps) {
         }
 
         // Actualizar la información auth_user en localStorage según la respuesta devuelta por la API REST
-        updateAuthUserFromLoginResponse(response.data, email.trim(), token);
+        const updatedUser = updateAuthUserFromLoginResponse(
+          response.data,
+          email.trim(),
+          token
+        );
 
-        // Extraer el item `role` devuelto por el consumo del endpoint POST /login
+        // Extraer el item `role` o `role_name` devuelto por el consumo del endpoint POST /login
         const rawRole = (
+          response.data?.role_name ??
           response.data?.role ??
+          response.data?.user?.role_name ??
           response.data?.user?.role ??
+          response.data?.data?.role_name ??
           response.data?.data?.role ??
+          updatedUser?.role_name ??
+          updatedUser?.role ??
           ''
         ) as string;
 

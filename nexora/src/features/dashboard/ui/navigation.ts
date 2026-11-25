@@ -96,9 +96,9 @@ export const PAGE_META: Record<NavId, PageMeta> = {
     soonMessage: '',
   },
   personas: {
-    title: 'Registro de personas',
+    title: 'Registros',
     subtitle:
-      'Suma y gestiona a tus clientes y proveedores en un solo lugar seguro y organizado.',
+      'Control diario e histórico de huéspedes: habitación, horarios de ingreso y salida, saldos de alojamiento, tienda y facturación.',
     soonMessage: '',
   },
   recursos: {

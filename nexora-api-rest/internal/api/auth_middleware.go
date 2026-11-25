@@ -68,10 +68,11 @@ func authContextMiddleware(
 						Email:                  user.Email,
 						RoleID:                 user.RoleID,
 						RoleName:               roleName,
-						AllHeadquarters:        user.AllHeadquarters || strings.EqualFold(roleName, domain.RoleSuperAdmin),
+						AllHeadquarters:        user.AllHeadquarters,
 						PrimaryHeadquarterID:   user.HeadquartersID,
 						AllowedHeadquartersIDs: allowedHQs,
 					}
+					actor.AllHeadquarters = actor.AllHeadquarters || actor.HasFullAccess()
 
 					if requestedHQ != "" {
 						reqHQID := domain.HeadquarterID(requestedHQ)
@@ -86,22 +87,10 @@ func authContextMiddleware(
 						actor.ActiveHeadquarterID = allowedHQs[0]
 					}
 
-					// Reglas RBAC comerciales sobre sedes y usuarios cuando hay un actor autenticado:
-					path := r.URL.Path
-					if (path == "/headquarters" && r.Method == http.MethodPost) ||
-						(strings.HasPrefix(path, "/headquarters/") && r.Method == http.MethodDelete) {
-						if !actor.IsSuperAdmin() {
-							httpjson.WriteError(w, http.StatusForbidden, "solo el equipo de soporte técnico (super_admin) puede crear o eliminar sedes")
-							return
-						}
-					}
-
-					if (path == "/users" || strings.HasPrefix(path, "/users/")) &&
-						(r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodDelete) {
-						if !actor.IsSuperAdmin() && !actor.IsAdmin() {
-							httpjson.WriteError(w, http.StatusForbidden, "solo el administrador puede gestionar usuarios del hotel")
-							return
-						}
+					// Evaluación centralizada de políticas RBAC por rol, método HTTP y ruta:
+					if !actor.CanAccessEndpoint(r.Method, r.URL.Path) {
+						httpjson.WriteError(w, http.StatusForbidden, "tu rol actual no tiene permisos para realizar esta operación")
+						return
 					}
 
 					ctx = domain.WithActor(ctx, actor)

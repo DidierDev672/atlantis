@@ -38,6 +38,9 @@ type BootstrapConfig struct {
 	AdminEmail         string
 	AdminPassword      string
 	AdminName          string
+	ReceptionEmail     string
+	ReceptionPassword  string
+	ReceptionName      string
 	HeadquarterName    string
 	HeadquarterAddress string
 	HeadquarterCity    string
@@ -60,6 +63,9 @@ func Bootstrap() BootstrapConfig {
 		AdminEmail:         envOrDefault("BOOTSTRAP_ADMIN_EMAIL", "admin@hotel.com"),
 		AdminPassword:      envOrDefault("BOOTSTRAP_ADMIN_PASSWORD", "AdminHotel2026*"),
 		AdminName:          envOrDefault("BOOTSTRAP_ADMIN_NAME", "Administrador del Hotel"),
+		ReceptionEmail:     envOrDefault("BOOTSTRAP_RECEPTION_EMAIL", "recepcion@hotel.com"),
+		ReceptionPassword:  envOrDefault("BOOTSTRAP_RECEPTION_PASSWORD", "RecepcionHotel2026*"),
+		ReceptionName:      envOrDefault("BOOTSTRAP_RECEPTION_NAME", "Recepcionista del Hotel"),
 		HeadquarterName:    envOrDefault("BOOTSTRAP_HQ_NAME", "Sede Principal"),
 		HeadquarterAddress: envOrDefault("BOOTSTRAP_HQ_ADDRESS", "Dirección Principal"),
 		HeadquarterCity:    envOrDefault("BOOTSTRAP_HQ_CITY", "Bogotá"),

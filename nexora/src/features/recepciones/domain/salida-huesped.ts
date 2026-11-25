@@ -43,6 +43,7 @@ export interface SalidaHuespedItem {
   personId: string
   name: string
   phoneNumber: string
+  email?: string
   documentTypeRaw: string
   documentTypeLabel: string
   documentNumber: string
@@ -60,9 +61,52 @@ export interface SalidaHuespedItem {
   reservesTotal: number
   serviceRequestsTotal: number
   serviceRequestProducts: GuestServiceRequestProduct[]
+  checkInDateRaw?: string | null
+  checkInDateFormatted?: string
+  checkInTimeFormatted?: string
   checkOutDateRaw: string | null
+  checkOutDateFormatted?: string
+  checkOutTimeFormatted?: string
   departureWindow: DepartureWindow
   departureLabel: string
+  roomId?: string
+  roomNumber?: string
+  roomFloor?: string
+  roomStatus?: string
+  stayId?: string
+  stayStatus?: string
+  isTodayActivity?: boolean
+}
+
+export function formatStayDateAndTime(
+  rawDate?: string | null,
+  fallbackTime = '—',
+): { dateText: string; timeText: string } {
+  if (!rawDate) {
+    return { dateText: 'Por definir', timeText: fallbackTime }
+  }
+  const parsed = new Date(rawDate)
+  if (Number.isNaN(parsed.getTime())) {
+    return { dateText: rawDate, timeText: fallbackTime }
+  }
+  const dateText = new Intl.DateTimeFormat('es-CO', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(parsed)
+
+  const hasTimeComponent = rawDate.includes('T') || rawDate.includes(':')
+  if (!hasTimeComponent) {
+    return { dateText, timeText: fallbackTime }
+  }
+
+  const timeText = new Intl.DateTimeFormat('es-CO', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+  }).format(parsed)
+
+  return { dateText, timeText }
 }
 
 export interface ReceptionRecordRef {

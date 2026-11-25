@@ -12,7 +12,7 @@ export interface ProductosMasonryColumnsLayoutProps {
   productos: ReadonlyArray<ItemMenuProducto>;
   categoriasMap: ReadonlyMap<string, CategoriaVinculadaInfo>;
   onVerDetalle: (producto: ItemMenuProducto) => void;
-  onEditar: (producto: ItemMenuProducto) => void;
+  onEditar?: (producto: ItemMenuProducto) => void;
 }
 
 /**

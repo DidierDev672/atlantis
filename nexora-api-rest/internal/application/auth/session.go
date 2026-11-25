@@ -64,7 +64,15 @@ func (uc *SessionUseCase) buildSessionUser(ctx context.Context, u domain.User) (
 		}
 	}
 
-	allRole := strings.EqualFold(roleName, domain.RoleSuperAdmin) || u.AllHeadquarters
+	actorProbe := domain.Actor{
+		UserID:   u.ID,
+		Name:     u.Name,
+		Email:    u.Email,
+		RoleID:   u.RoleID,
+		RoleName: roleName,
+	}
+
+	allRole := actorProbe.HasFullAccess() || u.AllHeadquarters
 
 	allowed := make([]HeadquarterSummary, 0)
 	if uc.headquarters != nil {
@@ -103,7 +111,10 @@ func (uc *SessionUseCase) buildSessionUser(ctx context.Context, u domain.User) (
 		Name:                u.Name,
 		Email:               u.Email,
 		RoleID:              string(u.RoleID),
+		Role:                roleName,
 		RoleName:            roleName,
+		AllowedRoutes:       actorProbe.AllowedNavRoutes(),
+		Permissions:         actorProbe.AllowedPermissions(),
 		AllHeadquarters:     allRole,
 		HeadquartersID:      primaryHQ,
 		HeadquartersIDs:     hqIDs,

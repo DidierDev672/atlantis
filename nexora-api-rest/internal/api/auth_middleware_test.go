@@ -63,14 +63,25 @@ func TestAuthContextMiddleware_RBACAndMultiSede(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	t.Run("admin cannot create headquarters (commercial restriction)", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/headquarters", nil)
-		req.Header.Set("Authorization", "Bearer "+adminToken)
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
+	t.Run("admin has full access to headquarters and catalog configuration", func(t *testing.T) {
+		for _, tc := range []struct {
+			method string
+			path   string
+		}{
+			{http.MethodPost, "/headquarters"},
+			{http.MethodPost, "/users"},
+			{http.MethodPost, "/menu-category"},
+			{http.MethodPost, "/item-menu"},
+			{http.MethodGet, "/audit/summary"},
+		} {
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			req.Header.Set("Authorization", "Bearer "+adminToken)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusForbidden {
-			t.Fatalf("expected 403 Forbidden for admin on POST /headquarters, got %d", rec.Code)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200 OK for admin on %s %s, got %d", tc.method, tc.path, rec.Code)
+			}
 		}
 	})
 
@@ -85,14 +96,68 @@ func TestAuthContextMiddleware_RBACAndMultiSede(t *testing.T) {
 		}
 	})
 
-	t.Run("receptionist cannot create users", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/users", nil)
-		req.Header.Set("Authorization", "Bearer "+recToken)
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
+	t.Run("receptionist cannot create users or manage menu catalog or view audit", func(t *testing.T) {
+		blockedCases := []struct {
+			method string
+			path   string
+		}{
+			{http.MethodPost, "/users"},
+			{http.MethodGet, "/users"},
+			{http.MethodPost, "/headquarters"},
+			{http.MethodPost, "/menu-category"},
+			{http.MethodPut, "/menu-category/1"},
+			{http.MethodDelete, "/menu-category/1"},
+			{http.MethodPost, "/item-menu"},
+			{http.MethodPut, "/item-menu/1"},
+			{http.MethodDelete, "/item-menu/1"},
+			{http.MethodPost, "/rates"},
+			{http.MethodPost, "/room"},
+			{http.MethodDelete, "/room/101"},
+			{http.MethodGet, "/audit/summary"},
+		}
+		for _, tc := range blockedCases {
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			req.Header.Set("Authorization", "Bearer "+recToken)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusForbidden {
-			t.Fatalf("expected 403 Forbidden for reception on POST /users, got %d", rec.Code)
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("expected 403 Forbidden for reception on %s %s, got %d", tc.method, tc.path, rec.Code)
+			}
+		}
+	})
+
+	t.Run("receptionist can perform reception, persons, room assignment, product sales, checkout and billing", func(t *testing.T) {
+		allowedCases := []struct {
+			method string
+			path   string
+		}{
+			{http.MethodPost, "/stay"},
+			{http.MethodGet, "/stays"},
+			{http.MethodPost, "/stays/s-1/checkout"},
+			{http.MethodPost, "/persons"},
+			{http.MethodGet, "/persons/by-document"},
+			{http.MethodGet, "/room"},
+			{http.MethodPut, "/room/r-101"},
+			{http.MethodPost, "/reserve"},
+			{http.MethodGet, "/menu-category"},
+			{http.MethodGet, "/item-menu"},
+			{http.MethodPost, "/service-request"},
+			{http.MethodPut, "/service-request/sr-1/status"},
+			{http.MethodPost, "/folios"},
+			{http.MethodPost, "/folios/f-1/charges"},
+			{http.MethodPost, "/folios/f-1/payments"},
+			{http.MethodPost, "/folios/f-1/close"},
+		}
+		for _, tc := range allowedCases {
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			req.Header.Set("Authorization", "Bearer "+recToken)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200 OK for reception on %s %s, got %d", tc.method, tc.path, rec.Code)
+			}
 		}
 	})
 

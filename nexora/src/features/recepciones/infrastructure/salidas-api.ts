@@ -18,6 +18,7 @@ import {
   formatSalidaDocumentType,
   formatSalidaGender,
   formatSourceLabel,
+  formatStayDateAndTime,
   getUniquePersonIdsFromRecord,
   isCanceledStayOrReserve,
   resolvePersonId,
@@ -43,17 +44,32 @@ export interface FetchSalidasOptions {
 
 interface StayOrReserveLinkDto extends ReceptionRecordRef {
   id?: string
+  room_id?: string
   reservation_id?: string
   person_id?: string
   person_ids?: string[]
   persons?: Array<string | { id?: string; person_id?: string }>
+  check_in_date?: string
   check_out_date?: string
+  created_at?: string
   total_price?: number
   total?: number
   price?: number
   security_deposit?: number
   status?: string
   state?: string
+}
+
+interface RoomBasicDto {
+  id?: string
+  number?: string
+  floor?: number
+  room_types_id?: string
+  building_id?: string
+  price_override?: number | null
+  price?: number | null
+  status?: string
+  has_reception?: boolean
 }
 
 interface GuestLinkMeta {
@@ -63,7 +79,11 @@ interface GuestLinkMeta {
   receptionsTotal: number
   reservesTotal: number
   countedRecordKeys: Set<string>
+  checkInDates: string[]
   checkOutDates: string[]
+  roomId?: string
+  stayId?: string
+  stayStatus?: string
 }
 
 export interface FetchSalidasHuespedesResult {
@@ -93,7 +113,10 @@ function extractArray<T extends object>(
   return []
 }
 
-function resolveRecordChargeAmount(record: StayOrReserveLinkDto): number {
+function resolveRecordChargeAmount(
+  record: StayOrReserveLinkDto,
+  roomMap?: ReadonlyMap<string, RoomBasicDto>,
+): number {
   const candidates = [
     record.total_price,
     record.total,
@@ -105,6 +128,27 @@ function resolveRecordChargeAmount(record: StayOrReserveLinkDto): number {
       return val
     }
   }
+  if (record.room_id && roomMap) {
+    const room = roomMap.get(record.room_id.trim())
+    const unitRate = Number(room?.price_override ?? room?.price ?? 0)
+    if (unitRate > 0) {
+      const checkIn = record.check_in_date ? new Date(record.check_in_date) : null
+      const checkOut = record.check_out_date ? new Date(record.check_out_date) : null
+      if (
+        checkIn &&
+        checkOut &&
+        !Number.isNaN(checkIn.getTime()) &&
+        !Number.isNaN(checkOut.getTime())
+      ) {
+        const nights = Math.max(
+          1,
+          Math.ceil((checkOut.getTime() - checkIn.getTime()) / 86400000),
+        )
+        return nights * unitRate
+      }
+      return unitRate
+    }
+  }
   return 0
 }
 
@@ -114,7 +158,13 @@ function registerGuestLink(
   source: 'recepcion' | 'reserva',
   checkOutDate?: string,
   amount = 0,
-  recordKey?: string
+  recordKey?: string,
+  extra?: {
+    checkInDate?: string
+    roomId?: string
+    stayId?: string
+    stayStatus?: string
+  },
 ): void {
   const cleanId = personId.trim()
   if (!cleanId) return
@@ -126,12 +176,23 @@ function registerGuestLink(
     receptionsTotal: 0,
     reservesTotal: 0,
     countedRecordKeys: new Set<string>(),
+    checkInDates: [],
     checkOutDates: [],
   }
 
   if (source === 'recepcion') current.hasReception = true
   if (source === 'reserva') current.hasReservation = true
+  if (extra?.checkInDate) current.checkInDates.push(extra.checkInDate)
   if (checkOutDate) current.checkOutDates.push(checkOutDate)
+  if (extra?.roomId && (!current.roomId || source === 'recepcion')) {
+    current.roomId = extra.roomId
+  }
+  if (extra?.stayId && source === 'recepcion') {
+    current.stayId = extra.stayId
+  }
+  if (extra?.stayStatus && (!current.stayStatus || source === 'recepcion')) {
+    current.stayStatus = extra.stayStatus
+  }
 
   if (amount > 0 && recordKey) {
     const scopedKey = `${source}:${recordKey}`
@@ -184,7 +245,8 @@ function resolvePersonName(dto: PersonApiDto): string {
 function mapPersonToSalidaItem(
   dto: PersonApiDto,
   index: number,
-  linkMeta?: GuestLinkMeta
+  linkMeta?: GuestLinkMeta,
+  roomMap?: ReadonlyMap<string, RoomBasicDto>,
 ): SalidaHuespedItem {
   const name = resolvePersonName(dto)
   const docTypeRaw = dto.document_type ?? ''
@@ -205,12 +267,35 @@ function mapPersonToSalidaItem(
     }
   }
 
-  const candidateDates = [...(linkMeta?.checkOutDates ?? [])]
+  const candidateCheckOuts = [...(linkMeta?.checkOutDates ?? [])]
   const inlineCheckOut = dto.check_out_date ?? dto.checkout_date
-  if (inlineCheckOut) candidateDates.push(inlineCheckOut)
+  if (inlineCheckOut) candidateCheckOuts.push(inlineCheckOut)
 
   const { checkOutDateRaw, departureWindow } =
-    pickBestCheckOutDate(candidateDates)
+    pickBestCheckOutDate(candidateCheckOuts)
+
+  const checkInDateRaw =
+    linkMeta?.checkInDates && linkMeta.checkInDates.length > 0
+      ? linkMeta.checkInDates[linkMeta.checkInDates.length - 1]
+      : null
+
+  const checkInFmt = formatStayDateAndTime(
+    checkInDateRaw,
+    linkMeta?.hasReception ? '02:00 p. m.' : '—',
+  )
+  const checkOutFmt = formatStayDateAndTime(
+    checkOutDateRaw,
+    checkOutDateRaw ? '01:00 p. m.' : '—',
+  )
+
+  const roomInfo =
+    linkMeta?.roomId && roomMap ? roomMap.get(linkMeta.roomId.trim()) : undefined
+
+  const checkInWindow = classifyDepartureWindow(checkInDateRaw)
+  const isTodayActivity =
+    departureWindow === 'hoy' ||
+    checkInWindow === 'hoy' ||
+    Boolean(linkMeta?.hasReception && roomInfo?.status === 'occupied')
 
   const personId = resolvePersonId(dto)
 
@@ -220,6 +305,7 @@ function mapPersonToSalidaItem(
     personId,
     name,
     phoneNumber: dto.phone_number?.trim() || '',
+    email: dto.email?.trim() || '',
     documentTypeRaw: docTypeRaw,
     documentTypeLabel: formatSalidaDocumentType(docTypeRaw),
     documentNumber: dto.document_number?.trim() || 'No registrado',
@@ -237,9 +323,22 @@ function mapPersonToSalidaItem(
     reservesTotal: linkMeta?.reservesTotal ?? 0,
     serviceRequestsTotal: 0,
     serviceRequestProducts: [],
+    checkInDateRaw,
+    checkInDateFormatted: checkInFmt.dateText,
+    checkInTimeFormatted: checkInFmt.timeText,
     checkOutDateRaw,
+    checkOutDateFormatted: checkOutFmt.dateText,
+    checkOutTimeFormatted: checkOutFmt.timeText,
     departureWindow,
     departureLabel: formatDepartureLabel(checkOutDateRaw, departureWindow),
+    roomId: linkMeta?.roomId || '',
+    roomNumber: roomInfo?.number ? `Hab. ${roomInfo.number}` : '',
+    roomFloor:
+      typeof roomInfo?.floor === 'number' ? `Piso ${roomInfo.floor}` : '',
+    roomStatus: roomInfo?.status || '',
+    stayId: linkMeta?.stayId || '',
+    stayStatus: linkMeta?.stayStatus || '',
+    isTodayActivity,
   }
 }
 
@@ -389,6 +488,7 @@ export async function fetchReceptionsByPersonId(
   }
 }
 
+<<<<<<< HEAD
 export async function fetchSalidasHuespedes(
   options: FetchSalidasOptions = {}
 ): Promise<FetchSalidasHuespedesResult> {
@@ -408,11 +508,18 @@ export async function fetchSalidasHuespedes(
       const { maxRetries } = detectarRecursosDispositivoRecepciones().policy
 
       const [personsRes, staysRes, reservesRes] = await Promise.allSettled([
+=======
+export async function fetchSalidasHuespedes(): Promise<FetchSalidasHuespedesResult> {
+  try {
+    const [personsRes, staysRes, reservesRes, roomsRes] =
+      await Promise.allSettled([
+>>>>>>> 7581654086aaca6b0b620177a60e9a72ccfce8d5
         executeBalancedRequest(
           () =>
             api.get<unknown>('/persons', {
               validateStatus: () => true,
             }),
+<<<<<<< HEAD
           { maxRetries }
         ),
         hasPrefetchedStays
@@ -427,12 +534,34 @@ export async function fetchSalidasHuespedes(
                 }),
               { maxRetries }
             ),
+=======
+          { maxRetries: 2 }
+        ),
+        executeBalancedRequest(
+          () =>
+            api.get<unknown>('/stays', {
+              validateStatus: () => true,
+            }),
+          { maxRetries: 2 }
+        ),
+>>>>>>> 7581654086aaca6b0b620177a60e9a72ccfce8d5
         executeBalancedRequest(
           () =>
             api.get<unknown>('/reserve', {
               validateStatus: () => true,
             }),
+<<<<<<< HEAD
           { maxRetries }
+=======
+          { maxRetries: 2 }
+        ),
+        executeBalancedRequest(
+          () =>
+            api.get<unknown>('/room', {
+              validateStatus: () => true,
+            }),
+          { maxRetries: 2 }
+>>>>>>> 7581654086aaca6b0b620177a60e9a72ccfce8d5
         ),
       ])
 
@@ -463,6 +592,7 @@ export async function fetchSalidasHuespedes(
       'items',
     ])
 
+<<<<<<< HEAD
     // Pre-cargar personas en el catálogo compartido para evitar GET /person/{id} posteriores
     for (const person of rawPersons) {
       const pid = resolvePersonId(person)
@@ -477,6 +607,19 @@ export async function fetchSalidasHuespedes(
           date_of_birth: person.date_of_birth,
           gender: person.gender,
         })
+=======
+    const roomMap = new Map<string, RoomBasicDto>()
+    if (roomsRes.status === 'fulfilled' && validateStatusCode(roomsRes.value.status).isValid) {
+      const rooms = extractArray<RoomBasicDto>(roomsRes.value.data, [
+        'rooms',
+        'data',
+        'items',
+      ])
+      for (const room of rooms) {
+        if (room.id?.trim()) {
+          roomMap.set(room.id.trim(), room)
+        }
+>>>>>>> 7581654086aaca6b0b620177a60e9a72ccfce8d5
       }
     }
 
@@ -500,7 +643,7 @@ export async function fetchSalidasHuespedes(
             reservePersonIdsMap.set(reserve.id.trim(), ids)
           }
           const reserveKey = reserve.id?.trim() || `reserve-${reserveIndex}`
-          const reserveAmount = resolveRecordChargeAmount(reserve)
+          const reserveAmount = resolveRecordChargeAmount(reserve, roomMap)
           for (const pid of ids) {
             registerGuestLink(
               linkMap,
@@ -508,7 +651,12 @@ export async function fetchSalidasHuespedes(
               'reserva',
               reserve.check_out_date,
               reserveAmount,
-              reserveKey
+              reserveKey,
+              {
+                checkInDate: reserve.check_in_date || reserve.created_at,
+                roomId: reserve.room_id,
+                stayStatus: reserve.status,
+              },
             )
           }
         })
@@ -544,7 +692,7 @@ export async function fetchSalidasHuespedes(
           if (isCanceledStayOrReserve(stay)) return
           const ids = getUniquePersonIdsFromRecord(stay, lookupOptions)
           const stayKey = stay.id?.trim() || `stay-${stayIndex}`
-          const stayAmount = resolveRecordChargeAmount(stay)
+          const stayAmount = resolveRecordChargeAmount(stay, roomMap)
           for (const pid of ids) {
             registerGuestLink(
               linkMap,
@@ -552,7 +700,13 @@ export async function fetchSalidasHuespedes(
               'recepcion',
               stay.check_out_date,
               stayAmount,
-              stayKey
+              stayKey,
+              {
+                checkInDate: stay.check_in_date || stay.created_at,
+                roomId: stay.room_id,
+                stayId: stay.id,
+                stayStatus: stay.status,
+              },
             )
             if (stay.reservation_id) {
               registerGuestLink(
@@ -574,24 +728,30 @@ export async function fetchSalidasHuespedes(
     }
 
     const hasLinkData = staysAvailable || reservesAvailable
-    const hasAnyPersonIds = rawPersons.some((p) => Boolean(resolvePersonId(p)))
 
-    const guests: SalidaHuespedItem[] =
-      hasLinkData && hasAnyPersonIds
-        ? rawPersons
-            .filter((person) => {
-              const pid = resolvePersonId(person)
-              return Boolean(pid && linkMap.has(pid))
-            })
-            .map((person, idx) => {
-              const pid = resolvePersonId(person)
-              return mapPersonToSalidaItem(
-                person,
-                idx,
-                pid ? linkMap.get(pid) : undefined
-              )
-            })
-        : rawPersons.map((person, idx) => mapPersonToSalidaItem(person, idx))
+    // Retornamos todas las personas registradas enriquecidas con su habitación, recepción y reserva,
+    // ordenando primero los huéspedes con recepción activa / actividad hoy
+    const guests: SalidaHuespedItem[] = rawPersons
+      .map((person, idx) => {
+        const pid = resolvePersonId(person)
+        return mapPersonToSalidaItem(
+          person,
+          idx,
+          pid ? linkMap.get(pid) : undefined,
+          roomMap,
+        )
+      })
+      .sort((a, b) => {
+        const scoreA =
+          (a.roomNumber ? 4 : 0) +
+          (a.sourceKind !== 'registrado' ? 2 : 0) +
+          (a.departureWindow === 'hoy' ? 1 : 0)
+        const scoreB =
+          (b.roomNumber ? 4 : 0) +
+          (b.sourceKind !== 'registrado' ? 2 : 0) +
+          (b.departureWindow === 'hoy' ? 1 : 0)
+        return scoreB - scoreA
+      })
 
       const finalResult: FetchSalidasHuespedesResult = {
         guests,
@@ -616,4 +776,51 @@ export async function fetchSalidasHuespedes(
 
   inFlightSalidasRequest = executeFetch()
   return inFlightSalidasRequest
+}
+
+/**
+ * Ejecuta el Check-out de la habitación asociada al huésped:
+ * pasa la habitación a estado 'cleaning' y libera `has_reception`.
+ */
+export async function performGuestCheckout(
+  guest: SalidaHuespedItem,
+): Promise<{ ok: boolean; message: string }> {
+  if (!guest.roomId) {
+    return {
+      ok: true,
+      message: `Cuenta liquidada y salida registrada para ${guest.name}.`,
+    }
+  }
+
+  try {
+    const roomRes = await api.get<RoomBasicDto>(
+      `/room/${encodeURIComponent(guest.roomId)}`,
+      { validateStatus: () => true },
+    )
+    if (roomRes.status >= 200 && roomRes.status < 300 && roomRes.data) {
+      const r = roomRes.data
+      await api.put(
+        `/room/${encodeURIComponent(guest.roomId)}`,
+        {
+          number: r.number ?? '',
+          floor: Number(r.floor ?? 1),
+          room_types_id: r.room_types_id ?? '',
+          building_id: r.building_id ?? '',
+          price_override: r.price_override ?? null,
+          status: 'cleaning',
+          has_reception: false,
+        },
+        { validateStatus: () => true },
+      )
+    }
+    return {
+      ok: true,
+      message: `Check-out completado para ${guest.name}. ${guest.roomNumber || 'La habitación'} pasó a limpieza.`,
+    }
+  } catch {
+    return {
+      ok: false,
+      message: 'No se pudo actualizar el estado de la habitación durante el Check-out.',
+    }
+  }
 }

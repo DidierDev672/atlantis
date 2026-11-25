@@ -3,6 +3,10 @@ import { PAGE_META, BACK_TO_CONFIG_PAGES, type NavId } from './ui/navigation';
 import { Sidebar } from './ui/organisms/sidebar';
 import { Header } from './ui/organisms/header';
 import { useRoleRouter } from '../../features/roles/application/use-role-router';
+import {
+  canAccessRoute,
+  getDefaultRouteForCurrentUser,
+} from '../../shared/auth-storage';
 import { HomeOverview } from './ui/organisms/home-overview';
 import { PaletteView } from './ui/organisms/palette-view';
 import { SedesView } from './ui/organisms/sedes-view';
@@ -33,20 +37,44 @@ export function DashboardPage({
   const { decision } = useRoleRouter();
   const [userNavId, setUserNavId] = useState<NavId | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarPinned, setSidebarPinned] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem('nexora.sidebar.pinned') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
-  // Si el usuario navegó explícitamente, se respeta su selección;
-  // de lo contrario, se usa initialNavId o la redirección automática del switch por rol (ej. 'recepcion')
-  const activeId: NavId =
-    userNavId ?? initialNavId ?? (decision.isReception ? 'recepcion' : 'home');
+  const handleToggleSidebarPin = () => {
+    setSidebarPinned((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem('nexora.sidebar.pinned', String(next));
+      } catch {
+        // localStorage no disponible
+      }
+      return next;
+    });
+  };
+
+  // Si el usuario navegó explícitamente y tiene permiso sobre la ruta, se respeta su selección;
+  // de lo contrario, se usa initialNavId o la redirección automática del switch por rol (ej. 'habitacion')
+  const rawActiveId: NavId =
+    userNavId ?? initialNavId ?? (decision.isReception ? 'habitacion' : getDefaultRouteForCurrentUser());
+  const activeId: NavId = canAccessRoute(rawActiveId)
+    ? rawActiveId
+    : getDefaultRouteForCurrentUser();
 
   const meta = PAGE_META[activeId];
 
   const navigate = (id: NavId) => {
-    setUserNavId(id);
+    const safeId: NavId = canAccessRoute(id) ? id : getDefaultRouteForCurrentUser();
+    setUserNavId(safeId);
     setSidebarOpen(false);
   };
 
-  const isBackToConfigPage = BACK_TO_CONFIG_PAGES.includes(activeId);
+  const isBackToConfigPage =
+    canAccessRoute('configuracion') && BACK_TO_CONFIG_PAGES.includes(activeId);
   const handleBackToConfig = () => navigate('configuracion');
 
   return (
@@ -56,9 +84,15 @@ export function DashboardPage({
         onClose={() => setSidebarOpen(false)}
         activeId={activeId}
         onNavigate={navigate}
+        pinned={sidebarPinned}
+        onTogglePin={handleToggleSidebarPin}
       />
 
-      <div className="relative z-10 lg:pl-64">
+      <div
+        className={`relative z-10 transition-[padding] duration-200 ease-out ${
+          sidebarPinned ? 'lg:pl-64' : 'lg:pl-20'
+        }`}
+      >
         <Header
           title={meta.title}
           subtitle={meta.subtitle}
