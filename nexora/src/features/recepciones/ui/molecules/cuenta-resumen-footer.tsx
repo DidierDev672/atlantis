@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
   faBed,
@@ -14,16 +15,18 @@ export interface CuentaResumenFooterProps {
   receptionsTotal: number
   grandTotal: number
   showPayNotice: boolean
+  isPaying?: boolean
   onClose: () => void
   onPay: () => void
 }
 
-export function CuentaResumenFooter({
+export const CuentaResumenFooter = memo(function CuentaResumenFooter({
   serviceRequestsTotal,
   reservesTotal,
   receptionsTotal,
   grandTotal,
   showPayNotice,
+  isPaying = false,
   onClose,
   onPay,
 }: CuentaResumenFooterProps) {
@@ -93,7 +96,8 @@ export function CuentaResumenFooter({
         <button
           type="button"
           onClick={onClose}
-          className="border-line bg-panel text-ink hover:bg-canvas inline-flex cursor-pointer items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold transition"
+          disabled={isPaying}
+          className="border-line bg-panel text-ink hover:bg-canvas inline-flex cursor-pointer items-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-60"
         >
           <FontAwesomeIcon
             icon={faXmark}
@@ -106,16 +110,17 @@ export function CuentaResumenFooter({
         <button
           type="button"
           onClick={onPay}
-          className="bg-primary inline-flex cursor-pointer items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-semibold text-white shadow-xs transition hover:opacity-90"
+          disabled={isPaying}
+          className="bg-primary inline-flex cursor-pointer items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-semibold text-white shadow-xs transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
         >
           <FontAwesomeIcon
             icon={faCreditCard}
             className="size-3.5"
             aria-hidden="true"
           />
-          <span>Pagar</span>
+          <span>{isPaying ? 'Procesando…' : 'Pagar'}</span>
         </button>
       </div>
     </div>
   )
-}
+})

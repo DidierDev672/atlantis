@@ -17,6 +17,12 @@ export interface CargoEstadiaProductItemProps {
 export function CargoEstadiaProductItem({
   product,
 }: CargoEstadiaProductItemProps) {
+  const statusLabel =
+    product.statusLabel &&
+    product.statusLabel.trim().toLowerCase() !== 'pendiente'
+      ? product.statusLabel
+      : null
+
   return (
     <motion.li
       initial={{ opacity: 0 }}
@@ -54,10 +60,8 @@ export function CargoEstadiaProductItem({
         <p className="text-ink font-mono text-sm font-bold">
           {formatCurrencyAmount(product.lineTotal, product.currency)}
         </p>
-        {product.statusLabel && (
-          <span className="text-ink-muted text-[11px]">
-            {product.statusLabel}
-          </span>
+        {statusLabel && (
+          <span className="text-ink-muted text-[11px]">{statusLabel}</span>
         )}
       </div>
     </motion.li>
