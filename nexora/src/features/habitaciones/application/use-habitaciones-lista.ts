@@ -1,412 +1,218 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  compareRoomNumbersDesc,
+  filterHabitacionesRows,
+  mapRawToRoomRow,
   type HabitacionesListFilters,
   type RawRoomData,
   type RoomRow,
 } from '../domain/habitacion-lista'
-import { ApiHabitacionListaRepository } from '../infrastructure/api-habitacion-lista-repository'
+import {
+  applySingleBedResult,
+  applySingleBuildingResult,
+  markBedRetrying,
+  markBuildingRetrying,
+  mergeKnownBuildings,
+  type KnownBuildingItem,
+} from '../domain/habitaciones-lista-updaters'
+import { getHabitacionListaRepository } from '../infrastructure/get-habitacion-lista-repository'
+import {
+  applyFloorEnrichmentToRows,
+  fetchFloorEnrichmentBatch,
+} from './enrich-floor-rooms'
+import {
+  resolveHabitacionesFetchError,
+  type HabitacionesErrorInfo,
+} from './habitaciones-error-resolver'
+import { useDeviceResourceProfile } from './use-device-resource-profile'
 
-const repository = new ApiHabitacionListaRepository()
-const PAGE_SIZE = 15
-
-function mapRawToRoomRow(raw: RawRoomData): RoomRow {
-  const id = String(raw.id)
-  const num = raw.number ? String(raw.number).trim() : id.slice(-4)
-  const floor = raw.floor != null ? raw.floor : 1
-  const status = raw.status ? String(raw.status).toLowerCase().trim() : 'available'
-
-  // El precio especial es null si no hay override
-  let priceOverride: number | null = null
-  if (raw.price_override != null && raw.price_override !== '') {
-    const parsed = Number(String(raw.price_override).replace(',', '.'))
-    if (!isNaN(parsed) && parsed > 0) {
-      priceOverride = parsed
-    }
-  }
-
-  const buildingId = raw.building_id ? String(raw.building_id).trim() : undefined
-  const roomTypesId = (raw.room_types_id || raw.room_type_id)
-    ? String(raw.room_types_id || raw.room_type_id).trim()
-    : undefined
-
-  return {
-    id,
-    number: num,
-    floor,
-    status,
-    priceOverride,
-    updatedAt: raw.updated_at,
-    createdAt: raw.created_at,
-    roomTypesId,
-    buildingId,
-    bed: {
-      id: roomTypesId,
-      name: roomTypesId ? 'Cargando cama…' : 'No asignada',
-      loading: Boolean(roomTypesId),
-      error: false,
-    },
-    building: {
-      id: buildingId,
-      name: buildingId ? 'Cargando edificio…' : 'Sin edificio',
-      loading: Boolean(buildingId),
-      error: false,
-    },
-  }
-}
-
+/**
+ * Hook de aplicación para listar habitaciones paginadas con enriquecimiento en lote,
+ * adaptado al perfil de hardware/red (`useDeviceResourceProfile`).
+ */
 export function useHabitacionesLista() {
+  const { policy } = useDeviceResourceProfile()
+  const pageSize = policy.tier === 'ultra-light' ? 10 : 15
+
   const [allRawRooms, setAllRawRooms] = useState<RawRoomData[]>([])
   const [rows, setRows] = useState<RoomRow[]>([])
   const [page, setPage] = useState(1)
   const [initialLoading, setInitialLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
+  const [errorInfo, setErrorInfo] = useState<HabitacionesErrorInfo | null>(null)
   const [filters, setFilters] = useState<HabitacionesListFilters>({
     search: '',
     status: 'all',
     buildingId: 'all',
   })
+  const [knownBuildings, setKnownBuildings] = useState<KnownBuildingItem[]>([])
 
-  const [knownBuildings, setKnownBuildings] = useState<{ id: string; name: string }[]>([])
   const isMountedRef = useRef(true)
+  const loadMoreTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     isMountedRef.current = true
     return () => {
       isMountedRef.current = false
+      if (loadMoreTimerRef.current !== null) {
+        clearTimeout(loadMoreTimerRef.current)
+        loadMoreTimerRef.current = null
+      }
     }
   }, [])
 
-  /**
-   * Enriquece un conjunto de filas resolviendo en paralelo buildings y beds únicos
-   */
+  /** Enriquece edificios y camas únicos en lote aplicando una sola actualización por grupo. */
   const enrichBatch = useCallback(async (targetRows: RoomRow[]) => {
-    // 1. Extraer IDs únicos de building y bed del lote
-    const uniqueBuildingIds = Array.from(
-      new Set(targetRows.map((r) => r.buildingId).filter((id): id is string => Boolean(id)))
-    )
-    const uniqueBedIds = Array.from(
-      new Set(targetRows.map((r) => r.roomTypesId).filter((id): id is string => Boolean(id)))
-    )
-
-    // 2. Resolver edificios únicos en paralelo usando el repositorio con caché
-    const buildingPromises = uniqueBuildingIds.map(async (bId) => {
-      try {
-        const data = await repository.getBuilding(bId)
-        if (!isMountedRef.current) return
-        if (data) {
-          setRows((prev) =>
-            prev.map((r) =>
-              r.buildingId === bId
-                ? {
-                    ...r,
-                    building: {
-                      id: bId,
-                      name: data.name,
-                      floorNumber: data.floorNumber,
-                      headquartersId: data.headquartersId,
-                      subHeadquartersId: data.subHeadquartersId,
-                      loading: false,
-                      error: false,
-                    },
-                  }
-                : r
-            )
-          )
-
-          // Registrar en la lista de edificios disponibles para el filtro
-          setKnownBuildings((prev) => {
-            if (prev.some((b) => b.id === bId)) return prev
-            return [...prev, { id: bId, name: data.name }]
-          })
-        }
-      } catch {
-        if (!isMountedRef.current) return
-        setRows((prev) =>
-          prev.map((r) =>
-            r.buildingId === bId
-              ? {
-                  ...r,
-                  building: {
-                    id: bId,
-                    name: 'No disponible',
-                    loading: false,
-                    error: true,
-                  },
-                }
-              : r
-          )
+    if (targetRows.length === 0) return
+    try {
+      const repo = await getHabitacionListaRepository()
+      const batch = await fetchFloorEnrichmentBatch(repo, targetRows)
+      if (!isMountedRef.current) return
+      setRows((prev) => applyFloorEnrichmentToRows(prev, batch))
+      if (batch.resolvedBuildingNames.length > 0) {
+        setKnownBuildings((prev) =>
+          mergeKnownBuildings(prev, batch.resolvedBuildingNames)
         )
       }
-    })
-
-    // 3. Resolver tipos de cama únicos en paralelo usando el repositorio con caché
-    const bedPromises = uniqueBedIds.map(async (bedId) => {
-      try {
-        const data = await repository.getBedType(bedId)
-        if (!isMountedRef.current) return
-        if (data) {
-          setRows((prev) =>
-            prev.map((r) =>
-              r.roomTypesId === bedId
-                ? {
-                    ...r,
-                    bed: {
-                      id: bedId,
-                      name: data.name,
-                      capacityPeople: data.capacityPeople,
-                      loading: false,
-                      error: false,
-                    },
-                  }
-                : r
-            )
-          )
-        }
-      } catch {
-        if (!isMountedRef.current) return
-        setRows((prev) =>
-          prev.map((r) =>
-            r.roomTypesId === bedId
-              ? {
-                  ...r,
-                  bed: {
-                    id: bedId,
-                    name: 'No disponible',
-                    loading: false,
-                    error: true,
-                  },
-                }
-              : r
-          )
-        )
-      }
-    })
-
-    await Promise.allSettled([...buildingPromises, ...bedPromises])
+    } catch (err) {
+      console.error('Error al enriquecer lote de habitaciones:', err)
+    }
   }, [])
 
-  /**
-   * Carga inicial completa de habitaciones desde GET /room
-   */
+  /** Carga inicial completa de habitaciones desde `GET /room`. */
   const loadInitialRooms = useCallback(async () => {
     setInitialLoading(true)
     setError(null)
+    setErrorInfo(null)
     try {
-      const data = await repository.getRooms()
+      const repo = await getHabitacionListaRepository()
+      const sorted = await repo.getRooms()
       if (!isMountedRef.current) return
 
-      const sorted = [...data].sort((a, b) => compareRoomNumbersDesc(a.number, b.number))
       setAllRawRooms(sorted)
-
-      // Primera página visible de inmediato (ordenada de mayor a menor)
-      const firstPageRaw = sorted.slice(0, PAGE_SIZE)
-      const firstPageRows = firstPageRaw.map(mapRawToRoomRow)
-
+      const firstPageRows = sorted.slice(0, pageSize).map(mapRawToRoomRow)
       setRows(firstPageRows)
       setPage(1)
 
-      // Enriquecer la primera página en segundo plano
       void enrichBatch(firstPageRows)
-    } catch {
+    } catch (err) {
+      console.error('Error al cargar habitaciones iniciales:', err)
       if (!isMountedRef.current) return
-      setError(
-        'No pudimos conectar con el servidor para obtener las habitaciones. Verifica tu conexión e inténtalo de nuevo.'
-      )
+      const resolved = resolveHabitacionesFetchError(err)
+      setError(resolved.message)
+      setErrorInfo(resolved)
     } finally {
       if (isMountedRef.current) {
         setInitialLoading(false)
       }
     }
-  }, [enrichBatch])
+  }, [enrichBatch, pageSize])
 
   useEffect(() => {
-    void loadInitialRooms()
+    let active = true
+    void Promise.resolve()
+      .then(() => {
+        if (!active) return
+        return loadInitialRooms()
+      })
+      .catch((err) => {
+        console.error('Error al inicializar lista de habitaciones:', err)
+      })
+    return () => {
+      active = false
+    }
   }, [loadInitialRooms])
 
-  /**
-   * Cargar la siguiente página incremental al hacer scroll
-   */
+  /** Carga la siguiente página incremental evitando fugas de timers al desmontar. */
   const loadMore = useCallback(async () => {
     if (loadingMore || initialLoading) return
 
-    const startIndex = page * PAGE_SIZE
+    const startIndex = page * pageSize
     if (startIndex >= allRawRooms.length) return
 
     setLoadingMore(true)
+    try {
+      if (policy.enableAnimations) {
+        await new Promise<void>((resolve) => {
+          loadMoreTimerRef.current = setTimeout(() => {
+            loadMoreTimerRef.current = null
+            resolve()
+          }, 200)
+        })
+      }
+      if (!isMountedRef.current) return
 
-    // Pequeño retardo natural para fluidez de scroll visual
-    await new Promise((res) => setTimeout(res, 200))
-    if (!isMountedRef.current) return
+      const nextBatchRows = allRawRooms
+        .slice(startIndex, startIndex + pageSize)
+        .map(mapRawToRoomRow)
 
-    const nextBatchRaw = allRawRooms.slice(startIndex, startIndex + PAGE_SIZE)
-    const nextBatchRows = nextBatchRaw.map(mapRawToRoomRow)
+      setRows((prev) => [...prev, ...nextBatchRows])
+      setPage((prev) => prev + 1)
+      void enrichBatch(nextBatchRows)
+    } catch (err) {
+      console.error('Error al cargar más habitaciones:', err)
+    } finally {
+      if (isMountedRef.current) {
+        setLoadingMore(false)
+      }
+    }
+  }, [
+    allRawRooms,
+    enrichBatch,
+    initialLoading,
+    loadingMore,
+    page,
+    pageSize,
+    policy.enableAnimations,
+  ])
 
-    setRows((prev) => [...prev, ...nextBatchRows])
-    setPage((prev) => prev + 1)
-    setLoadingMore(false)
-
-    // Enriquecer el nuevo lote
-    void enrichBatch(nextBatchRows)
-  }, [loadingMore, initialLoading, page, allRawRooms, enrichBatch])
-
-  /**
-   * Reintento de un edificio puntual desde la celda de la fila
-   */
+  /** Reintento puntual de un edificio desde la fila correspondiente. */
   const retryBuilding = useCallback(async (buildingId: string) => {
     if (!buildingId) return
-
-    // Marcar como cargando en las filas correspondientes
-    setRows((prev) =>
-      prev.map((r) =>
-        r.buildingId === buildingId
-          ? { ...r, building: { ...r.building, loading: true, error: false, name: 'Reintentando…' } }
-          : r
-      )
-    )
-
-    repository.invalidateBuilding(buildingId)
+    setRows((prev) => markBuildingRetrying(prev, buildingId))
 
     try {
-      const data = await repository.getBuilding(buildingId)
+      const repo = await getHabitacionListaRepository()
+      repo.invalidateBuilding(buildingId)
+      const data = await repo.getBuilding(buildingId)
       if (!isMountedRef.current) return
+
+      setRows((prev) => applySingleBuildingResult(prev, buildingId, data))
       if (data) {
-        setRows((prev) =>
-          prev.map((r) =>
-            r.buildingId === buildingId
-              ? {
-                  ...r,
-                  building: {
-                    id: buildingId,
-                    name: data.name,
-                    floorNumber: data.floorNumber,
-                    headquartersId: data.headquartersId,
-                    subHeadquartersId: data.subHeadquartersId,
-                    loading: false,
-                    error: false,
-                  },
-                }
-              : r
-          )
+        setKnownBuildings((prev) =>
+          mergeKnownBuildings(prev, [{ id: buildingId, name: data.name }])
         )
       }
-    } catch {
+    } catch (err) {
+      console.error('Error al reintentar edificio:', err)
       if (!isMountedRef.current) return
-      setRows((prev) =>
-        prev.map((r) =>
-          r.buildingId === buildingId
-            ? { ...r, building: { ...r.building, loading: false, error: true, name: 'No disponible' } }
-            : r
-        )
-      )
+      setRows((prev) => applySingleBuildingResult(prev, buildingId, null))
     }
   }, [])
 
-  /**
-   * Reintento de una cama puntual desde la celda de la fila
-   */
+  /** Reintento puntual de una cama desde la fila correspondiente. */
   const retryBed = useCallback(async (bedId: string) => {
     if (!bedId) return
-
-    setRows((prev) =>
-      prev.map((r) =>
-        r.roomTypesId === bedId
-          ? { ...r, bed: { ...r.bed, loading: true, error: false, name: 'Reintentando…' } }
-          : r
-      )
-    )
-
-    repository.invalidateBed(bedId)
+    setRows((prev) => markBedRetrying(prev, bedId))
 
     try {
-      const data = await repository.getBedType(bedId)
+      const repo = await getHabitacionListaRepository()
+      repo.invalidateBed(bedId)
+      const data = await repo.getBedType(bedId)
       if (!isMountedRef.current) return
-      if (data) {
-        setRows((prev) =>
-          prev.map((r) =>
-            r.roomTypesId === bedId
-              ? {
-                  ...r,
-                  bed: {
-                    id: bedId,
-                    name: data.name,
-                    capacityPeople: data.capacityPeople,
-                    loading: false,
-                    error: false,
-                  },
-                }
-              : r
-          )
-        )
-      }
-    } catch {
+
+      setRows((prev) => applySingleBedResult(prev, bedId, data))
+    } catch (err) {
+      console.error('Error al reintentar tipo de cama:', err)
       if (!isMountedRef.current) return
-      setRows((prev) =>
-        prev.map((r) =>
-          r.roomTypesId === bedId
-            ? { ...r, bed: { ...r.bed, loading: false, error: true, name: 'No disponible' } }
-            : r
-        )
-      )
+      setRows((prev) => applySingleBedResult(prev, bedId, null))
     }
   }, [])
 
-  /**
-   * Filtros aplicados sobre las filas actualmente cargadas
-   */
-  const filteredRows = useMemo(() => {
-    const list = rows.filter((row) => {
-      // 1. Búsqueda por número o piso
-      if (filters.search.trim()) {
-        const query = filters.search.trim().toLowerCase()
-        const matchesNumber = row.number.toLowerCase().includes(query)
-        const matchesFloor = String(row.floor).includes(query)
-        const matchesBuilding = row.building.name.toLowerCase().includes(query)
-        const matchesBed = row.bed.name.toLowerCase().includes(query)
-        if (!matchesNumber && !matchesFloor && !matchesBuilding && !matchesBed) {
-          return false
-        }
-      }
-
-      // 2. Filtro por estado
-      if (filters.status !== 'all') {
-        const rowStatus = row.status.toLowerCase().trim()
-        const filterStatus = filters.status.toLowerCase().trim()
-
-        const isMatch =
-          rowStatus === filterStatus ||
-          (filterStatus === 'occupied' &&
-            (rowStatus === 'busy' || rowStatus === 'ocupada' || rowStatus === 'ocupado')) ||
-          (filterStatus === 'available' &&
-            (rowStatus === 'disponible' || rowStatus === 'free' || rowStatus === 'libre')) ||
-          (filterStatus === 'maintenance' && rowStatus === 'mantenimiento') ||
-          (filterStatus === 'cleaning' &&
-            (rowStatus === 'limpieza' || rowStatus === 'dirty' || rowStatus === 'sucia')) ||
-          (filterStatus === 'inactive' &&
-            (rowStatus === 'inactiva' || rowStatus === 'inactivo' || rowStatus === 'disabled'))
-
-        if (!isMatch) {
-          return false
-        }
-      }
-
-      // 3. Filtro por edificio
-      if (filters.buildingId !== 'all') {
-        if (row.buildingId !== filters.buildingId) {
-          return false
-        }
-      }
-
-      return true
-    })
-
-    // Lista ordenada estrictamente de mayor a menor según el número de la habitación
-    return [...list].sort((a, b) => compareRoomNumbersDesc(a.number, b.number))
-  }, [rows, filters])
-
-  const hasMore = rows.length < allRawRooms.length
+  const filteredRows = useMemo(
+    () => filterHabitacionesRows(rows, filters),
+    [rows, filters]
+  )
 
   return {
     rows: filteredRows,
@@ -414,8 +220,9 @@ export function useHabitacionesLista() {
     loadedCount: rows.length,
     initialLoading,
     loadingMore,
-    hasMore,
+    hasMore: rows.length < allRawRooms.length,
     error,
+    errorInfo,
     filters,
     knownBuildings,
     setFilters,
@@ -427,4 +234,3 @@ export function useHabitacionesLista() {
 }
 
 export default useHabitacionesLista
-

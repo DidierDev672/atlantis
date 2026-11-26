@@ -3,7 +3,7 @@ import { MotionConfig } from 'motion/react';
 import { lazyWithFallback } from '../application/lazy-with-fallback';
 import { ResourcePolicyProvider } from '../application/resource-policy/resource-policy-provider';
 import { useResourcePolicy } from '../application/resource-policy/use-resource-policy';
-import { useDeviceResourceProfile } from '../application/use-device-resource-profile';
+import { useDeviceResourceProfile } from '../../../shared/lib/use-device-resource-profile';
 import { FloorAccordionSkeleton } from './atoms/floor-accordion-skeleton';
 import { HabitacionesErrorBoundary } from './molecules/habitaciones-error-boundary';
 import type { HabitacionesTabKey } from './molecules/habitaciones-mode-switch';
@@ -53,52 +53,32 @@ const HabitacionesPageContent = memo(function HabitacionesPageContent() {
   );
 
   const handleOpenRegistroDrawer = useCallback(() => {
-    try {
-      setIsPisosDrawerOpen(false);
-      setIsRegistroDrawerOpen(true);
-    } catch (err) {
-      console.error('Error al abrir drawer de registrar habitación:', err);
-    }
+    setIsPisosDrawerOpen(false);
+    setIsRegistroDrawerOpen(true);
   }, []);
 
   const handleCloseRegistroDrawer = useCallback(() => {
-    try {
-      setIsRegistroDrawerOpen(false);
-    } catch (err) {
-      console.error('Error al cerrar drawer de registrar habitación:', err);
-    }
+    setIsRegistroDrawerOpen(false);
   }, []);
 
   const handleOpenPisosDrawer = useCallback(() => {
-    try {
-      setIsRegistroDrawerOpen(false);
-      setIsPisosDrawerOpen(true);
-    } catch (err) {
-      console.error('Error al abrir drawer de registrar pisos:', err);
-    }
+    setIsRegistroDrawerOpen(false);
+    setIsPisosDrawerOpen(true);
   }, []);
 
   const handleClosePisosDrawer = useCallback(() => {
-    try {
-      setIsPisosDrawerOpen(false);
-    } catch (err) {
-      console.error('Error al cerrar drawer de registrar pisos:', err);
-    }
+    setIsPisosDrawerOpen(false);
   }, []);
 
   const handleTabChange = useCallback(
     (tab: HabitacionesTabKey) => {
-      try {
-        if (tab === 'registro') {
-          handleOpenRegistroDrawer();
-        } else if (tab === 'pisos') {
-          handleOpenPisosDrawer();
-        } else {
-          handleCloseRegistroDrawer();
-          handleClosePisosDrawer();
-        }
-      } catch (err) {
-        console.error('Error al alternar vista de habitaciones:', err);
+      if (tab === 'registro') {
+        handleOpenRegistroDrawer();
+      } else if (tab === 'pisos') {
+        handleOpenPisosDrawer();
+      } else {
+        handleCloseRegistroDrawer();
+        handleClosePisosDrawer();
       }
     },
     [
@@ -110,11 +90,7 @@ const HabitacionesPageContent = memo(function HabitacionesPageContent() {
   );
 
   const handleCatalogMutated = useCallback(() => {
-    try {
-      setListRefreshVersion((prev) => prev + 1);
-    } catch (err) {
-      console.error('Error al actualizar listado de habitaciones:', err);
-    }
+    setListRefreshVersion((prev) => prev + 1);
   }, []);
 
   const handleBoundaryReset = useCallback(() => {
@@ -125,6 +101,14 @@ const HabitacionesPageContent = memo(function HabitacionesPageContent() {
   const allowAnimations =
     resourcePolicy.animation !== 'none' &&
     resourceProfile.policy.enableAnimations;
+
+  const allowSkeletonPulse =
+    allowAnimations && resourceProfile.policy.tier === 'full';
+
+  const showResourceBadge =
+    resourcePolicy.deviceTier !== 'high' ||
+    resourcePolicy.networkTier !== 'high' ||
+    resourceProfile.policy.tier !== 'full';
 
   const activeSwitchTab: HabitacionesTabKey = isRegistroDrawerOpen
     ? 'registro'
@@ -143,7 +127,7 @@ const HabitacionesPageContent = memo(function HabitacionesPageContent() {
                   fallback={
                     <div
                       className={`bg-line/40 h-28 w-10 rounded-full shadow-md ${
-                        allowAnimations ? 'animate-pulse' : ''
+                        allowSkeletonPulse ? 'animate-pulse' : ''
                       }`}
                     />
                   }
@@ -155,14 +139,20 @@ const HabitacionesPageContent = memo(function HabitacionesPageContent() {
                 </Suspense>
               </div>
 
-              <Suspense fallback={null}>
-                <LazyDeviceResourceBadge
-                  profile={resourceProfile}
-                  policy={resourcePolicy}
-                />
-              </Suspense>
+              {showResourceBadge && (
+                <Suspense fallback={null}>
+                  <LazyDeviceResourceBadge
+                    profile={resourceProfile}
+                    policy={resourcePolicy}
+                  />
+                </Suspense>
+              )}
 
-              <Suspense fallback={<FloorAccordionSkeleton count={3} />}>
+              <Suspense
+                fallback={
+                  <FloorAccordionSkeleton count={3} animate={allowSkeletonPulse} />
+                }
+              >
                 <LazyHabitacionesPisosList
                   onNewHabitacion={handleOpenRegistroDrawer}
                   viewMode={viewMode}
@@ -187,6 +177,7 @@ const HabitacionesPageContent = memo(function HabitacionesPageContent() {
                     isOpen={isPisosDrawerOpen}
                     onClose={handleClosePisosDrawer}
                     onSuccess={handleCatalogMutated}
+                    allowAnimations={allowAnimations}
                   />
                 </Suspense>
               )}

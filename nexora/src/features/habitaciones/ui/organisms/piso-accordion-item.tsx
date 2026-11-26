@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
+import type { HabitacionesErrorInfo } from '../../application/habitaciones-error-resolver';
 import type { FloorGroup, RoomRow } from '../../domain/habitacion-lista';
 import {
   filterFloorRoomsByBadge,
@@ -32,6 +33,7 @@ export interface PisoAccordionItemProps {
   isOpen: boolean;
   isEnriching: boolean;
   floorError: string | null;
+  floorErrorInfo?: HabitacionesErrorInfo | null;
   activeBadgeFilter: FloorStatusBadgeFilter;
   viewMode: HabitacionesViewMode;
   hasTariff: (roomId: string) => boolean;
@@ -57,6 +59,7 @@ export const PisoAccordionItem = memo(function PisoAccordionItem({
   isOpen,
   isEnriching,
   floorError,
+  floorErrorInfo = null,
   activeBadgeFilter,
   viewMode,
   hasTariff,
@@ -174,6 +177,7 @@ export const PisoAccordionItem = memo(function PisoAccordionItem({
                 <HabitacionesErrorState
                   compact
                   message={floorError}
+                  errorInfo={floorErrorInfo}
                   actionLabel={`Reintentar ${group.floorLabel}`}
                   onRetry={() => onRetryFloor(group.floorKey)}
                 />

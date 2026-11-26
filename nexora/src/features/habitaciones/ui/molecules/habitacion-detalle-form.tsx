@@ -11,6 +11,7 @@ import {
 import type { HabitacionDetalleInput } from '../../domain/habitacion-detalle'
 import type { HabitacionDetalleRepository } from '../../domain/habitacion-detalle-repository'
 import { SubmitError } from '../atoms/habitacion-form-feedback'
+import { HabitacionEdificioField } from './habitacion-edificio-field'
 import { HabitacionFormActions } from './habitacion-form-actions'
 import { HabitacionNumeroField } from './habitacion-numero-field'
 import { HabitacionTarifaField } from './habitacion-tarifa-field'
@@ -80,27 +81,18 @@ export const HabitacionDetalleForm = memo(function HabitacionDetalleForm({
         className="border-line/65 bg-canvas/35 relative z-40 space-y-3 rounded-2xl border p-3.5 has-[[aria-expanded='true']]:z-50 sm:p-4"
       >
         <div className="grid gap-4 sm:grid-cols-2">
-          <div className="relative z-40 has-[[aria-expanded='true']]:z-50">
-            <RecursosDropdown
-              label="Edificio"
-              placeholder={
-                edificiosLoading
-                  ? 'Cargando edificios…'
-                  : 'Elige un edificio…'
-              }
-              searchPlaceholder="Buscar edificio…"
-              searchable
-              options={edificios}
-              value={form.edificioId}
-              onChange={form.handleEdificioChange}
-              error={form.errors.edificioId}
-              required
-              disabled={edificiosLoading}
-              isLoading={edificiosLoading}
-              direction="auto"
-              emptyLabel="Aún no hay edificios registrados."
-            />
-          </div>
+          <HabitacionEdificioField
+            edificios={form.mergedEdificios}
+            edificiosLoading={edificiosLoading}
+            loadingAutoEdificio={form.loadingAutoEdificio}
+            edificioId={form.edificioId}
+            isManualEdificio={form.isManualEdificio}
+            submitting={submitting}
+            error={form.errors.edificioId}
+            autoEdificioValidation={form.autoEdificioValidation}
+            onChange={form.handleEdificioChange}
+            onToggleManual={form.handleToggleManualEdificio}
+          />
 
           <div className="relative z-40 space-y-1 has-[[aria-expanded='true']]:z-50">
             <RecursosDropdown

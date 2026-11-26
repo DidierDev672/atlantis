@@ -1,4 +1,5 @@
 import { memo } from 'react';
+import type { HabitacionesErrorInfo } from '../../application/habitaciones-error-resolver';
 import type { FloorGroup, RoomRow } from '../../domain/habitacion-lista';
 import type { FloorStatusBadgeFilter } from '../../domain/piso-badge-filter';
 import { FloorAccordionSkeleton } from '../atoms/floor-accordion-skeleton';
@@ -9,12 +10,14 @@ import { PisoAccordionItem } from './piso-accordion-item';
 
 export interface HabitacionesPisosFeedProps {
   error: string | null;
+  errorInfo?: HabitacionesErrorInfo | null;
   initialLoading: boolean;
   visibleFloorGroups: FloorGroup[];
   hasActiveFilters: boolean;
   expandedFloors: Set<string>;
   enrichingFloors: Record<string, boolean>;
   floorErrors: Record<string, string | null>;
+  floorErrorInfos?: Record<string, HabitacionesErrorInfo | null>;
   floorBadgeFilters: Record<string, FloorStatusBadgeFilter>;
   viewMode: HabitacionesViewMode;
   hasTariff: (roomId: string) => boolean;
@@ -50,12 +53,14 @@ export interface HabitacionesPisosFeedProps {
  */
 export const HabitacionesPisosFeed = memo(function HabitacionesPisosFeed({
   error,
+  errorInfo = null,
   initialLoading,
   visibleFloorGroups,
   hasActiveFilters,
   expandedFloors,
   enrichingFloors,
   floorErrors,
+  floorErrorInfos,
   floorBadgeFilters,
   viewMode,
   hasTariff,
@@ -79,13 +84,12 @@ export const HabitacionesPisosFeed = memo(function HabitacionesPisosFeed({
 }: HabitacionesPisosFeedProps) {
   if (error) {
     return (
-      <div className="border-line bg-panel rounded-2xl border p-4 shadow-sm sm:p-6">
-        <HabitacionesErrorState
-          message={error}
-          actionLabel="Reintentar carga de habitaciones"
-          onRetry={onReload}
-        />
-      </div>
+      <HabitacionesErrorState
+        message={error}
+        errorInfo={errorInfo}
+        actionLabel="Reintentar carga de habitaciones"
+        onRetry={onReload}
+      />
     );
   }
 
@@ -113,6 +117,7 @@ export const HabitacionesPisosFeed = memo(function HabitacionesPisosFeed({
           isOpen={expandedFloors.has(group.floorKey)}
           isEnriching={Boolean(enrichingFloors[group.floorKey])}
           floorError={floorErrors[group.floorKey] ?? null}
+          floorErrorInfo={floorErrorInfos?.[group.floorKey] ?? null}
           activeBadgeFilter={floorBadgeFilters[group.floorKey] ?? 'all'}
           viewMode={viewMode}
           hasTariff={hasTariff}

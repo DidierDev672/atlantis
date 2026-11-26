@@ -30,16 +30,20 @@ export interface EdificioRegistroDrawerProps {
   isOpen: boolean
   onClose: () => void
   onSuccess?: () => void
+  allowAnimations?: boolean
 }
 
 const EdificioRegistroDrawerInner = memo(function EdificioRegistroDrawerInner({
   onClose,
   onSuccess,
+  allowAnimations,
 }: {
   onClose: () => void
   onSuccess?: () => void
+  allowAnimations?: boolean
 }) {
   const { policy } = useDeviceResourceProfile()
+  const shouldAnimate = allowAnimations ?? policy.enableAnimations
   const {
     sedes,
     sedesLoading,
@@ -94,7 +98,7 @@ const EdificioRegistroDrawerInner = memo(function EdificioRegistroDrawerInner({
   )
 
   return (
-    <MotionConfig reducedMotion={policy.enableAnimations ? 'user' : 'always'}>
+    <MotionConfig reducedMotion={shouldAnimate ? 'user' : 'always'}>
       <Drawer
         isOpen
         onClose={handleSafeClose}
@@ -164,10 +168,15 @@ export const EdificioRegistroDrawer = memo(function EdificioRegistroDrawer({
   isOpen,
   onClose,
   onSuccess,
+  allowAnimations,
 }: EdificioRegistroDrawerProps) {
   if (!isOpen) return null
   return (
-    <EdificioRegistroDrawerInner onClose={onClose} onSuccess={onSuccess} />
+    <EdificioRegistroDrawerInner
+      onClose={onClose}
+      onSuccess={onSuccess}
+      allowAnimations={allowAnimations}
+    />
   )
 })
 
