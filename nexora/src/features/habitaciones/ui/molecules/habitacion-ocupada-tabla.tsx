@@ -1,3 +1,5 @@
+import { memo } from 'react'
+import { useDeviceResourceProfile } from '../../../../shared/lib/use-device-resource-profile'
 import type { HabitacionOcupadaModel } from '../../domain/habitacion-ocupada'
 
 export interface HabitacionOcupadaTablaProps {
@@ -10,10 +12,11 @@ export interface HabitacionOcupadaTablaProps {
  * Tabla accesible y responsiva que muestra el estado "OCUPADA" de la habitación,
  * evidenciando los datos de la estancia e impidiendo la asignación de nuevos huéspedes.
  */
-export function HabitacionOcupadaTabla({
+export const HabitacionOcupadaTabla = memo(function HabitacionOcupadaTabla({
   model,
   className = '',
 }: HabitacionOcupadaTablaProps) {
+  const { policy } = useDeviceResourceProfile()
   const formatDate = (isoString?: string) => {
     if (!isoString) return 'No definida'
     try {
@@ -37,7 +40,11 @@ export function HabitacionOcupadaTabla({
       {/* Cabecera de la tabla con estado bloqueante */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rose-500/20 bg-rose-500/10 px-4 py-3 sm:px-6">
         <div className="flex items-center gap-2.5">
-          <span className="size-2.5 rounded-full bg-rose-500 animate-pulse" />
+          <span
+            className={`size-2.5 rounded-full bg-rose-500 ${
+              policy.enableAnimations ? 'animate-pulse' : ''
+            }`}
+          />
           <h4 className="font-bold text-sm sm:text-base text-ink">
             Estado de Habitación {model.roomNumber}
           </h4>
@@ -112,4 +119,4 @@ export function HabitacionOcupadaTabla({
       </div>
     </div>
   )
-}
+})

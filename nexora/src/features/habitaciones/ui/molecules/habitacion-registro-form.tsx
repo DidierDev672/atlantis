@@ -1,241 +1,273 @@
-import { useState, type FormEvent } from 'react'
-import { motion } from 'motion/react'
-import { customEasing, fadeUp } from '../../../../design-tokens/motion'
-import { Input } from '../../../../shared/ui/Input'
-import { RecursosDropdown } from '../../../recursos/ui/molecules/recursos-dropdown'
+import { Suspense, lazy, memo, type ComponentType } from 'react'
+import { MotionConfig } from 'motion/react'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
 import {
-  HABITACION_ESTADOS,
-  HABITACION_ESTADO_LABELS,
-  type HabitacionEstado,
-} from '../../domain/habitacion-detalle'
+  faBed,
+  faDollarSign,
+  faUsers,
+} from '@fortawesome/free-solid-svg-icons'
+import { customEasing } from '../../../../design-tokens/motion'
+import { useDeviceResourceProfile } from '../../../../shared/lib/use-device-resource-profile'
+import { Input } from '../../../../shared/ui/Input'
+import type { RecursosDropdownProps } from '../../../recursos/ui/molecules/recursos-dropdown'
+import { useHabitacionRegistroForm } from '../../application/use-habitacion-registro-form'
 import {
   CAPACITY_MAX,
   CAPACITY_MIN,
   NAME_MAX,
-  validateHabitacionInput,
   type HabitacionInput,
-  type HabitacionValidationErrors,
 } from '../../domain/habitacion'
 import { Button } from '../atoms/button'
 import { FadeIn } from '../atoms/fade-in'
+import { HabitacionPlanetAlert } from '../atoms/habitacion-planet-alert'
+import type { HabitacionEdificioFieldProps } from './habitacion-edificio-field'
 
-const estadoOptions = HABITACION_ESTADOS.map((val) => ({
-  value: val,
-  label: HABITACION_ESTADO_LABELS[val],
-}))
+const LazyRecursosDropdown = lazy<ComponentType<RecursosDropdownProps>>(
+  async () => {
+    try {
+      const mod = await import(
+        '../../../recursos/ui/molecules/recursos-dropdown'
+      )
+      return { default: mod.RecursosDropdown }
+    } catch (error) {
+      console.error('Error al cargar RecursosDropdown:', error)
+      const Fallback: ComponentType<RecursosDropdownProps> = () => null
+      return { default: Fallback }
+    }
+  }
+)
+
+const LazyHabitacionEdificioField = lazy<
+  ComponentType<HabitacionEdificioFieldProps>
+>(async () => {
+  try {
+    const mod = await import('./habitacion-edificio-field')
+    return { default: mod.HabitacionEdificioField }
+  } catch (error) {
+    console.error('Error al cargar HabitacionEdificioField:', error)
+    const Fallback: ComponentType<HabitacionEdificioFieldProps> = () => null
+    return { default: Fallback }
+  }
+})
 
 export interface HabitacionRegistroFormProps {
   submitting: boolean
   submitError: string | null
+  submitErrorStatus?: number | null
   onSubmit: (values: HabitacionInput) => void
 }
 
-export function HabitacionRegistroForm({
+/**
+ * Molécula: Formulario para registrar tipos de habitación con autodetección de
+ * Edificio (`auth_user`, `isDisabled` por defecto + botón icon-only FontAwesome).
+ */
+export const HabitacionRegistroForm = memo(function HabitacionRegistroForm({
   submitting,
   submitError,
+  submitErrorStatus = null,
   onSubmit,
 }: HabitacionRegistroFormProps) {
-  const [name, setName] = useState('')
-  const [edificioId, setEdificioId] = useState('')
-  const [estado, setEstado] = useState<HabitacionEstado>('disponible')
-  const [capacity, setCapacity] = useState('')
-  const [basePrice, setBasePrice] = useState('')
-  const [errors, setErrors] = useState<HabitacionValidationErrors>({})
+  const { policy } = useDeviceResourceProfile()
+  const {
+    name,
+    edificioId,
+    mergedEdificios,
+    edificiosLoading,
+    loadingAutoEdificio,
+    isManualEdificio,
+    autoEdificioValidation,
+    estado,
+    capacity,
+    basePrice,
+    errors,
+    estadoOptions,
+    handleNameChange,
+    handleCapacityChange,
+    handleBasePriceChange,
+    handleEdificioChange,
+    handleToggleManualEdificio,
+    handleEstadoChange,
+    submit,
+  } = useHabitacionRegistroForm(onSubmit)
 
-  const clearError = (field: keyof HabitacionValidationErrors) => {
-    setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev))
-  }
-
-  const submit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const values: HabitacionInput = { name, capacity, basePrice, edificioId, estado }
-    const nextErrors = validateHabitacionInput(values)
-    setErrors(nextErrors)
-    if (Object.keys(nextErrors).length === 0) {
-      onSubmit(values)
-    }
-  }
+  const dropdownFallback = (
+    <div className="h-[68px] animate-pulse rounded-xl border border-line bg-panel/60" />
+  )
 
   return (
-    <form onSubmit={submit} className="space-y-4" noValidate>
-      <FadeIn duration={0.45} delay={0}>
-        <Input
-          label="Nombre"
-          placeholder="Ej. Suite 101 con vista al mar"
-          autoComplete="off"
-          maxLength={NAME_MAX}
-          autoFocus
-          required
-          value={name}
-          onChange={(event) => {
-            setName(event.target.value)
-            clearError('name')
-          }}
-          error={errors.name}
-          hint="Un nombre que tus huéspedes reconozcan de un vistazo."
-          icon={<BedIcon />}
-        />
-      </FadeIn>
-
-      <FadeIn duration={0.45} delay={0.06} className="relative z-20 has-[[aria-expanded='true']]:z-50">
-        <RecursosDropdown
-          label="Edificio"
-          endpoint="/building"
-          value={edificioId}
-          onChange={setEdificioId}
-          direction="auto"
-          placeholder="Elige un edificio…"
-          emptyLabel="Aún no hay edificios registrados."
-        />
-      </FadeIn>
-
-      <div className="grid gap-4 sm:grid-cols-2">
-        <FadeIn duration={0.45} delay={0.12}>
+    <MotionConfig reducedMotion={policy.enableAnimations ? 'user' : 'always'}>
+      <form onSubmit={submit} className="space-y-4" noValidate>
+        <FadeIn duration={0.45} delay={0}>
           <Input
-            label="Capacidad"
-            type="number"
-            inputMode="numeric"
-            min={CAPACITY_MIN}
-            max={CAPACITY_MAX}
-            step={1}
-            placeholder="Ej. 2"
+            label="Nombre"
+            placeholder="Ej. Suite 101 con vista al mar"
+            autoComplete="off"
+            maxLength={NAME_MAX}
+            autoFocus
             required
-            value={capacity}
-            onChange={(event) => {
-              setCapacity(event.target.value)
-              clearError('capacity')
-            }}
-            error={errors.capacity}
-            hint={`Personas que pueden alojarse (${CAPACITY_MIN} a ${CAPACITY_MAX}).`}
-            icon={<CapacityIcon />}
-          />
-        </FadeIn>
-
-        <FadeIn duration={0.45} delay={0.2}>
-          <Input
-            label="Precio base"
-            type="number"
-            inputMode="decimal"
-            min={0}
-            step="0.01"
-            placeholder="Ej. 250000"
-            required
-            value={basePrice}
-            onChange={(event) => {
-              setBasePrice(event.target.value)
-              clearError('basePrice')
-            }}
-            error={errors.basePrice}
-            hint="Monto por noche, en la moneda de tu hotel."
-            icon={<span className="text-sm font-semibold">$</span>}
-          />
-        </FadeIn>
-      </div>
-
-      <FadeIn duration={0.45} delay={0.26} className="relative z-10 has-[[aria-expanded='true']]:z-50">
-        <RecursosDropdown
-          label="Estado"
-          options={estadoOptions}
-          value={estado}
-          onChange={(val) => setEstado(val as HabitacionEstado)}
-          direction="auto"
-          searchable={false}
-        />
-      </FadeIn>
-
-      <FadeIn
-        duration={0.45}
-        delay={0.32}
-        className="flex items-center justify-end border-t border-line pt-4"
-      >
-        <Button
-          type="submit"
-          disabled={submitting}
-          className="w-full sm:w-auto shadow-sm"
-          whileHover={
-            submitting
-              ? undefined
-              : {
-                  scale: 1.03,
-                  y: -1,
-                  transition: { duration: 0.22, ease: customEasing },
-                }
-          }
-          whileTap={
-            submitting
-              ? undefined
-              : {
-                  scale: 0.97,
-                  y: 0,
-                  transition: { duration: 0.12, ease: customEasing },
-                }
-          }
-        >
-          {submitting ? (
-            <>
-              <span
-                className="inline-block size-4 animate-spin rounded-full border-2 border-white/30 border-t-white"
+            disabled={submitting}
+            value={name}
+            onChange={handleNameChange}
+            error={errors.name}
+            hint="Un nombre que tus huéspedes reconozcan de un vistazo."
+            icon={
+              <FontAwesomeIcon
+                icon={faBed}
+                className="size-4"
                 aria-hidden="true"
               />
-              Guardando…
-            </>
-          ) : (
-            'Registrar habitación'
-          )}
-        </Button>
-      </FadeIn>
+            }
+          />
+        </FadeIn>
 
-      {submitError ? (
-        <motion.p
-          variants={fadeUp}
-          initial="hidden"
-          animate="visible"
-          role="alert"
-          className="rounded-xl border border-danger/25 bg-danger/10 px-4 py-3 text-sm font-medium text-danger"
+        <FadeIn
+          duration={0.45}
+          delay={0.06}
+          className="relative z-20 has-[[aria-expanded='true']]:z-50"
         >
-          {submitError}
-        </motion.p>
-      ) : null}
-    </form>
-  )
-}
+          <Suspense fallback={dropdownFallback}>
+            <LazyHabitacionEdificioField
+              edificios={mergedEdificios}
+              edificiosLoading={isManualEdificio ? edificiosLoading : false}
+              loadingAutoEdificio={loadingAutoEdificio}
+              edificioId={edificioId}
+              isManualEdificio={isManualEdificio}
+              submitting={submitting}
+              required={false}
+              autoEdificioValidation={autoEdificioValidation}
+              onChange={handleEdificioChange}
+              onToggleManual={handleToggleManualEdificio}
+            />
+          </Suspense>
+        </FadeIn>
 
-function BedIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-4"
-      aria-hidden="true"
-    >
-      <path d="M2 20v-8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v8" />
-      <path d="M4 10V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v4" />
-      <path d="M12 4v6" />
-      <path d="M2 18h20" />
-    </svg>
-  )
-}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FadeIn duration={0.45} delay={0.12}>
+            <Input
+              label="Capacidad"
+              type="number"
+              inputMode="numeric"
+              min={CAPACITY_MIN}
+              max={CAPACITY_MAX}
+              step={1}
+              placeholder="Ej. 2"
+              required
+              disabled={submitting}
+              value={capacity}
+              onChange={handleCapacityChange}
+              error={errors.capacity}
+              hint={`Personas que pueden alojarse (${CAPACITY_MIN} a ${CAPACITY_MAX}).`}
+              icon={
+                <FontAwesomeIcon
+                  icon={faUsers}
+                  className="size-4"
+                  aria-hidden="true"
+                />
+              }
+            />
+          </FadeIn>
 
-function CapacityIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="size-4"
-      aria-hidden="true"
-    >
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
+          <FadeIn duration={0.45} delay={0.2}>
+            <Input
+              label="Precio base"
+              type="number"
+              inputMode="decimal"
+              min={0}
+              step="0.01"
+              placeholder="Ej. 250000"
+              required
+              disabled={submitting}
+              value={basePrice}
+              onChange={handleBasePriceChange}
+              error={errors.basePrice}
+              hint="Monto por noche, en la moneda de tu hotel."
+              icon={
+                <FontAwesomeIcon
+                  icon={faDollarSign}
+                  className="size-3.5"
+                  aria-hidden="true"
+                />
+              }
+            />
+          </FadeIn>
+        </div>
+
+        <FadeIn
+          duration={0.45}
+          delay={0.26}
+          className="relative z-10 has-[[aria-expanded='true']]:z-50"
+        >
+          <Suspense fallback={dropdownFallback}>
+            <LazyRecursosDropdown
+              label="Estado"
+              options={estadoOptions}
+              value={estado}
+              onChange={handleEstadoChange}
+              error={errors.estado}
+              isDisabled={submitting}
+              disabled={submitting}
+              direction="auto"
+              searchable={false}
+            />
+          </Suspense>
+        </FadeIn>
+
+        <FadeIn
+          duration={0.45}
+          delay={0.32}
+          className="flex items-center justify-end border-t border-line pt-4"
+        >
+          <Button
+            type="submit"
+            disabled={submitting}
+            className="w-full shadow-sm sm:w-auto"
+            whileHover={
+              submitting || !policy.enableAnimations
+                ? undefined
+                : {
+                    scale: 1.03,
+                    y: -1,
+                    transition: { duration: 0.22, ease: customEasing },
+                  }
+            }
+            whileTap={
+              submitting || !policy.enableAnimations
+                ? undefined
+                : {
+                    scale: 0.97,
+                    y: 0,
+                    transition: { duration: 0.12, ease: customEasing },
+                  }
+            }
+          >
+            {submitting ? (
+              <>
+                <span
+                  className={`inline-block size-4 rounded-full border-2 border-white/30 border-t-white ${
+                    policy.enableAnimations ? 'animate-spin' : ''
+                  }`}
+                  aria-hidden="true"
+                />
+                Guardando…
+              </>
+            ) : (
+              'Registrar habitación'
+            )}
+          </Button>
+        </FadeIn>
+
+        {submitError ? (
+          <HabitacionPlanetAlert
+            variant="error"
+            planet="mars"
+            title="No pudimos guardar el registro"
+            message={submitError}
+            error={submitErrorStatus ? { status: submitErrorStatus } : undefined}
+          />
+        ) : null}
+      </form>
+    </MotionConfig>
   )
-}
+})
+
+export default HabitacionRegistroForm

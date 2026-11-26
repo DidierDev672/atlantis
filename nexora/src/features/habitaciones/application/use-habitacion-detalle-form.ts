@@ -1,14 +1,11 @@
 import {
   useCallback,
-  useEffect,
   useMemo,
   useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
 } from 'react'
-import { validateStatusCode } from '../../../shared/lib/status-code-validator'
-import { ObtenerSiguienteNumeroHabitacion } from '../application/obtener-siguiente-numero-habitacion'
 import {
   HABITACION_ESTADOS,
   HABITACION_ESTADO_LABELS,
@@ -19,7 +16,9 @@ import {
 } from '../domain/habitacion-detalle'
 import type { HabitacionDetalleRepository } from '../domain/habitacion-detalle-repository'
 import { ApiHabitacionDetalleRepository } from '../infrastructure/api-habitacion-detalle-repository'
+import { useEdificioAutodetect } from './use-edificio-autodetect'
 import { useEdificioFloors, type EdificioOption } from './use-edificio-floors'
+import { useHabitacionNextNumber } from './use-habitacion-next-number'
 
 export type { EdificioOption }
 
@@ -75,12 +74,6 @@ export function useHabitacionDetalleForm({
   onClear,
   repository,
 }: UseHabitacionDetalleFormParams) {
-  const [numero, setNumero] = useState('')
-  const [autoNextNumber, setAutoNextNumber] = useState('')
-  const [isManualNumber, setIsManualNumber] = useState(false)
-  const [loadingNextNumber, setLoadingNextNumber] = useState(true)
-  const [nextNumberError, setNextNumberError] = useState<string | null>(null)
-  const [edificioId, setEdificioId] = useState('')
   const [piso, setPiso] = useState('')
   const [tipoHabitacion, setTipoHabitacion] = useState('')
   const [estado, setEstado] = useState<HabitacionEstado>('disponible')
@@ -97,73 +90,32 @@ export function useHabitacionDetalleForm({
     setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev))
   }, [])
 
-  const applyNextNumberResult = useCallback(
-    (result: Awaited<ReturnType<ReturnType<typeof ObtenerSiguienteNumeroHabitacion>>>) => {
-      if (!result.validation.isValid) {
-        setNextNumberError(
-          result.validation.message ??
-            `No se pudo obtener el número automático (código ${result.validation.status}).`
-        )
-        setIsManualNumber(true)
-        return
-      }
-      if (result.nextNumber) {
-        setAutoNextNumber(result.nextNumber)
-        setNumero(result.nextNumber)
-        clearError('numero')
-      }
-    },
-    [clearError]
-  )
+  const onAutoNumberResolved = useCallback(() => clearError('numero'), [clearError])
 
-  const fetchNextNumber = useCallback(async () => {
-    setLoadingNextNumber(true)
-    setNextNumberError(null)
-    try {
-      const getNext = ObtenerSiguienteNumeroHabitacion(effectiveRepository)
-      applyNextNumberResult(await getNext())
-    } catch {
-      const validation = validateStatusCode(0)
-      setNextNumberError(validation.message ?? 'No se pudo consultar el próximo número.')
-      setIsManualNumber(true)
-    } finally {
-      setLoadingNextNumber(false)
-    }
-  }, [applyNextNumberResult, effectiveRepository])
+  const {
+    numero,
+    setNumero,
+    isManualNumber,
+    loadingNextNumber,
+    nextNumberError,
+    toggleManualNumber,
+    resetNextNumber,
+  } = useHabitacionNextNumber({
+    repository: effectiveRepository,
+    numeroContainerRef,
+    onAutoNumberResolved,
+  })
 
-  useEffect(() => {
-    let active = true
-    async function loadNextNumberOnMount() {
-      try {
-        const getNext = ObtenerSiguienteNumeroHabitacion(effectiveRepository)
-        const result = await getNext()
-        if (active) applyNextNumberResult(result)
-      } catch {
-        if (!active) return
-        const validation = validateStatusCode(0)
-        setNextNumberError(validation.message ?? 'No se pudo consultar el próximo número.')
-        setIsManualNumber(true)
-      } finally {
-        if (active) setLoadingNextNumber(false)
-      }
-    }
-    void loadNextNumberOnMount()
-    return () => {
-      active = false
-    }
-  }, [applyNextNumberResult, effectiveRepository])
-
-  useEffect(() => {
-    if (!isManualNumber) return
-    const timerId = window.setTimeout(() => {
-      const inputEl = numeroContainerRef.current?.querySelector('input')
-      if (inputEl) {
-        inputEl.focus()
-        inputEl.select()
-      }
-    }, 40)
-    return () => window.clearTimeout(timerId)
-  }, [isManualNumber])
+  const {
+    mergedEdificios,
+    effectiveEdificioId: edificioId,
+    isManualEdificio,
+    loadingAutoEdificio,
+    autoEdificioValidation,
+    setManualEdificioId,
+    toggleManualEdificio,
+    resetEdificioToDetected,
+  } = useEdificioAutodetect(edificios)
 
   const {
     selectedEdificio,
@@ -172,21 +124,27 @@ export function useHabitacionDetalleForm({
     effectivePiso,
     pisoOptions,
     fetchedFloors,
-  } = useEdificioFloors(edificioId, edificios, piso)
+  } = useEdificioFloors(edificioId, mergedEdificios, piso)
 
   const handleEdificioChange = useCallback(
     (newEdificioId: string) => {
-      setEdificioId(newEdificioId)
+      setManualEdificioId(newEdificioId)
       clearError('edificioId')
       clearError('piso')
-      const matched = edificios.find((e) => e.value === newEdificioId)
+      const matched = mergedEdificios.find((e) => e.value === newEdificioId)
       const availableFloors = matched?.floorNumber ?? fetchedFloors[newEdificioId] ?? 0
       if (!newEdificioId || (piso && availableFloors > 0 && Number(piso) > availableFloors)) {
         setPiso('')
       }
     },
-    [clearError, edificios, fetchedFloors, piso]
+    [clearError, fetchedFloors, mergedEdificios, piso, setManualEdificioId]
   )
+
+  const handleToggleManualEdificio = useCallback(() => {
+    toggleManualEdificio()
+    clearError('edificioId')
+    clearError('piso')
+  }, [clearError, toggleManualEdificio])
 
   const handlePisoChange = useCallback((v: string) => {
     setPiso(v)
@@ -196,21 +154,7 @@ export function useHabitacionDetalleForm({
   const handleNumeroChange = useCallback((v: string) => {
     setNumero(v)
     clearError('numero')
-  }, [clearError])
-
-  const handleToggleManualNumber = useCallback(() => {
-    if (isManualNumber) {
-      setIsManualNumber(false)
-      if (autoNextNumber) {
-        setNumero(autoNextNumber)
-        clearError('numero')
-      } else {
-        void fetchNextNumber()
-      }
-      return
-    }
-    setIsManualNumber(true)
-  }, [autoNextNumber, clearError, fetchNextNumber, isManualNumber])
+  }, [clearError, setNumero])
 
   const handleTipoHabitacionChange = useCallback((v: string) => {
     setTipoHabitacion(v)
@@ -254,7 +198,7 @@ export function useHabitacionDetalleForm({
 
   const handleReset = useCallback(() => {
     try {
-      setEdificioId('')
+      resetEdificioToDetected()
       setPiso('')
       setTipoHabitacion('')
       setEstado('disponible')
@@ -262,17 +206,11 @@ export function useHabitacionDetalleForm({
       setErrors({})
       onTarifaChange?.('')
       onClear?.()
-      if (autoNextNumber) {
-        setIsManualNumber(false)
-        setNumero(autoNextNumber)
-      } else {
-        setNumero('')
-        void fetchNextNumber()
-      }
+      resetNextNumber()
     } catch (error) {
       console.error('Error al limpiar formulario de habitación:', error)
     }
-  }, [autoNextNumber, fetchNextNumber, onClear, onTarifaChange])
+  }, [onClear, onTarifaChange, resetEdificioToDetected, resetNextNumber])
 
   const handleSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
@@ -318,6 +256,10 @@ export function useHabitacionDetalleForm({
     nextNumberError,
     numeroContainerRef,
     edificioId,
+    mergedEdificios,
+    isManualEdificio,
+    loadingAutoEdificio,
+    autoEdificioValidation,
     selectedEdificio,
     loadingFloors,
     totalPisos,
@@ -332,9 +274,10 @@ export function useHabitacionDetalleForm({
     errors,
     displayedPrecioError: errors.precio ?? tariffOverPriceError,
     handleEdificioChange,
+    handleToggleManualEdificio,
     handlePisoChange,
     handleNumeroChange,
-    handleToggleManualNumber,
+    handleToggleManualNumber: toggleManualNumber,
     handleTipoHabitacionChange,
     handleEstadoChange,
     handlePrecioChange,

@@ -1,24 +1,29 @@
-import { Suspense, lazy, memo } from 'react';
+import { Suspense, memo } from 'react';
+import { lazyWithFallback } from '../../application/lazy-with-fallback';
 import type { RoomRow } from '../../domain/habitacion-lista';
 
-const LazyEdificioDetalleModal = lazy(() =>
-  import('../../../edificios/ui/organisms/edificio-detalle-modal').then((m) => ({
-    default: m.EdificioDetalleModal,
-  }))
+const LazyEdificioDetalleModal = lazyWithFallback(
+  () =>
+    import('../../../edificios/ui/organisms/edificio-detalle-modal').then(
+      (m) => m.EdificioDetalleModal
+    ),
+  'EdificioDetalleModal'
 );
 
-const LazyTarifasModal = lazy(() =>
-  import('./tarifas-modal').then((m) => ({ default: m.TarifasModal }))
+const LazyTarifasModal = lazyWithFallback(
+  () => import('./tarifas-modal').then((m) => m.TarifasModal),
+  'TarifasModal'
 );
 
-const LazyHabitacionDetalleModal = lazy(() =>
-  import('./habitacion-detalle-modal').then((m) => ({
-    default: m.HabitacionDetalleModal,
-  }))
+const LazyHabitacionDetalleModal = lazyWithFallback(
+  () =>
+    import('./habitacion-detalle-modal').then((m) => m.HabitacionDetalleModal),
+  'HabitacionDetalleModal'
 );
 
-const LazyAsignarHuespedDrawer = lazy(
-  () => import('./asignar-huesped-drawer')
+const LazyAsignarHuespedDrawer = lazyWithFallback(
+  () => import('./asignar-huesped-drawer').then((m) => m.default),
+  'AsignarHuespedDrawer'
 );
 
 export interface SelectedBuildingState {
@@ -79,11 +84,13 @@ export const HabitacionesPisosModals = memo(function HabitacionesPisosModals({
 }: HabitacionesPisosModalsProps) {
   return (
     <Suspense fallback={null}>
-      <LazyAsignarHuespedDrawer
-        room={assignGuestDrawerRoom}
-        onClose={onCloseAssignGuestDrawer}
-        onSuccess={onAssignGuestSuccess}
-      />
+      {assignGuestDrawerRoom && (
+        <LazyAsignarHuespedDrawer
+          room={assignGuestDrawerRoom}
+          onClose={onCloseAssignGuestDrawer}
+          onSuccess={onAssignGuestSuccess}
+        />
+      )}
 
       {selectedBuilding && (
         <LazyEdificioDetalleModal
@@ -101,7 +108,7 @@ export const HabitacionesPisosModals = memo(function HabitacionesPisosModals({
           linkedRoom={selectedRoomForTarifas}
           hasTariff={Boolean(
             hasTariff(selectedRoomForTarifas.id) ||
-              selectedRoomForTarifas.hasTariff
+            selectedRoomForTarifas.hasTariff
           )}
           appliedRateId={
             getRateId(selectedRoomForTarifas.id) ||

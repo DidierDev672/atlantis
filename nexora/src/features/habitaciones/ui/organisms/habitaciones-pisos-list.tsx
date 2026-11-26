@@ -68,11 +68,13 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
     expandedRoomRefs,
     enrichingFloors,
     floorErrors,
+    floorErrorInfos,
     floorBadgeFilters,
     totalCount,
     filteredCount,
     initialLoading,
     error,
+    errorInfo,
     filters,
     knownBuildings,
     setFilters,
@@ -256,12 +258,14 @@ export const HabitacionesPisosList = memo(function HabitacionesPisosList({
       <Suspense fallback={<FloorAccordionSkeleton count={3} />}>
         <LazyHabitacionesPisosFeed
           error={error}
+          errorInfo={errorInfo}
           initialLoading={initialLoading}
           visibleFloorGroups={visibleFloorGroups}
           hasActiveFilters={hasActiveFilters}
           expandedFloors={expandedFloors}
           enrichingFloors={enrichingFloors}
           floorErrors={floorErrors}
+          floorErrorInfos={floorErrorInfos}
           floorBadgeFilters={floorBadgeFilters}
           viewMode={activeViewMode}
           hasTariff={hasTariff}

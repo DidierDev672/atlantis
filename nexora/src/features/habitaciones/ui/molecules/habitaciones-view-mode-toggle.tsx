@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { faGrip, faTableCellsLarge } from '@fortawesome/free-solid-svg-icons';
+import { useDeviceResourceProfile } from '../../../../shared/lib/use-device-resource-profile';
 
 export type HabitacionesViewMode = 'cards' | 'compact';
 
@@ -22,62 +23,74 @@ const VIEW_MODES: ReadonlyArray<{
 ];
 
 /**
- * Selector icon-only de modo de visualización (Tarjetas / Compacta) con FontAwesome.
+ * Selector icon-only de modo de visualización (Tarjetas / Compacta) con FontAwesome,
+ * adaptado a `enableBackdropBlur` y `enableAnimations` de `useDeviceResourceProfile`.
  */
-export const HabitacionesViewModeToggle = memo(function HabitacionesViewModeToggle({
-  viewMode,
-  onChange,
-  className = '',
-}: HabitacionesViewModeToggleProps) {
-  const handleSelectMode = useCallback(
-    (mode: HabitacionesViewMode) => {
-      try {
-        onChange(mode);
-      } catch (err) {
-        console.error('Error al cambiar el modo de visualización:', err);
-      }
-    },
-    [onChange]
-  );
+export const HabitacionesViewModeToggle = memo(
+  function HabitacionesViewModeToggle({
+    viewMode,
+    onChange,
+    className = '',
+  }: HabitacionesViewModeToggleProps) {
+    const { policy } = useDeviceResourceProfile();
 
-  return (
-    <div
-      role="radiogroup"
-      aria-label="Modo de visualización de habitaciones"
-      className={`border-line bg-canvas/80 inline-flex items-center gap-1 rounded-xl border p-1 shadow-2xs backdrop-blur-xs ${className}`}
-    >
-      {VIEW_MODES.map(({ mode, label, icon }) => {
-        const isActive = viewMode === mode;
-        return (
-          <button
-            key={mode}
-            type="button"
-            role="radio"
-            aria-checked={isActive}
-            aria-label={`Visualizar en modo ${label}`}
-            title={label}
-            onClick={() => handleSelectMode(mode)}
-            className={`focus-visible:ring-primary/40 relative grid size-8 cursor-pointer place-items-center rounded-lg transition focus-visible:ring-2 focus-visible:outline-none ${
-              isActive ? 'text-primary' : 'text-ink-muted hover:text-ink'
-            }`}
-          >
-            {isActive && (
-              <motion.div
-                layoutId="activeHabitacionesViewModeIndicator"
-                transition={{ type: 'spring', stiffness: 500, damping: 32 }}
-                className="bg-panel absolute inset-0 rounded-lg shadow-xs"
+    const handleSelectMode = useCallback(
+      (mode: HabitacionesViewMode) => {
+        try {
+          onChange(mode);
+        } catch (err) {
+          console.error('Error al cambiar el modo de visualización:', err);
+        }
+      },
+      [onChange]
+    );
+
+    return (
+      <div
+        role="radiogroup"
+        aria-label="Modo de visualización de habitaciones"
+        className={`border-line inline-flex items-center gap-1 rounded-xl border p-1 shadow-2xs ${
+          policy.enableBackdropBlur
+            ? 'bg-canvas/80 backdrop-blur-xs'
+            : 'bg-canvas'
+        } ${className}`}
+      >
+        {VIEW_MODES.map(({ mode, label, icon }) => {
+          const isActive = viewMode === mode;
+          return (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={isActive}
+              aria-label={`Visualizar en modo ${label}`}
+              title={label}
+              onClick={() => handleSelectMode(mode)}
+              className={`focus-visible:ring-primary/40 relative grid size-8 cursor-pointer place-items-center rounded-lg transition focus-visible:ring-2 focus-visible:outline-none ${
+                isActive ? 'text-primary' : 'text-ink-muted hover:text-ink'
+              }`}
+            >
+              {isActive &&
+                (policy.enableAnimations ? (
+                  <motion.div
+                    layoutId="activeHabitacionesViewModeIndicator"
+                    transition={{ type: 'spring', stiffness: 500, damping: 32 }}
+                    className="bg-panel absolute inset-0 rounded-lg shadow-xs"
+                  />
+                ) : (
+                  <span className="bg-panel absolute inset-0 rounded-lg shadow-xs" />
+                ))}
+              <FontAwesomeIcon
+                icon={icon}
+                className="relative z-10 size-3.5"
+                aria-hidden="true"
               />
-            )}
-            <FontAwesomeIcon
-              icon={icon}
-              className="relative z-10 size-3.5"
-              aria-hidden="true"
-            />
-          </button>
-        );
-      })}
-    </div>
-  );
-});
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+);
 
 export default HabitacionesViewModeToggle;
