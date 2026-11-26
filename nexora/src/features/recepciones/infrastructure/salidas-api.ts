@@ -85,6 +85,7 @@ interface GuestLinkMeta {
   roomId?: string
   stayId?: string
   reserveId?: string
+  stayPersonIds?: string[]
   securityDeposit?: number
   depositPaymentMethod?: string
   stayStatus?: string
@@ -168,6 +169,7 @@ function registerGuestLink(
     roomId?: string
     stayId?: string
     reserveId?: string
+    stayPersonIds?: string[]
     securityDeposit?: number | string
     paymentMethod?: string
     stayStatus?: string
@@ -199,6 +201,18 @@ function registerGuestLink(
   }
   if (extra?.reserveId && (!current.reserveId || source === 'reserva')) {
     current.reserveId = extra.reserveId
+  }
+  if (
+    Array.isArray(extra?.stayPersonIds) &&
+    extra.stayPersonIds.length > 0 &&
+    (!current.stayPersonIds || source === 'recepcion')
+  ) {
+    current.stayPersonIds = Array.from(
+      new Set([
+        ...(current.stayPersonIds ?? []),
+        ...extra.stayPersonIds.map((id) => id.trim()).filter(Boolean),
+      ]),
+    )
   }
   const dep = Number(extra?.securityDeposit ?? 0)
   if (Number.isFinite(dep) && dep > 0 && !current.securityDeposit) {
@@ -360,6 +374,7 @@ function mapPersonToSalidaItem(
     stayId: linkMeta?.stayId || '',
     primaryStayId: linkMeta?.stayId || undefined,
     primaryReserveId: linkMeta?.reserveId || undefined,
+    stayPersonIds: linkMeta?.stayPersonIds,
     securityDeposit: linkMeta?.securityDeposit ?? 0,
     depositPaymentMethod: linkMeta?.depositPaymentMethod || undefined,
     stayStatus: linkMeta?.stayStatus || '',
@@ -662,6 +677,7 @@ export async function fetchSalidasHuespedes(
                 checkInDate: reserve.check_in_date || reserve.created_at,
                 roomId: reserve.room_id,
                 reserveId: reserve.id,
+                stayPersonIds: ids,
                 securityDeposit: reserve.security_deposit,
                 paymentMethod: reserve.payment_method,
                 stayStatus: reserve.status,
@@ -715,6 +731,7 @@ export async function fetchSalidasHuespedes(
                 roomId: stay.room_id,
                 stayId: stay.id,
                 reserveId: stay.reservation_id,
+                stayPersonIds: ids,
                 securityDeposit: stay.security_deposit,
                 paymentMethod: stay.payment_method,
                 stayStatus: stay.status,

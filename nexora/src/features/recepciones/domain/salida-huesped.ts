@@ -90,6 +90,7 @@ export interface SalidaHuespedItem {
   stayId?: string
   primaryStayId?: string
   primaryReserveId?: string
+  stayPersonIds?: string[]
   securityDeposit?: number
   depositPaymentMethod?: string
   stayStatus?: string
