@@ -828,19 +828,24 @@ export async function performGuestCheckout(
     )
     if (roomRes.status >= 200 && roomRes.status < 300 && roomRes.data) {
       const r = roomRes.data
-      await api.put(
-        `/room/${encodeURIComponent(guest.roomId)}`,
-        {
-          number: r.number ?? '',
-          floor: Number(r.floor ?? 1),
-          room_types_id: r.room_types_id ?? '',
-          building_id: r.building_id ?? '',
-          price_override: r.price_override ?? null,
-          status: 'cleaning',
-          has_reception: false,
-        },
-        { validateStatus: () => true },
-      )
+      const alreadyReleased =
+        (r.status ?? '').trim().toLowerCase() === 'cleaning' &&
+        r.has_reception === false
+      if (!alreadyReleased) {
+        await api.put(
+          `/room/${encodeURIComponent(guest.roomId)}`,
+          {
+            number: r.number ?? '',
+            floor: Number(r.floor ?? 1),
+            room_types_id: r.room_types_id ?? '',
+            building_id: r.building_id ?? '',
+            price_override: r.price_override ?? null,
+            status: 'cleaning',
+            has_reception: false,
+          },
+          { validateStatus: () => true },
+        )
+      }
     }
     return {
       ok: true,
