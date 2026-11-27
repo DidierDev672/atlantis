@@ -9,21 +9,21 @@ import {
   faPhone,
   faReceipt,
 } from '@fortawesome/free-solid-svg-icons'
+import type { DatosEmpresaFacturacion } from '../../domain/facturacion-empresa-storage'
 import {
   formatCurrencyAmount,
   getGuestInitials,
-  type SalidaHuespedItem,
-} from '../../../recepciones/domain/salida-huesped'
-import type { DatosEmpresaFacturacion } from './facturacion-electronica-empresa-modal'
+  type RegistroHuespedItem,
+} from '../../domain/registro-huesped'
 
 export interface PersonaRegistroMobileCardProps {
-  guest: SalidaHuespedItem
+  guest: RegistroHuespedItem
   isCheckedOut: boolean
   lodgingDebt: number
   storeDebt: number
   grandTotal: number
   companyData?: DatosEmpresaFacturacion
-  onOpenInvoiceModal: (guest: SalidaHuespedItem) => void
+  onOpenInvoiceModal: (guest: RegistroHuespedItem) => void
   onSelectAccount: (internalKey: string) => void
 }
 
